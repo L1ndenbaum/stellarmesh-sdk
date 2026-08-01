@@ -1,0 +1,12 @@
+{
+  "event_id": "00000000-0000-4000-8000-000000000001",
+  "timestamp": "2026-08-01T12:00:00Z",
+  "level": "INFO",
+  "service": "example-backend",
+  "message": "request completed",
+  "trace_id": "request-1",
+  "metadata": {
+    "duration_ms": 12,
+    "route": "/health"
+  }
+}
