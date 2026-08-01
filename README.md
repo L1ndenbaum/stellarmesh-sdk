@@ -1,0 +1,28 @@
+# Stellarmesh SDK
+
+本仓库提供跨项目复用的基础 SDK、统一日志协议、日志接收服务、ClickHouse 落盘服务和版本化迁移制品。业务项目只负责引用 SDK 与声明自己的部署参数；本仓库不提供 Docker Compose、环境变量文件或生产资源编排。
+
+## 仓库内容
+
+- `contracts/logging/v1/`：日志事件 JSON Schema 与 HTTP OpenAPI 契约。
+- `sdk/go/`：Go 公共基础能力和异步日志客户端。
+- `sdk/python/`：Python 异步日志客户端与日志门面。
+- `services/logging/`：接收 HTTP 日志并发布到 Kafka 的常驻服务。
+- `sinks/clickhouse/`：消费 Kafka 并写入 ClickHouse 的常驻服务，以及独立迁移镜像。
+
+详细说明见[SDK 内容](docs/sdk-content.md)，项目接入步骤见[接入 SDK](docs/sdk-integration.md)。
+
+## 本地验证
+
+```sh
+make bootstrap
+make format
+make verify
+make images
+```
+
+`make verify` 会执行 Go 格式检查、`go vet`、Go 测试、Ruff、mypy、pytest、Shell 语法检查与 `git diff --check`。`make images` 会构建日志接收服务、ClickHouse sink 和迁移制品三个镜像。
+
+## 生产责任边界
+
+本仓库拥有协议、应用代码、`log_events` 表结构及迁移源码。生产环境中的 ClickHouse database、用户、权限，Kafka Topic、principal、ACL，以及镜像 digest、迁移时机和发布顺序由 `server-infrastructure` 统一声明和编排。常驻服务不得持有管理员或迁移凭据，也不会在启动时自动执行迁移。
