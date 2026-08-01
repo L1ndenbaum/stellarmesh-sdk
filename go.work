@@ -5,3 +5,5 @@ use (
 	./services/logging
 	./sinks/clickhouse
 )
+
+replace github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.1.0 => ./sdk/go
