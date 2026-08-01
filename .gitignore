@@ -6,6 +6,7 @@
 # Go
 bin/
 coverage.out
+.cache/
 
 # Python
 .venv/

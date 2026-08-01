@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import jsonschema
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from stellarmesh_logging import (
@@ -14,10 +16,12 @@ from stellarmesh_logging import (
     should_emit_level,
 )
 
+_REPOSITORY_ROOT = Path(__file__).parents[3]
+
 
 def test_contract_fixture_round_trips() -> None:
     fixture = (
-        Path(__file__).parents[3]
+        _REPOSITORY_ROOT
         / "contracts"
         / "logging"
         / "v1"
@@ -50,3 +54,21 @@ def test_level_filtering() -> None:
     assert should_emit_level("WARN", "INFO")
     assert not should_emit_level("DEBUG", "INFO")
     assert should_emit_level("AUDIT", "ERROR")
+
+
+def test_json_schema_accepts_shared_fixture() -> None:
+    contract_dir = _REPOSITORY_ROOT / "contracts" / "logging" / "v1"
+    schema = json.loads((contract_dir / "log-event.schema.json").read_text())
+    fixture = json.loads((contract_dir / "testdata" / "valid-event.json").read_text())
+    validator = jsonschema.Draft202012Validator(
+        schema,
+        format_checker=jsonschema.FormatChecker(),
+    )
+    validator.validate(fixture)
+
+
+def test_openapi_document_is_valid_yaml() -> None:
+    openapi_path = _REPOSITORY_ROOT / "contracts" / "logging" / "v1" / "openapi.yaml"
+    document = yaml.safe_load(openapi_path.read_text())
+    assert document["openapi"] == "3.1.0"
+    assert "/v1/log-events/batch" in document["paths"]
