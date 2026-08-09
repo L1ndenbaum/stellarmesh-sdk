@@ -10,7 +10,7 @@
 - `services/logging/`：接收 HTTP 日志并发布到 Kafka 的常驻服务。
 - `sinks/clickhouse/`：消费 Kafka 并写入 ClickHouse 的常驻服务，以及独立迁移镜像。
 
-详细说明见[SDK 内容](docs/sdk-content.md)，项目接入步骤见[接入 SDK](docs/sdk-integration.md)。
+详细说明见[SDK 内容](docs/sdk-content.md)，项目接入步骤见[接入 SDK](docs/sdk-integration.md)，版本与不可变制品规则见[发布与版本引用](docs/release.md)。
 
 ## 本地验证
 
@@ -18,10 +18,12 @@
 make bootstrap
 make format
 make verify
+make race
 make images
+make integration
 ```
 
-`make verify` 会执行 Go 格式检查、`go vet`、Go 测试、Ruff、mypy、pytest、Shell 语法检查与 `git diff --check`。`make images` 会构建日志接收服务、ClickHouse sink 和迁移制品三个镜像。
+`make verify` 会执行 Go 格式检查、`go vet`、Go 测试、Ruff、mypy、pytest、Shell 语法检查与 `git diff --check`。`make race` 运行全部 Go 竞态检查。`make images` 会构建日志接收服务、ClickHouse sink 和迁移制品三个镜像；`make integration` 额外使用临时 Docker network 验证有效事件落库与坏消息进入 DLQ，测试结束后清理临时容器和网络，不要求仓库提供 Compose。
 
 ## 生产责任边界
 
