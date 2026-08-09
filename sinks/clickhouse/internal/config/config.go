@@ -8,6 +8,7 @@ import (
 
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/envconfig"
 	sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
+	sharedkafka "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka"
 )
 
 // Config contains Kafka consumer and ClickHouse writer settings.
@@ -15,6 +16,7 @@ type Config struct {
 	KafkaBrokers       []string
 	KafkaTopic         string
 	KafkaGroupID       string
+	KafkaConnection    sharedkafka.ConnectionConfig
 	ClickHouseHTTPURL  string
 	ClickHouseDatabase string
 	ClickHouseUser     string
@@ -30,6 +32,7 @@ func Load() (Config, error) {
 		KafkaBrokers:       envconfig.CSV("STELLARMESH_LOGGING_KAFKA_BROKERS", "kafka:9092"),
 		KafkaTopic:         envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV1),
 		KafkaGroupID:       envconfig.String("STELLARMESH_LOGGING_WRITER_GROUP_ID", "stellarmesh-logging-clickhouse"),
+		KafkaConnection:    kafkaConnectionConfig(),
 		ClickHouseHTTPURL:  envconfig.String("STELLARMESH_LOGGING_CLICKHOUSE_HTTP_URL", "http://clickhouse:8123"),
 		ClickHouseDatabase: envconfig.String("STELLARMESH_LOGGING_CLICKHOUSE_DATABASE", ""),
 		ClickHouseUser:     envconfig.String("STELLARMESH_LOGGING_CLICKHOUSE_USER", ""),
@@ -48,4 +51,18 @@ func Load() (Config, error) {
 		return Config{}, errors.New("STELLARMESH_LOGGING_CLICKHOUSE_USER is required")
 	}
 	return cfg, nil
+}
+
+func kafkaConnectionConfig() sharedkafka.ConnectionConfig {
+	return sharedkafka.ConnectionConfig{
+		ClientID:         "stellarmesh-logging-clickhouse-sink",
+		SecurityProtocol: sharedkafka.SecurityProtocol(strings.ToUpper(envconfig.String("STELLARMESH_LOGGING_KAFKA_SECURITY_PROTOCOL", string(sharedkafka.SecurityProtocolPlaintext)))),
+		SASLMechanism:    sharedkafka.SASLMechanism(strings.ToUpper(envconfig.String("STELLARMESH_LOGGING_KAFKA_SASL_MECHANISM", ""))),
+		Username:         envconfig.String("STELLARMESH_LOGGING_KAFKA_USERNAME", ""),
+		Password:         envconfig.String("STELLARMESH_LOGGING_KAFKA_PASSWORD", ""),
+		TLSCAFile:        envconfig.String("STELLARMESH_LOGGING_KAFKA_TLS_CA_FILE", ""),
+		TLSCertFile:      envconfig.String("STELLARMESH_LOGGING_KAFKA_TLS_CERT_FILE", ""),
+		TLSKeyFile:       envconfig.String("STELLARMESH_LOGGING_KAFKA_TLS_KEY_FILE", ""),
+		TLSServerName:    envconfig.String("STELLARMESH_LOGGING_KAFKA_TLS_SERVER_NAME", ""),
+	}
 }

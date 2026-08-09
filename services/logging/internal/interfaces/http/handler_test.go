@@ -19,6 +19,17 @@ type fakeIngestor struct {
 	events []sharedlogging.Event
 }
 
+type fakeAuthenticator map[string]string
+
+func (authenticator fakeAuthenticator) Authenticate(token string) (string, bool) {
+	service, ok := authenticator[token]
+	return service, ok
+}
+
+func testRouter(ingestor Ingestor) http.Handler {
+	return NewRouter(NewHandler(ingestor, fakeAuthenticator{"token": "test"}))
+}
+
 func (ingestor *fakeIngestor) Ingest(_ context.Context, events []sharedlogging.Event) error {
 	ingestor.events = append(ingestor.events, events...)
 	return ingestor.err
@@ -26,7 +37,7 @@ func (ingestor *fakeIngestor) Ingest(_ context.Context, events []sharedlogging.E
 
 func TestRouterAuthenticatesAndAcceptsBatch(t *testing.T) {
 	ingestor := &fakeIngestor{}
-	router := NewRouter(NewHandler(ingestor, "token"))
+	router := testRouter(ingestor)
 	payload, err := json.Marshal(sharedlogging.BatchIngestRequest{Events: []sharedlogging.Event{validEvent(t)}})
 	if err != nil {
 		t.Fatal(err)
@@ -41,7 +52,7 @@ func TestRouterAuthenticatesAndAcceptsBatch(t *testing.T) {
 }
 
 func TestRouterRejectsMissingToken(t *testing.T) {
-	router := NewRouter(NewHandler(&fakeIngestor{}, "token"))
+	router := testRouter(&fakeIngestor{})
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader("{}")))
 	if recorder.Code != http.StatusUnauthorized {
@@ -50,7 +61,7 @@ func TestRouterRejectsMissingToken(t *testing.T) {
 }
 
 func TestHandlerMapsQueueFullToUnavailable(t *testing.T) {
-	router := NewRouter(NewHandler(&fakeIngestor{err: application.ErrQueueFull}, "token"))
+	router := testRouter(&fakeIngestor{err: application.ErrQueueFull})
 	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: validEvent(t)})
 	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
 	request.Header.Set(serviceTokenHeader, "token")
@@ -62,13 +73,27 @@ func TestHandlerMapsQueueFullToUnavailable(t *testing.T) {
 }
 
 func TestHandlerRejectsUnknownFields(t *testing.T) {
-	router := NewRouter(NewHandler(&fakeIngestor{err: errors.New("unexpected")}, "token"))
+	router := testRouter(&fakeIngestor{err: errors.New("unexpected")})
 	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(`{"unknown":true}`))
 	request.Header.Set(serviceTokenHeader, "token")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+func TestHandlerRejectsServiceIdentityMismatch(t *testing.T) {
+	router := testRouter(&fakeIngestor{})
+	event := validEvent(t)
+	event.Service = "another-service"
+	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: event})
+	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
+	request.Header.Set(serviceTokenHeader, "token")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
 }
 

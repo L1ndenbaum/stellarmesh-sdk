@@ -26,4 +26,7 @@ func TestLoadUsesCanonicalTopic(t *testing.T) {
 	if cfg.KafkaTopic != sharedlogging.TopicV1 {
 		t.Fatalf("topic = %q", cfg.KafkaTopic)
 	}
+	if cfg.KafkaConnection.SecurityProtocol != "PLAINTEXT" {
+		t.Fatalf("Kafka security protocol = %q", cfg.KafkaConnection.SecurityProtocol)
+	}
 }

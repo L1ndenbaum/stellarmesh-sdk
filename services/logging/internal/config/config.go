@@ -9,12 +9,13 @@ import (
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/envconfig"
 	httpserver "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/server"
 	sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
+	sharedkafka "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka"
 )
 
 // Config contains the logging ingester runtime settings.
 type Config struct {
 	Addr              string
-	ServiceToken      string
+	AuthFile          string
 	DataDir           string
 	ConsoleColor      bool
 	ReadHeaderTimeout time.Duration
@@ -29,6 +30,7 @@ type Config struct {
 	MaxRequestEvents  int
 	KafkaBrokers      []string
 	KafkaTopic        string
+	KafkaConnection   sharedkafka.ConnectionConfig
 	SpoolFile         string
 	ErrorAuditFile    string
 }
@@ -38,7 +40,7 @@ func Load() (Config, error) {
 	dataDir := envconfig.String("STELLARMESH_LOGGING_DATA_DIR", "/var/lib/stellarmesh-logging")
 	cfg := Config{
 		Addr:              envconfig.String("STELLARMESH_LOGGING_ADDR", ":8091"),
-		ServiceToken:      envconfig.String("STELLARMESH_LOGGING_TOKEN", ""),
+		AuthFile:          envconfig.String("STELLARMESH_LOGGING_AUTH_FILE", ""),
 		DataDir:           dataDir,
 		ConsoleColor:      envconfig.Bool("STELLARMESH_LOGGING_CONSOLE_COLOR", true),
 		ReadHeaderTimeout: envconfig.Duration("STELLARMESH_LOGGING_READ_HEADER_TIMEOUT", 5*time.Second),
@@ -53,11 +55,12 @@ func Load() (Config, error) {
 		MaxRequestEvents:  envconfig.Int("STELLARMESH_LOGGING_MAX_REQUEST_EVENTS", 512),
 		KafkaBrokers:      envconfig.CSV("STELLARMESH_LOGGING_KAFKA_BROKERS", "kafka:9092"),
 		KafkaTopic:        envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV1),
+		KafkaConnection:   kafkaConnectionConfig("stellarmesh-logging-ingester"),
 		SpoolFile:         envconfig.String("STELLARMESH_LOGGING_SPOOL_FILE", dataDir+"/spool/events.jsonl"),
 		ErrorAuditFile:    envconfig.String("STELLARMESH_LOGGING_ERROR_AUDIT_FILE", dataDir+"/archive/error_audit.jsonl"),
 	}
-	if strings.TrimSpace(cfg.ServiceToken) == "" {
-		return Config{}, errors.New("STELLARMESH_LOGGING_TOKEN is required")
+	if strings.TrimSpace(cfg.AuthFile) == "" {
+		return Config{}, errors.New("STELLARMESH_LOGGING_AUTH_FILE is required")
 	}
 	if len(cfg.KafkaBrokers) == 0 {
 		return Config{}, errors.New("STELLARMESH_LOGGING_KAFKA_BROKERS is required")
@@ -66,6 +69,20 @@ func Load() (Config, error) {
 		return Config{}, errors.New("STELLARMESH_LOGGING_KAFKA_TOPIC is required")
 	}
 	return cfg, nil
+}
+
+func kafkaConnectionConfig(clientID string) sharedkafka.ConnectionConfig {
+	return sharedkafka.ConnectionConfig{
+		ClientID:         clientID,
+		SecurityProtocol: sharedkafka.SecurityProtocol(strings.ToUpper(envconfig.String("STELLARMESH_LOGGING_KAFKA_SECURITY_PROTOCOL", string(sharedkafka.SecurityProtocolPlaintext)))),
+		SASLMechanism:    sharedkafka.SASLMechanism(strings.ToUpper(envconfig.String("STELLARMESH_LOGGING_KAFKA_SASL_MECHANISM", ""))),
+		Username:         envconfig.String("STELLARMESH_LOGGING_KAFKA_USERNAME", ""),
+		Password:         envconfig.String("STELLARMESH_LOGGING_KAFKA_PASSWORD", ""),
+		TLSCAFile:        envconfig.String("STELLARMESH_LOGGING_KAFKA_TLS_CA_FILE", ""),
+		TLSCertFile:      envconfig.String("STELLARMESH_LOGGING_KAFKA_TLS_CERT_FILE", ""),
+		TLSKeyFile:       envconfig.String("STELLARMESH_LOGGING_KAFKA_TLS_KEY_FILE", ""),
+		TLSServerName:    envconfig.String("STELLARMESH_LOGGING_KAFKA_TLS_SERVER_NAME", ""),
+	}
 }
 
 // HTTPServerConfig returns bounded HTTP server settings.

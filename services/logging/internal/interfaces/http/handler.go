@@ -16,15 +16,20 @@ type Ingestor interface {
 	Ingest(context.Context, []sharedlogging.Event) error
 }
 
+// Authenticator resolves one service identity from an opaque token.
+type Authenticator interface {
+	Authenticate(string) (string, bool)
+}
+
 // Handler maps v1 HTTP requests to the ingestion application.
 type Handler struct {
-	ingestor     Ingestor
-	serviceToken string
+	ingestor      Ingestor
+	authenticator Authenticator
 }
 
 // NewHandler creates a logging HTTP handler.
-func NewHandler(ingestor Ingestor, serviceToken string) *Handler {
-	return &Handler{ingestor: ingestor, serviceToken: serviceToken}
+func NewHandler(ingestor Ingestor, authenticator Authenticator) *Handler {
+	return &Handler{ingestor: ingestor, authenticator: authenticator}
 }
 
 // HandleHealth reports process liveness.
@@ -36,6 +41,9 @@ func (handler *Handler) HandleHealth(w http.ResponseWriter, _ *http.Request) {
 func (handler *Handler) HandleLogEvent(w http.ResponseWriter, r *http.Request) {
 	var request ingestRequest
 	if !handler.decode(w, r, &request) {
+		return
+	}
+	if !handler.authorizeEvents(w, r, []sharedlogging.Event{request.Event}) {
 		return
 	}
 	if err := handler.ingestor.Ingest(r.Context(), []sharedlogging.Event{request.Event}); err != nil {
@@ -51,11 +59,29 @@ func (handler *Handler) HandleLogEventBatch(w http.ResponseWriter, r *http.Reque
 	if !handler.decode(w, r, &request) {
 		return
 	}
+	if !handler.authorizeEvents(w, r, request.Events) {
+		return
+	}
 	if err := handler.ingestor.Ingest(r.Context(), request.Events); err != nil {
 		handler.writeIngestError(w, err)
 		return
 	}
 	sharedhttp.WriteJSON(w, http.StatusAccepted, sharedlogging.IngestResult{Accepted: len(request.Events)})
+}
+
+func (handler *Handler) authorizeEvents(w http.ResponseWriter, r *http.Request, events []sharedlogging.Event) bool {
+	service, ok := authenticatedService(r.Context())
+	if !ok {
+		sharedhttp.WriteError(w, http.StatusUnauthorized, "invalid logging service token")
+		return false
+	}
+	for _, event := range events {
+		if event.Service != service {
+			sharedhttp.WriteError(w, http.StatusForbidden, "logging token is not authorized for event service")
+			return false
+		}
+	}
+	return true
 }
 
 func (handler *Handler) decode(w http.ResponseWriter, r *http.Request, target any) bool {

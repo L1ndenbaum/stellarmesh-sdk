@@ -11,6 +11,7 @@ import (
 
 	httpserver "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/server"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/application"
+	serviceauth "github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/auth"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/config"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/infrastructure/filesink"
 	kafkapub "github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/infrastructure/kafka"
@@ -27,8 +28,15 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	authenticator, err := serviceauth.LoadFile(cfg.AuthFile)
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	publisher := kafkapub.NewPublisher(cfg.KafkaBrokers, cfg.KafkaTopic)
+	publisher, err := kafkapub.NewPublisher(cfg.KafkaBrokers, cfg.KafkaTopic, cfg.KafkaConnection)
+	if err != nil {
+		log.Fatal(err)
+	}
 	checkCtx, cancelCheck := context.WithTimeout(ctx, kafkaStartupCheckTimeout)
 	if err := publisher.Check(checkCtx); err != nil {
 		cancelCheck()
@@ -51,7 +59,7 @@ func main() {
 	defer stopService()
 	service.Start(serviceCtx)
 
-	server := httpserver.New(cfg.HTTPServerConfig(), httpapi.NewRouter(httpapi.NewHandler(service, cfg.ServiceToken)))
+	server := httpserver.New(cfg.HTTPServerConfig(), httpapi.NewRouter(httpapi.NewHandler(service, authenticator)))
 	go func() {
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)

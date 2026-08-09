@@ -15,8 +15,12 @@ type Publisher struct {
 }
 
 // NewPublisher creates a logging event publisher.
-func NewPublisher(brokers []string, topic string) *Publisher {
-	return &Publisher{base: sharedkafka.NewPublisher(sharedkafka.Config{Brokers: brokers, Topic: topic})}
+func NewPublisher(brokers []string, topic string, connection sharedkafka.ConnectionConfig) (*Publisher, error) {
+	base, err := sharedkafka.NewPublisher(sharedkafka.Config{Brokers: brokers, Topic: topic, Connection: connection})
+	if err != nil {
+		return nil, err
+	}
+	return &Publisher{base: base}, nil
 }
 
 // Check verifies broker and topic availability.

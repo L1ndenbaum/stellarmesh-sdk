@@ -49,7 +49,7 @@
 
 HTTP 接口为 `/v1/log-events` 和 `/v1/log-events/batch`，鉴权头为 `X-Logging-Service-Token`。Kafka 协议的默认 Topic 是 `stellarmesh.logging.events.v1`。这是规范默认值，不表示运行时可以自动创建 Topic。
 
-HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不表示已写入 Kafka 或 ClickHouse。队列已满返回 `503`，批量事件过多返回 `413`，请求或事件无效返回 `400`，令牌无效返回 `401`。
+HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不表示已写入 Kafka 或 ClickHouse。队列已满返回 `503`，批量事件过多返回 `413`，请求或事件无效返回 `400`，令牌无效返回 `401`，token 与事件 `service` 不匹配返回 `403`。
 
 ## Go SDK
 
@@ -59,7 +59,7 @@ HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不
 - `http/api`：统一响应 envelope、JSON 解码、路由和中间件；
 - `http/headers`：标准请求头读写；
 - `http/server`：带超时的 HTTP server 构造；
-- `mq/kafka`：具有显式 topic 配置和启动检查的 Kafka publisher；
+- `mq/kafka`：具有显式 topic、启动检查、TLS、mTLS、SASL/PLAIN 和 SCRAM 配置的 Kafka publisher；
 - `envconfig`：不依赖业务 settings 的基础环境变量解析。
 
 日志客户端使用有界内存队列，调用 `Emit` 或日志级别方法时不会等待网络。构造函数会立即校验 URL、token、service 和容量限制。队列满、事件无效、客户端关闭、请求失败或响应不符合契约时，客户端返回 `false` 或调用 `OnDrop`；callback 的 panic 会被隔离并限频写到 stderr。客户端不会在业务请求线程中无限重试；进程退出前应调用 `Close` 并给出明确超时。
@@ -88,7 +88,9 @@ Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业�
   -> ClickHouse log_events
 ```
 
-`logging-service` 启动时会检查 Kafka Topic 可访问性。正常批次写到控制台并发布 Kafka；Kafka 发布失败时，批次写入本地 spool 文件，后台定期重放。失败批次中的 `ERROR` 和 `AUDIT` 事件写入独立的本地审计归档文件。数据目录必须由业务部署持久化，但目录挂载方式由业务项目管理。
+`logging-service` 从挂载的受保护 JSON 文件加载 service-token 绑定关系；token 只以 SHA-256 digest 留在进程内，比较使用常量时间操作。同一 service 可以同时配置新旧 token 完成滚动轮换，事件不能伪造其他 service 身份。服务启动时还会使用与运行期相同的 Kafka TLS/SASL transport 检查 Topic 可访问性。
+
+正常批次写到控制台并发布 Kafka；Kafka 发布失败时，批次写入本地 spool 文件，后台定期重放。失败批次中的 `ERROR` 和 `AUDIT` 事件写入独立的本地审计归档文件。数据目录必须由业务部署持久化，但目录挂载方式由业务项目管理。
 
 ClickHouse sink 使用显式 consumer group，只有在整批事件成功写入 `log_events` 后才提交 Kafka offset。当前版本遇到无效 Kafka 消息时会保留 offset 并重试，从而阻止同一批次继续前进；死信队列不属于 v1 范围，生产告警应覆盖持续消费失败。
 

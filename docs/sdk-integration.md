@@ -142,7 +142,7 @@ async def application_shutdown() -> None:
 | 配置键 | 默认值 | 说明 |
 | --- | --- | --- |
 | `STELLARMESH_LOGGING_ADDR` | `:8091` | HTTP 监听地址 |
-| `STELLARMESH_LOGGING_TOKEN` | 无 | 必填；SDK 请求鉴权令牌 |
+| `STELLARMESH_LOGGING_AUTH_FILE` | 无 | 必填；挂载的 service-token 绑定配置 |
 | `STELLARMESH_LOGGING_DATA_DIR` | `/var/lib/stellarmesh-logging` | 本地持久化根目录 |
 | `STELLARMESH_LOGGING_CONSOLE_COLOR` | `true` | 控制台颜色 |
 | `STELLARMESH_LOGGING_READ_HEADER_TIMEOUT` | `5s` | HTTP header 读取超时 |
@@ -159,6 +159,21 @@ async def application_shutdown() -> None:
 | `STELLARMESH_LOGGING_KAFKA_TOPIC` | `stellarmesh.logging.events.v1` | 已由基础设施创建的 Topic |
 | `STELLARMESH_LOGGING_SPOOL_FILE` | `<data-dir>/spool/events.jsonl` | Kafka 失败暂存文件 |
 | `STELLARMESH_LOGGING_ERROR_AUDIT_FILE` | `<data-dir>/archive/error_audit.jsonl` | 错误和审计归档文件 |
+
+认证文件由业务部署以只读 Secret 挂载，不提交到本仓库。格式如下：
+
+```json
+{
+  "services": {
+    "example-api": [
+      "current-token-at-least-32-characters",
+      "next-token-at-least-32-characters"
+    ]
+  }
+}
+```
+
+同一个 service 可以同时配置两个 token，用于滚动轮换；同一 token 不得绑定到不同 service。请求中的每个事件都必须使用与 token 绑定一致的 `service`，否则返回 `403`。轮换顺序是先同时配置新旧 token 并滚动重启 ingester，再切换客户端，最后移除旧 token 并再次滚动重启。
 
 容器必须能写入 `STELLARMESH_LOGGING_DATA_DIR`，且该目录应使用业务项目管理的持久卷。服务启动时会检查 Topic；Topic 不存在或 ACL 不允许访问时启动失败，不会自行创建资源。
 
@@ -180,6 +195,21 @@ async def application_shutdown() -> None:
 | `STELLARMESH_LOGGING_WRITER_BATCH_SIZE` | `500` | ClickHouse 写入批量大小 |
 | `STELLARMESH_LOGGING_WRITER_FLUSH_INTERVAL` | `1s` | 不满一批时的刷新间隔 |
 | `STELLARMESH_LOGGING_WRITER_HTTP_TIMEOUT` | `5s` | ClickHouse 请求超时 |
+
+ingester、ClickHouse sink 和后续 DLQ producer 共用以下 Kafka 安全配置：
+
+| 配置键 | 默认值 | 说明 |
+| --- | --- | --- |
+| `STELLARMESH_LOGGING_KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` | `PLAINTEXT`、`TLS`、`SASL_PLAINTEXT` 或 `SASL_TLS` |
+| `STELLARMESH_LOGGING_KAFKA_SASL_MECHANISM` | 空 | `PLAIN`、`SCRAM-SHA-256` 或 `SCRAM-SHA-512` |
+| `STELLARMESH_LOGGING_KAFKA_USERNAME` | 空 | SASL 用户名 |
+| `STELLARMESH_LOGGING_KAFKA_PASSWORD` | 空 | SASL 密码，由 Secret 注入 |
+| `STELLARMESH_LOGGING_KAFKA_TLS_CA_FILE` | 空 | 自定义 CA 文件路径；为空时使用系统 CA |
+| `STELLARMESH_LOGGING_KAFKA_TLS_CERT_FILE` | 空 | mTLS 客户端证书路径 |
+| `STELLARMESH_LOGGING_KAFKA_TLS_KEY_FILE` | 空 | mTLS 客户端私钥路径，必须与证书同时配置 |
+| `STELLARMESH_LOGGING_KAFKA_TLS_SERVER_NAME` | 空 | TLS server name 覆盖值 |
+
+TLS 最低版本为 1.2，服务不提供跳过证书校验的配置。使用 `SASL_PLAINTEXT` 时凭据不受 TLS 保护，只应在已有可信网络加密层的环境使用。
 
 运行时用户需要对既有 `log_events` 表执行插入，并能完成必要的连通性检查，但不应具备创建 database、用户或表的权限。Kafka offset 只在 ClickHouse 插入成功后提交。
 

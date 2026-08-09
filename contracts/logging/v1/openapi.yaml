@@ -35,6 +35,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "503":
@@ -61,6 +63,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "413":
           $ref: "#/components/responses/PayloadTooLarge"
         "503":
@@ -129,6 +133,12 @@ components:
             $ref: "#/components/schemas/ApiEnvelope"
     Unauthorized:
       description: 服务令牌无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiEnvelope"
+    Forbidden:
+      description: 令牌无权为事件中的服务标识写入日志
       content:
         application/json:
           schema:

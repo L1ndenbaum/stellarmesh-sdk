@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"time"
 
+	sharedkafka "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/application"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/config"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/infrastructure"
@@ -21,9 +22,13 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	connection, err := sharedkafka.NewConnection(cfg.KafkaConnection)
+	if err != nil {
+		log.Fatal(err)
+	}
 	reader := segmentio.NewReader(segmentio.ReaderConfig{
 		Brokers: cfg.KafkaBrokers, Topic: cfg.KafkaTopic, GroupID: cfg.KafkaGroupID,
-		MinBytes: 1, MaxBytes: 10e6, CommitInterval: 0,
+		Dialer: connection.Dialer(), MinBytes: 1, MaxBytes: 10e6, CommitInterval: 0,
 	})
 	defer reader.Close()
 	writer := infrastructure.NewWriter(infrastructure.WriterConfig{

@@ -16,6 +16,7 @@ type Config struct {
 	Brokers      []string
 	Topic        string
 	BatchTimeout time.Duration
+	Connection   ConnectionConfig
 }
 
 // Message is the serialized message accepted by Publisher.
@@ -27,28 +28,38 @@ type Message struct {
 
 // Publisher owns a kafka-go writer.
 type Publisher struct {
-	brokers []string
-	topic   string
-	writer  *segmentio.Writer
+	brokers   []string
+	topic     string
+	writer    *segmentio.Writer
+	dialer    *segmentio.Dialer
+	transport *segmentio.Transport
 }
 
 // NewPublisher creates a publisher using hash partitioning and leader acknowledgement.
-func NewPublisher(cfg Config) *Publisher {
+func NewPublisher(cfg Config) (*Publisher, error) {
+	connection, err := NewConnection(cfg.Connection)
+	if err != nil {
+		return nil, err
+	}
 	batchTimeout := cfg.BatchTimeout
 	if batchTimeout <= 0 {
 		batchTimeout = 100 * time.Millisecond
 	}
+	transport := connection.Transport()
 	return &Publisher{
-		brokers: cfg.Brokers,
-		topic:   cfg.Topic,
+		brokers:   cfg.Brokers,
+		topic:     cfg.Topic,
+		dialer:    connection.Dialer(),
+		transport: transport,
 		writer: &segmentio.Writer{
 			Addr:         segmentio.TCP(cfg.Brokers...),
 			Topic:        cfg.Topic,
 			RequiredAcks: segmentio.RequireOne,
 			Balancer:     &segmentio.Hash{},
 			BatchTimeout: batchTimeout,
+			Transport:    transport,
 		},
-	}
+	}, nil
 }
 
 // Check verifies that a configured broker exposes the configured topic.
@@ -65,7 +76,7 @@ func (publisher *Publisher) Check(ctx context.Context) error {
 		if broker == "" {
 			continue
 		}
-		conn, err := segmentio.DialContext(ctx, "tcp", broker)
+		conn, err := publisher.dialer.DialContext(ctx, "tcp", broker)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", broker, err))
 			continue
@@ -105,5 +116,7 @@ func (publisher *Publisher) Publish(ctx context.Context, messages []Message) err
 
 // Close releases the Kafka writer.
 func (publisher *Publisher) Close() error {
-	return publisher.writer.Close()
+	err := publisher.writer.Close()
+	publisher.transport.CloseIdleConnections()
+	return err
 }

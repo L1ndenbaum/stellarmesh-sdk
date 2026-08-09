@@ -83,6 +83,18 @@ def test_json_schema_accepts_shared_fixture() -> None:
     validator.validate(fixture)
 
 
+def test_service_auth_schema_accepts_rotating_tokens() -> None:
+    contract_dir = _REPOSITORY_ROOT / "contracts" / "logging" / "v1"
+    schema = json.loads((contract_dir / "service-auth.schema.json").read_text())
+    jsonschema.Draft202012Validator(schema).validate(
+        {
+            "services": {
+                "orders": ["a" * 32, "b" * 32],
+            }
+        }
+    )
+
+
 def test_openapi_document_is_valid_yaml() -> None:
     openapi_path = _REPOSITORY_ROOT / "contracts" / "logging" / "v1" / "openapi.yaml"
     document = yaml.safe_load(openapi_path.read_text())
