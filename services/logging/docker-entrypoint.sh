@@ -2,10 +2,10 @@
 set -eu
 
 data_dir="${STELLARMESH_LOGGING_DATA_DIR:-/var/lib/stellarmesh-logging}"
-spool_file="${STELLARMESH_LOGGING_SPOOL_FILE:-$data_dir/spool/events.jsonl}"
-error_audit_file="${STELLARMESH_LOGGING_ERROR_AUDIT_FILE:-$data_dir/archive/error_audit.jsonl}"
+spool_dir="${STELLARMESH_LOGGING_SPOOL_DIR:-$data_dir/spool}"
 
-mkdir -p "$data_dir" "$(dirname "$spool_file")" "$(dirname "$error_audit_file")"
+mkdir -p "$data_dir" "$spool_dir/regular" "$spool_dir/priority"
+chmod 700 "$data_dir" "$spool_dir" "$spool_dir/regular" "$spool_dir/priority"
 chown -R appuser:appuser "$data_dir"
 
 exec su-exec appuser "$@"

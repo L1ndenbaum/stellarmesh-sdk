@@ -17,6 +17,7 @@ import (
 	kafkapub "github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/infrastructure/kafka"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/interfaces/console"
 	httpapi "github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/interfaces/http"
+	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/observability"
 )
 
 const kafkaStartupCheckTimeout = 10 * time.Second
@@ -26,6 +27,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	metrics := observability.NewMetrics()
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	authenticator, err := serviceauth.LoadFile(cfg.AuthFile)
@@ -49,19 +51,34 @@ func main() {
 		}
 	}()
 
-	fallback := filesink.NewKafkaFallbackStore(cfg.SpoolFile, cfg.ErrorAuditFile)
-	fallback.StartReplay(ctx, publisher, cfg.ReplayInterval)
+	fallback, err := filesink.NewKafkaFallbackStore(filesink.Config{
+		RootDir: cfg.SpoolDir, MaxBytes: cfg.SpoolMaxBytes, SegmentBytes: cfg.SpoolSegmentBytes,
+		ReplayBatchSize: cfg.SpoolReplayBatchSize, Observer: metrics,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fallback.StartReplay(ctx, publisher, cfg.ReplayInterval, func(err error) {
+		if err != nil {
+			log.Printf("logging fallback replay failed: %v", err)
+			return
+		}
+		metrics.SetReady(true)
+	})
 	service := application.New(application.Config{
-		FlushInterval: cfg.FlushInterval, QueueSize: cfg.QueueSize,
-		MaxBatchSize: cfg.MaxBatchSize, MaxRequestEvents: cfg.MaxRequestEvents,
+		FlushInterval: cfg.FlushInterval, QueueCapacityEvents: cfg.QueueCapacityEvents,
+		MaxBatchSize: cfg.MaxBatchSize, MaxRequestEvents: cfg.MaxRequestEvents, Observer: metrics,
 	}, []application.BatchSink{&console.Sink{Writer: os.Stdout, Color: cfg.ConsoleColor}}, fallback, publisher)
 	serviceCtx, stopService := context.WithCancel(context.Background())
 	defer stopService()
 	service.Start(serviceCtx)
+	metrics.SetReady(true)
 
-	server := httpserver.New(cfg.HTTPServerConfig(), httpapi.NewRouter(httpapi.NewHandler(service, authenticator)))
+	handler := httpapi.NewHandler(service, authenticator, metrics)
+	server := httpserver.New(cfg.HTTPServerConfig(), httpapi.NewRouter(handler, metrics))
 	go func() {
 		<-ctx.Done()
+		metrics.SetReady(false)
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {

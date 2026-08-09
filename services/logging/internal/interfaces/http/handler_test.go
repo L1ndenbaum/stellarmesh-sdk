@@ -21,13 +21,34 @@ type fakeIngestor struct {
 
 type fakeAuthenticator map[string]string
 
+type fakeMonitoring struct {
+	ready    bool
+	requests map[string]int
+}
+
+func (monitoring *fakeMonitoring) Ready() bool { return monitoring.ready }
+
+func (monitoring *fakeMonitoring) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("test_metric 1\n"))
+	})
+}
+
+func (monitoring *fakeMonitoring) ObserveHTTPRequest(route string, status int) {
+	if monitoring.requests == nil {
+		monitoring.requests = map[string]int{}
+	}
+	monitoring.requests[route+":"+http.StatusText(status)]++
+}
+
 func (authenticator fakeAuthenticator) Authenticate(token string) (string, bool) {
 	service, ok := authenticator[token]
 	return service, ok
 }
 
 func testRouter(ingestor Ingestor) http.Handler {
-	return NewRouter(NewHandler(ingestor, fakeAuthenticator{"token": "test"}))
+	monitoring := &fakeMonitoring{ready: true}
+	return NewRouter(NewHandler(ingestor, fakeAuthenticator{"token": "test"}, monitoring), monitoring)
 }
 
 func (ingestor *fakeIngestor) Ingest(_ context.Context, events []sharedlogging.Event) error {
@@ -69,6 +90,36 @@ func TestHandlerMapsQueueFullToUnavailable(t *testing.T) {
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+func TestHandlerMapsTooManyEventsToPayloadTooLarge(t *testing.T) {
+	router := testRouter(&fakeIngestor{err: application.ErrTooManyEvents})
+	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: validEvent(t)})
+	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
+	request.Header.Set(serviceTokenHeader, "token")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+func TestRouterExposesLivenessReadinessAndMetrics(t *testing.T) {
+	monitoring := &fakeMonitoring{ready: false}
+	router := NewRouter(NewHandler(&fakeIngestor{}, fakeAuthenticator{}, monitoring), monitoring)
+	for path, wantStatus := range map[string]int{
+		"/health": http.StatusOK, "/health/live": http.StatusOK,
+		"/health/ready": http.StatusServiceUnavailable, "/metrics": http.StatusOK,
+	} {
+		recorder := httptest.NewRecorder()
+		router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, path, nil))
+		if recorder.Code != wantStatus {
+			t.Fatalf("path=%s status=%d", path, recorder.Code)
+		}
+	}
+	if monitoring.requests["/health/ready:Service Unavailable"] != 1 {
+		t.Fatalf("requests = %v", monitoring.requests)
 	}
 }
 

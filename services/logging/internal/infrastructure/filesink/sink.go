@@ -1,17 +1,39 @@
-// Package filesink provides local JSONL archives and Kafka fallback replay.
+// Package filesink provides bounded segmented Kafka fallback replay.
 package filesink
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
+)
+
+const (
+	regularPriority       = "regular"
+	highPriority          = "priority"
+	defaultMaxBytes       = int64(1 << 30)
+	defaultSegmentBytes   = int64(16 << 20)
+	defaultReplayBatch    = 128
+	defaultMaxRecordBytes = 1 << 20
+	segmentSuffix         = ".ready.jsonl"
+)
+
+var (
+	// ErrSpoolFull indicates that accepting another batch would exceed the disk budget.
+	ErrSpoolFull = errors.New("logging fallback spool is full")
+	// ErrRecordTooLarge indicates a corrupt or unsupported spool record.
+	ErrRecordTooLarge = errors.New("logging fallback spool record is too large")
 )
 
 // Publisher replays recovered events to the event bus.
@@ -19,52 +41,136 @@ type Publisher interface {
 	Publish(context.Context, []sharedlogging.Event) error
 }
 
-// KafkaFallbackStore separates regular and error/audit events while Kafka is down.
+// Observer receives bounded spool metrics.
+type Observer interface {
+	SetSpoolBytes(priority string, size int64)
+	ObserveSpoolWrite(priority, result string, count int)
+	ObserveSpoolReplay(priority, result string, count int)
+}
+
+// Config controls segmented fallback storage.
+type Config struct {
+	RootDir         string
+	MaxBytes        int64
+	SegmentBytes    int64
+	ReplayBatchSize int
+	Observer        Observer
+}
+
+type segment struct {
+	payload []byte
+	events  int
+}
+
+// KafkaFallbackStore separates regular and error/audit events into atomic segments.
 type KafkaFallbackStore struct {
-	regularPath    string
-	errorAuditPath string
-	mu             sync.Mutex
+	rootDir         string
+	maxBytes        int64
+	segmentBytes    int64
+	replayBatchSize int
+	observer        Observer
+	mu              sync.Mutex
+	replayMu        sync.Mutex
+	sequence        uint64
+	regularBytes    int64
+	priorityBytes   int64
 }
 
-// NewKafkaFallbackStore creates a two-file fallback store.
-func NewKafkaFallbackStore(regularPath, errorAuditPath string) *KafkaFallbackStore {
-	return &KafkaFallbackStore{regularPath: regularPath, errorAuditPath: errorAuditPath}
-}
-
-// WriteBatch partitions and appends failed Kafka events.
-func (store *KafkaFallbackStore) WriteBatch(ctx context.Context, events []sharedlogging.Event) error {
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	var regular []sharedlogging.Event
-	var errorAudit []sharedlogging.Event
-	for _, event := range events {
-		if event.Level == sharedlogging.LevelError || event.Level == sharedlogging.LevelAudit {
-			errorAudit = append(errorAudit, event)
-		} else {
-			regular = append(regular, event)
-		}
+// NewKafkaFallbackStore validates directories and recovers existing segment sizes.
+func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
+	if strings.TrimSpace(config.RootDir) == "" {
+		return nil, errors.New("logging fallback spool directory is required")
 	}
-	if err := appendEvents(ctx, store.regularPath, regular); err != nil {
+	if config.MaxBytes <= 0 {
+		config.MaxBytes = defaultMaxBytes
+	}
+	if config.SegmentBytes <= 0 {
+		config.SegmentBytes = defaultSegmentBytes
+	}
+	if config.ReplayBatchSize <= 0 {
+		config.ReplayBatchSize = defaultReplayBatch
+	}
+	store := &KafkaFallbackStore{
+		rootDir: config.RootDir, maxBytes: config.MaxBytes, segmentBytes: config.SegmentBytes,
+		replayBatchSize: config.ReplayBatchSize, observer: config.Observer,
+	}
+	regularBytes, err := prepareDirectory(store.directory(regularPriority))
+	if err != nil {
+		return nil, err
+	}
+	priorityBytes, err := prepareDirectory(store.directory(highPriority))
+	if err != nil {
+		return nil, err
+	}
+	store.regularBytes = regularBytes
+	store.priorityBytes = priorityBytes
+	store.observeBytes()
+	return store, nil
+}
+
+// WriteBatch atomically segments events that failed Kafka publication.
+func (store *KafkaFallbackStore) WriteBatch(ctx context.Context, events []sharedlogging.Event) error {
+	if len(events) == 0 {
+		return nil
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return appendEvents(ctx, store.errorAuditPath, errorAudit)
+	regular, priority := partitionEvents(events)
+	regularSegments, regularSize, err := store.encodeSegments(regular)
+	if err != nil {
+		return err
+	}
+	prioritySegments, prioritySize, err := store.encodeSegments(priority)
+	if err != nil {
+		return err
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.regularBytes+store.priorityBytes+regularSize+prioritySize > store.maxBytes {
+		store.observeWrite(regularPriority, "rejected", len(regular))
+		store.observeWrite(highPriority, "rejected", len(priority))
+		return ErrSpoolFull
+	}
+	regularWritten, err := store.writeSegmentsLocked(regularPriority, regularSegments)
+	store.regularBytes += regularWritten
+	if err != nil {
+		store.observeBytes()
+		return err
+	}
+	priorityWritten, err := store.writeSegmentsLocked(highPriority, prioritySegments)
+	store.priorityBytes += priorityWritten
+	if err != nil {
+		store.observeBytes()
+		return err
+	}
+	store.observeWrite(regularPriority, "stored", len(regular))
+	store.observeWrite(highPriority, "stored", len(priority))
+	store.observeBytes()
+	return nil
 }
 
-// ReplayOnce publishes fallback files and truncates each successful file.
+// ReplayOnce replays priority segments first and removes only fully published segments.
 func (store *KafkaFallbackStore) ReplayOnce(ctx context.Context, publisher Publisher) error {
 	if publisher == nil {
 		return nil
 	}
-	store.mu.Lock()
-	defer store.mu.Unlock()
-	if err := store.replayFile(ctx, store.regularPath, publisher); err != nil {
+	store.replayMu.Lock()
+	defer store.replayMu.Unlock()
+	if err := store.replayPriority(ctx, highPriority, publisher); err != nil {
 		return err
 	}
-	return store.replayFile(ctx, store.errorAuditPath, publisher)
+	return store.replayPriority(ctx, regularPriority, publisher)
 }
 
-// StartReplay periodically retries fallback delivery.
-func (store *KafkaFallbackStore) StartReplay(ctx context.Context, publisher Publisher, interval time.Duration) {
+// StartReplay periodically retries fallback delivery and reports failures or released space.
+func (store *KafkaFallbackStore) StartReplay(
+	ctx context.Context,
+	publisher Publisher,
+	interval time.Duration,
+	onResult func(error),
+) {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
@@ -74,7 +180,14 @@ func (store *KafkaFallbackStore) StartReplay(ctx context.Context, publisher Publ
 		for {
 			select {
 			case <-ticker.C:
-				_ = store.ReplayOnce(ctx, publisher)
+				beforeRegular, beforePriority := store.Bytes()
+				err := store.ReplayOnce(ctx, publisher)
+				if onResult != nil {
+					afterRegular, afterPriority := store.Bytes()
+					if err != nil || afterRegular+afterPriority < beforeRegular+beforePriority {
+						onResult(err)
+					}
+				}
 			case <-ctx.Done():
 				return
 			}
@@ -82,65 +195,280 @@ func (store *KafkaFallbackStore) StartReplay(ctx context.Context, publisher Publ
 	}()
 }
 
-func (store *KafkaFallbackStore) replayFile(ctx context.Context, path string, publisher Publisher) error {
-	events, err := readEvents(path)
-	if err != nil || len(events) == 0 {
-		return err
-	}
-	if err := publisher.Publish(ctx, events); err != nil {
-		return err
-	}
-	return truncateFile(path)
+// Saturated reports whether retained segments have exhausted the configured budget.
+func (store *KafkaFallbackStore) Saturated() bool {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.regularBytes+store.priorityBytes >= store.maxBytes
 }
 
-func appendEvents(ctx context.Context, path string, events []sharedlogging.Event) error {
+// Bytes reports retained regular and priority bytes.
+func (store *KafkaFallbackStore) Bytes() (int64, int64) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.regularBytes, store.priorityBytes
+}
+
+func (store *KafkaFallbackStore) encodeSegments(events []sharedlogging.Event) ([]segment, int64, error) {
 	if len(events) == 0 {
-		return nil
+		return nil, 0, nil
 	}
-	if err := ctx.Err(); err != nil {
-		return err
+	segments := make([]segment, 0, 1)
+	current := segment{payload: make([]byte, 0, int(min(store.segmentBytes, 1<<20)))}
+	var total int64
+	for _, event := range events {
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return nil, 0, err
+		}
+		payload = append(payload, '\n')
+		if len(payload) > defaultMaxRecordBytes {
+			return nil, 0, ErrRecordTooLarge
+		}
+		if current.events > 0 && int64(len(current.payload)+len(payload)) > store.segmentBytes {
+			segments = append(segments, current)
+			current = segment{payload: make([]byte, 0, int(min(store.segmentBytes, 1<<20)))}
+		}
+		current.payload = append(current.payload, payload...)
+		current.events++
+		total += int64(len(payload))
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+	if current.events > 0 {
+		segments = append(segments, current)
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	return segments, total, nil
+}
+
+func (store *KafkaFallbackStore) writeSegmentsLocked(priority string, segments []segment) (int64, error) {
+	var written int64
+	for _, item := range segments {
+		store.sequence++
+		name := fmt.Sprintf("%020d-%06d%s", time.Now().UTC().UnixNano(), store.sequence, segmentSuffix)
+		path := filepath.Join(store.directory(priority), name)
+		temporary := path + ".tmp"
+		file, err := os.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err != nil {
+			return written, err
+		}
+		writeErr := writeAndSync(file, item.payload)
+		closeErr := file.Close()
+		if writeErr != nil || closeErr != nil {
+			_ = os.Remove(temporary)
+			return written, errors.Join(writeErr, closeErr)
+		}
+		if err := os.Rename(temporary, path); err != nil {
+			_ = os.Remove(temporary)
+			return written, err
+		}
+		written += int64(len(item.payload))
+		if err := syncDirectory(store.directory(priority)); err != nil {
+			return written, err
+		}
+	}
+	return written, nil
+}
+
+func (store *KafkaFallbackStore) replayPriority(ctx context.Context, priority string, publisher Publisher) error {
+	paths, err := segmentPaths(store.directory(priority))
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	encoder := json.NewEncoder(file)
-	for _, event := range events {
-		if err := encoder.Encode(event); err != nil {
+	for _, path := range paths {
+		published, failed, err := store.replaySegment(ctx, path, publisher)
+		if err != nil {
+			store.observeReplay(priority, "failed", max(failed, 1))
+			return fmt.Errorf("replay logging spool segment %s: %w", filepath.Base(path), err)
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		if err := os.Remove(path); err != nil {
+			return err
+		}
+		store.mu.Lock()
+		if priority == highPriority {
+			store.priorityBytes -= info.Size()
+		} else {
+			store.regularBytes -= info.Size()
+		}
+		store.observeBytes()
+		store.mu.Unlock()
+		store.observeReplay(priority, "published", published)
+		if err := syncDirectory(store.directory(priority)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func readEvents(path string) ([]sharedlogging.Event, error) {
+func (store *KafkaFallbackStore) replaySegment(ctx context.Context, path string, publisher Publisher) (int, int, error) {
 	file, err := os.Open(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+	if err != nil {
+		return 0, 0, err
 	}
+	defer file.Close()
+	reader := bufio.NewReader(file)
+	batch := make([]sharedlogging.Event, 0, store.replayBatchSize)
+	published := 0
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		if err := publisher.Publish(ctx, batch); err != nil {
+			return err
+		}
+		published += len(batch)
+		batch = batch[:0]
+		return nil
+	}
+	for {
+		record, err := readRecord(reader, defaultMaxRecordBytes)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return published, len(batch), err
+		}
+		if len(bytes.TrimSpace(record)) == 0 {
+			continue
+		}
+		event, err := sharedlogging.DecodeEvent(record)
+		if err != nil {
+			return published, len(batch), err
+		}
+		batch = append(batch, event)
+		if len(batch) >= store.replayBatchSize {
+			if err := flush(); err != nil {
+				return published, len(batch), err
+			}
+		}
+	}
+	if err := flush(); err != nil {
+		return published, len(batch), err
+	}
+	return published, 0, nil
+}
+
+func readRecord(reader *bufio.Reader, limit int) ([]byte, error) {
+	var record []byte
+	for {
+		part, prefix, err := reader.ReadLine()
+		if err != nil {
+			if errors.Is(err, io.EOF) && len(record) > 0 {
+				return record, nil
+			}
+			return nil, err
+		}
+		if len(record)+len(part) > limit {
+			return nil, ErrRecordTooLarge
+		}
+		record = append(record, part...)
+		if !prefix {
+			return record, nil
+		}
+	}
+}
+
+func partitionEvents(events []sharedlogging.Event) ([]sharedlogging.Event, []sharedlogging.Event) {
+	regular := make([]sharedlogging.Event, 0, len(events))
+	priority := make([]sharedlogging.Event, 0, len(events))
+	for _, event := range events {
+		if event.Level == sharedlogging.LevelError || event.Level == sharedlogging.LevelAudit {
+			priority = append(priority, event)
+		} else {
+			regular = append(regular, event)
+		}
+	}
+	return regular, priority
+}
+
+func prepareDirectory(path string) (int64, error) {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return 0, err
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		return 0, err
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return 0, err
+	}
+	var size int64
+	for _, entry := range entries {
+		fullPath := filepath.Join(path, entry.Name())
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			if err := os.Remove(fullPath); err != nil {
+				return 0, err
+			}
+			continue
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), segmentSuffix) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return 0, err
+		}
+		size += info.Size()
+	}
+	return size, nil
+}
+
+func segmentPaths(directory string) ([]string, error) {
+	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	var events []sharedlogging.Event
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		if len(scanner.Bytes()) == 0 {
-			continue
+	paths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), segmentSuffix) {
+			paths = append(paths, filepath.Join(directory, entry.Name()))
 		}
-		var event sharedlogging.Event
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-			return nil, err
-		}
-		events = append(events, event)
 	}
-	return events, scanner.Err()
+	sort.Strings(paths)
+	return paths, nil
 }
 
-func truncateFile(path string) error {
-	return os.WriteFile(path, nil, 0o600)
+func writeAndSync(file *os.File, payload []byte) error {
+	written, err := file.Write(payload)
+	if err != nil {
+		return err
+	}
+	if written != len(payload) {
+		return io.ErrShortWrite
+	}
+	return file.Sync()
+}
+
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
+}
+
+func (store *KafkaFallbackStore) directory(priority string) string {
+	return filepath.Join(store.rootDir, priority)
+}
+
+func (store *KafkaFallbackStore) observeBytes() {
+	if store.observer != nil {
+		store.observer.SetSpoolBytes(regularPriority, store.regularBytes)
+		store.observer.SetSpoolBytes(highPriority, store.priorityBytes)
+	}
+}
+
+func (store *KafkaFallbackStore) observeWrite(priority, result string, count int) {
+	if store.observer != nil && count > 0 {
+		store.observer.ObserveSpoolWrite(priority, result, count)
+	}
+}
+
+func (store *KafkaFallbackStore) observeReplay(priority, result string, count int) {
+	if store.observer != nil && count > 0 {
+		store.observer.ObserveSpoolReplay(priority, result, count)
+	}
 }

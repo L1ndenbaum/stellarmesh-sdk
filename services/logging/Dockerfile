@@ -23,7 +23,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates su-exec \
     && adduser -D -H -u 10001 appuser \
-    && mkdir -p /var/lib/stellarmesh-logging/spool /var/lib/stellarmesh-logging/archive \
+    && mkdir -p /var/lib/stellarmesh-logging/spool/regular /var/lib/stellarmesh-logging/spool/priority \
+    && chmod 700 /var/lib/stellarmesh-logging /var/lib/stellarmesh-logging/spool \
+        /var/lib/stellarmesh-logging/spool/regular /var/lib/stellarmesh-logging/spool/priority \
     && chown -R appuser:appuser /var/lib/stellarmesh-logging
 COPY services/logging/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY --from=builder /out/stellarmesh-logging-service /usr/local/bin/stellarmesh-logging-service

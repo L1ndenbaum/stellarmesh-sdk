@@ -14,50 +14,54 @@ import (
 
 // Config contains the logging ingester runtime settings.
 type Config struct {
-	Addr              string
-	AuthFile          string
-	DataDir           string
-	ConsoleColor      bool
-	ReadHeaderTimeout time.Duration
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
-	IdleTimeout       time.Duration
-	ShutdownTimeout   time.Duration
-	FlushInterval     time.Duration
-	ReplayInterval    time.Duration
-	QueueSize         int
-	MaxBatchSize      int
-	MaxRequestEvents  int
-	KafkaBrokers      []string
-	KafkaTopic        string
-	KafkaConnection   sharedkafka.ConnectionConfig
-	SpoolFile         string
-	ErrorAuditFile    string
+	Addr                 string
+	AuthFile             string
+	DataDir              string
+	ConsoleColor         bool
+	ReadHeaderTimeout    time.Duration
+	ReadTimeout          time.Duration
+	WriteTimeout         time.Duration
+	IdleTimeout          time.Duration
+	ShutdownTimeout      time.Duration
+	FlushInterval        time.Duration
+	ReplayInterval       time.Duration
+	QueueCapacityEvents  int
+	MaxBatchSize         int
+	MaxRequestEvents     int
+	KafkaBrokers         []string
+	KafkaTopic           string
+	KafkaConnection      sharedkafka.ConnectionConfig
+	SpoolDir             string
+	SpoolMaxBytes        int64
+	SpoolSegmentBytes    int64
+	SpoolReplayBatchSize int
 }
 
 // Load reads canonical STELLARMESH_LOGGING_* environment variables.
 func Load() (Config, error) {
 	dataDir := envconfig.String("STELLARMESH_LOGGING_DATA_DIR", "/var/lib/stellarmesh-logging")
 	cfg := Config{
-		Addr:              envconfig.String("STELLARMESH_LOGGING_ADDR", ":8091"),
-		AuthFile:          envconfig.String("STELLARMESH_LOGGING_AUTH_FILE", ""),
-		DataDir:           dataDir,
-		ConsoleColor:      envconfig.Bool("STELLARMESH_LOGGING_CONSOLE_COLOR", true),
-		ReadHeaderTimeout: envconfig.Duration("STELLARMESH_LOGGING_READ_HEADER_TIMEOUT", 5*time.Second),
-		ReadTimeout:       envconfig.Duration("STELLARMESH_LOGGING_READ_TIMEOUT", 10*time.Second),
-		WriteTimeout:      envconfig.Duration("STELLARMESH_LOGGING_WRITE_TIMEOUT", 10*time.Second),
-		IdleTimeout:       envconfig.Duration("STELLARMESH_LOGGING_IDLE_TIMEOUT", 60*time.Second),
-		ShutdownTimeout:   envconfig.Duration("STELLARMESH_LOGGING_SHUTDOWN_TIMEOUT", 10*time.Second),
-		FlushInterval:     envconfig.Duration("STELLARMESH_LOGGING_BATCH_FLUSH_INTERVAL", 500*time.Millisecond),
-		ReplayInterval:    envconfig.Duration("STELLARMESH_LOGGING_KAFKA_REPLAY_INTERVAL", 5*time.Second),
-		QueueSize:         envconfig.Int("STELLARMESH_LOGGING_QUEUE_SIZE", 4096),
-		MaxBatchSize:      envconfig.Int("STELLARMESH_LOGGING_MAX_BATCH_SIZE", 512),
-		MaxRequestEvents:  envconfig.Int("STELLARMESH_LOGGING_MAX_REQUEST_EVENTS", 512),
-		KafkaBrokers:      envconfig.CSV("STELLARMESH_LOGGING_KAFKA_BROKERS", "kafka:9092"),
-		KafkaTopic:        envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV1),
-		KafkaConnection:   kafkaConnectionConfig("stellarmesh-logging-ingester"),
-		SpoolFile:         envconfig.String("STELLARMESH_LOGGING_SPOOL_FILE", dataDir+"/spool/events.jsonl"),
-		ErrorAuditFile:    envconfig.String("STELLARMESH_LOGGING_ERROR_AUDIT_FILE", dataDir+"/archive/error_audit.jsonl"),
+		Addr:                 envconfig.String("STELLARMESH_LOGGING_ADDR", ":8091"),
+		AuthFile:             envconfig.String("STELLARMESH_LOGGING_AUTH_FILE", ""),
+		DataDir:              dataDir,
+		ConsoleColor:         envconfig.Bool("STELLARMESH_LOGGING_CONSOLE_COLOR", true),
+		ReadHeaderTimeout:    envconfig.Duration("STELLARMESH_LOGGING_READ_HEADER_TIMEOUT", 5*time.Second),
+		ReadTimeout:          envconfig.Duration("STELLARMESH_LOGGING_READ_TIMEOUT", 10*time.Second),
+		WriteTimeout:         envconfig.Duration("STELLARMESH_LOGGING_WRITE_TIMEOUT", 10*time.Second),
+		IdleTimeout:          envconfig.Duration("STELLARMESH_LOGGING_IDLE_TIMEOUT", 60*time.Second),
+		ShutdownTimeout:      envconfig.Duration("STELLARMESH_LOGGING_SHUTDOWN_TIMEOUT", 10*time.Second),
+		FlushInterval:        envconfig.Duration("STELLARMESH_LOGGING_BATCH_FLUSH_INTERVAL", 500*time.Millisecond),
+		ReplayInterval:       envconfig.Duration("STELLARMESH_LOGGING_KAFKA_REPLAY_INTERVAL", 5*time.Second),
+		QueueCapacityEvents:  envconfig.Int("STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS", 4096),
+		MaxBatchSize:         envconfig.Int("STELLARMESH_LOGGING_MAX_BATCH_SIZE", 512),
+		MaxRequestEvents:     envconfig.Int("STELLARMESH_LOGGING_MAX_REQUEST_EVENTS", 512),
+		KafkaBrokers:         envconfig.CSV("STELLARMESH_LOGGING_KAFKA_BROKERS", "kafka:9092"),
+		KafkaTopic:           envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV1),
+		KafkaConnection:      kafkaConnectionConfig("stellarmesh-logging-ingester"),
+		SpoolDir:             envconfig.String("STELLARMESH_LOGGING_SPOOL_DIR", dataDir+"/spool"),
+		SpoolMaxBytes:        envconfig.ByteSize("STELLARMESH_LOGGING_SPOOL_MAX_BYTES", 1<<30),
+		SpoolSegmentBytes:    envconfig.ByteSize("STELLARMESH_LOGGING_SPOOL_SEGMENT_BYTES", 16<<20),
+		SpoolReplayBatchSize: envconfig.Int("STELLARMESH_LOGGING_SPOOL_REPLAY_BATCH_SIZE", 128),
 	}
 	if strings.TrimSpace(cfg.AuthFile) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_AUTH_FILE is required")
@@ -67,6 +71,12 @@ func Load() (Config, error) {
 	}
 	if strings.TrimSpace(cfg.KafkaTopic) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_KAFKA_TOPIC is required")
+	}
+	if cfg.QueueCapacityEvents <= 0 || cfg.MaxBatchSize <= 0 || cfg.MaxRequestEvents <= 0 {
+		return Config{}, errors.New("logging queue and batch limits must be positive")
+	}
+	if strings.TrimSpace(cfg.SpoolDir) == "" {
+		return Config{}, errors.New("STELLARMESH_LOGGING_SPOOL_DIR is required")
 	}
 	return cfg, nil
 }

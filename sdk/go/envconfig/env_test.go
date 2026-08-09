@@ -11,6 +11,7 @@ func TestParsers(t *testing.T) {
 	t.Setenv("INT_VALUE", "42")
 	t.Setenv("BOOL_VALUE", "yes")
 	t.Setenv("CSV_VALUE", "one, two,,three")
+	t.Setenv("BYTE_SIZE_VALUE", "16MiB")
 
 	if got := String("TEXT_VALUE", "fallback"); got != "value" {
 		t.Fatalf("String() = %q", got)
@@ -26,6 +27,9 @@ func TestParsers(t *testing.T) {
 	}
 	if got := CSV("CSV_VALUE", ""); len(got) != 3 || got[1] != "two" {
 		t.Fatalf("CSV() = %#v", got)
+	}
+	if got := ByteSize("BYTE_SIZE_VALUE", 1); got != 16<<20 {
+		t.Fatalf("ByteSize() = %d", got)
 	}
 }
 

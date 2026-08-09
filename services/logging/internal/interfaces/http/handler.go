@@ -21,20 +21,35 @@ type Authenticator interface {
 	Authenticate(string) (string, bool)
 }
 
+// Readiness reports whether ingestion remains durable.
+type Readiness interface {
+	Ready() bool
+}
+
 // Handler maps v1 HTTP requests to the ingestion application.
 type Handler struct {
 	ingestor      Ingestor
 	authenticator Authenticator
+	readiness     Readiness
 }
 
 // NewHandler creates a logging HTTP handler.
-func NewHandler(ingestor Ingestor, authenticator Authenticator) *Handler {
-	return &Handler{ingestor: ingestor, authenticator: authenticator}
+func NewHandler(ingestor Ingestor, authenticator Authenticator, readiness Readiness) *Handler {
+	return &Handler{ingestor: ingestor, authenticator: authenticator, readiness: readiness}
 }
 
 // HandleHealth reports process liveness.
 func (handler *Handler) HandleHealth(w http.ResponseWriter, _ *http.Request) {
 	sharedhttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// HandleReady reports whether accepted events can still be delivered or durably buffered.
+func (handler *Handler) HandleReady(w http.ResponseWriter, _ *http.Request) {
+	if handler.readiness == nil || !handler.readiness.Ready() {
+		sharedhttp.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+		return
+	}
+	sharedhttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 // HandleLogEvent validates and queues one event.
@@ -102,7 +117,9 @@ func (handler *Handler) decode(w http.ResponseWriter, r *http.Request, target an
 
 func (handler *Handler) writeIngestError(w http.ResponseWriter, err error) {
 	status := http.StatusBadRequest
-	if errors.Is(err, application.ErrQueueFull) ||
+	if errors.Is(err, application.ErrTooManyEvents) {
+		status = http.StatusRequestEntityTooLarge
+	} else if errors.Is(err, application.ErrQueueFull) ||
 		errors.Is(err, application.ErrShuttingDown) ||
 		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		status = http.StatusServiceUnavailable

@@ -13,6 +13,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiEnvelope"
+  /health/live:
+    get:
+      operationId: getLiveness
+      responses:
+        "200":
+          description: 进程存活
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiEnvelope"
+  /health/ready:
+    get:
+      operationId: getReadiness
+      responses:
+        "200":
+          description: 服务可以接收并可靠转交或暂存事件
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiEnvelope"
+        "503":
+          description: Kafka 与本地持久缓冲均无法保证后续接收
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiEnvelope"
+  /metrics:
+    get:
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus 文本格式指标
+          content:
+            text/plain:
+              schema:
+                type: string
   /v1/log-events:
     post:
       operationId: ingestLogEvent
@@ -144,7 +180,7 @@ components:
           schema:
             $ref: "#/components/schemas/ApiEnvelope"
     PayloadTooLarge:
-      description: 请求体超过限制
+      description: 请求体或批量事件数超过限制
       content:
         application/json:
           schema:

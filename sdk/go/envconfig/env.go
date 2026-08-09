@@ -64,6 +64,41 @@ func Int64(key string, fallback int64) int64 {
 	return parsed
 }
 
+// ByteSize parses a positive integer with an optional B, KB, MB, GB, KiB, MiB, or GiB suffix.
+func ByteSize(key string, fallback int64) int64 {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	upper := strings.ToUpper(value)
+	multipliers := []struct {
+		suffix     string
+		multiplier int64
+	}{
+		{suffix: "GIB", multiplier: 1 << 30},
+		{suffix: "MIB", multiplier: 1 << 20},
+		{suffix: "KIB", multiplier: 1 << 10},
+		{suffix: "GB", multiplier: 1_000_000_000},
+		{suffix: "MB", multiplier: 1_000_000},
+		{suffix: "KB", multiplier: 1_000},
+		{suffix: "B", multiplier: 1},
+	}
+	multiplier := int64(1)
+	number := upper
+	for _, candidate := range multipliers {
+		if strings.HasSuffix(upper, candidate.suffix) {
+			multiplier = candidate.multiplier
+			number = strings.TrimSpace(strings.TrimSuffix(upper, candidate.suffix))
+			break
+		}
+	}
+	parsed, err := strconv.ParseInt(number, 10, 64)
+	if err != nil || parsed <= 0 || parsed > (1<<63-1)/multiplier {
+		return fallback
+	}
+	return parsed * multiplier
+}
+
 // Bool parses common truthy values or returns fallback when unset.
 func Bool(key string, fallback bool) bool {
 	value := strings.TrimSpace(strings.ToLower(os.Getenv(key)))
