@@ -62,7 +62,7 @@ HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不
 - `mq/kafka`：具有显式 topic 配置和启动检查的 Kafka publisher；
 - `envconfig`：不依赖业务 settings 的基础环境变量解析。
 
-日志客户端使用有界内存队列，调用 `Emit` 或日志级别方法时不会等待网络。队列满、事件无效、客户端关闭、请求失败或响应不符合契约时，客户端返回 `false` 或调用 `OnDrop`。客户端不会在业务请求线程中无限重试；进程退出前应调用 `Close` 并给出明确超时。
+日志客户端使用有界内存队列，调用 `Emit` 或日志级别方法时不会等待网络。构造函数会立即校验 URL、token、service 和容量限制。队列满、事件无效、客户端关闭、请求失败或响应不符合契约时，客户端返回 `false` 或调用 `OnDrop`；callback 的 panic 会被隔离并限频写到 stderr。客户端不会在业务请求线程中无限重试；进程退出前应调用 `Close` 并给出明确超时。
 
 ## Python SDK
 
@@ -75,7 +75,7 @@ HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不
 - trace provider、drop handler、日志级别过滤和元数据清洗；
 - 协议编码与解码函数及 `py.typed` 类型声明。
 
-Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业务项目的配置模块、Web 框架或请求上下文。业务项目通过构造参数或 provider 注入服务名、令牌和 trace id。
+Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业务项目的配置模块、Web 框架或请求上下文。业务项目通过构造参数或 provider 注入服务名、令牌和 trace id。provider 与 drop handler 的异常不会传播到业务调用方；worker 具有明确的失败状态，并提供 best-effort 进程退出排空兜底。
 
 ## 日志数据链路
 

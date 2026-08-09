@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import queue
 import sys
 import threading
@@ -12,22 +11,25 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any, TypeAlias, cast
 
 import httpx
-from pydantic import ValidationError
 
-from .contracts import (
-    BatchIngestRequest,
-    Level,
-    LogEvent,
-    normalize_level,
-    should_emit_level,
-)
+from .contracts import Level, LogEvent, normalize_level, should_emit_level
+from .transport import BatchTransport
 
 TraceIDProvider: TypeAlias = Callable[[], str]
 DropHandler: TypeAlias = Callable[[LogEvent | None, Exception], None]
 _STOP_WORKER = object()
+
+
+class _ClientState(StrEnum):
+    NEW = "new"
+    RUNNING = "running"
+    CLOSING = "closing"
+    CLOSED = "closed"
+    FAILED = "failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,23 +59,28 @@ class Client:
         *,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
+        _validate_config(config)
         self.config = config
-        self._base_url = config.base_url.rstrip("/")
         self._minimum_level = normalize_level(config.minimum_level)
-        self._timeout = max(config.timeout_seconds, 0.001)
-        self._batch_size = max(config.batch_size, 1)
-        self._flush_interval = max(config.flush_interval_ms, 1) / 1000
-        self._max_body_bytes = max(config.max_body_bytes, 1)
-        self._transport = transport
+        self._batch_size = config.batch_size
+        self._flush_interval = config.flush_interval_ms / 1000
+        self._max_body_bytes = config.max_body_bytes
+        self._transport = BatchTransport(
+            base_url=config.base_url,
+            token=config.token,
+            timeout_seconds=config.timeout_seconds,
+            transport=transport,
+        )
         self._queue: queue.Queue[LogEvent | object] = queue.Queue(
-            maxsize=max(config.queue_size, 1)
+            maxsize=config.queue_size
         )
         self._state_lock = threading.Lock()
+        self._fallback_lock = threading.Lock()
         self._stop_requested = threading.Event()
         self._worker_done = threading.Event()
         self._worker: threading.Thread | None = None
-        self._closed = False
-        self._http_client: httpx.Client | None = None
+        self._state = _ClientState.NEW
+        self._failure: Exception | None = None
         self._last_fallback_warning = 0.0
 
     def emit_event(
@@ -101,7 +108,7 @@ class Client:
                 trace_id=resolved_trace_id,
                 metadata=metadata or {},
             )
-        except (TypeError, ValueError, ValidationError) as exc:
+        except Exception as exc:  # noqa: BLE001 - providers are isolated.
             self._drop(None, exc)
             return False
         return self.enqueue(event)
@@ -114,8 +121,14 @@ class Client:
             return False
         failure: Exception | None = None
         with self._state_lock:
-            if self._closed:
-                failure = RuntimeError("logging client is closed")
+            if self._state in {
+                _ClientState.CLOSING,
+                _ClientState.CLOSED,
+                _ClientState.FAILED,
+            }:
+                failure = self._failure or RuntimeError(
+                    f"logging client is {self._state.value}"
+                )
             else:
                 try:
                     self._queue.put_nowait(event)
@@ -132,20 +145,20 @@ class Client:
         """Stop accepting events and wait for queued delivery to finish."""
         worker = self._request_close()
         if worker is None or worker is threading.current_thread():
-            return True
+            return self._state_snapshot() is not _ClientState.FAILED
         worker.join(timeout=max(timeout, 0.0))
         if worker.is_alive():
             self._fallback_warning(
                 f"logging client drain timed out; remaining={self._queue.qsize()}"
             )
             return False
-        return True
+        return self._state_snapshot() is _ClientState.CLOSED
 
     async def aclose(self, *, timeout: float = 2.0) -> bool:
         """Drain without blocking an asyncio event loop."""
         worker = self._request_close()
         if worker is None or worker is threading.current_thread():
-            return True
+            return self._state_snapshot() is not _ClientState.FAILED
         loop = asyncio.get_running_loop()
         deadline = loop.time() + max(timeout, 0.0)
         while worker.is_alive():
@@ -156,11 +169,12 @@ class Client:
                 )
                 return False
             await asyncio.sleep(min(0.05, remaining))
-        return True
+        return self._state_snapshot() is _ClientState.CLOSED
 
     def _ensure_worker_locked(self) -> None:
         if self._worker is not None:
             return
+        self._state = _ClientState.RUNNING
         self._worker = threading.Thread(
             target=self._worker_loop,
             name="stellarmesh-logging-client",
@@ -170,63 +184,80 @@ class Client:
 
     def _request_close(self) -> threading.Thread | None:
         with self._state_lock:
-            if not self._closed:
-                self._closed = True
+            if self._state is _ClientState.NEW:
+                self._state = _ClientState.CLOSED
+                self._transport.close()
+                self._worker_done.set()
+                return None
+            if self._state is _ClientState.RUNNING:
+                self._state = _ClientState.CLOSING
                 self._stop_requested.set()
                 with suppress(queue.Full):
                     self._queue.put_nowait(_STOP_WORKER)
-            worker = self._worker
-        if worker is None:
-            self._close_http_client()
-            self._worker_done.set()
-        return worker
+            return self._worker
 
     def _worker_loop(self) -> None:
+        failure: Exception | None = None
         try:
-            while True:
-                if self._stop_requested.is_set() and self._queue.empty():
-                    return
-                try:
-                    first = self._queue.get(timeout=0.1)
-                except queue.Empty:
-                    continue
-                if first is _STOP_WORKER:
-                    self._queue.task_done()
-                    continue
-
-                batch = [cast(LogEvent, first)]
-                deadline = time.monotonic() + self._flush_interval
-                while len(batch) < self._batch_size:
-                    try:
-                        if self._stop_requested.is_set():
-                            queued = self._queue.get_nowait()
-                        else:
-                            remaining = deadline - time.monotonic()
-                            if remaining <= 0:
-                                break
-                            queued = self._queue.get(timeout=remaining)
-                    except queue.Empty:
-                        break
-                    if queued is _STOP_WORKER:
-                        self._queue.task_done()
-                        break
-                    batch.append(cast(LogEvent, queued))
-
-                try:
-                    self._send_batch(batch)
-                finally:
-                    for _ in batch:
-                        self._queue.task_done()
+            self._run_worker()
+        except Exception as exc:  # noqa: BLE001 - isolate logging worker failures.
+            failure = exc
+            self._fallback_warning(f"logging worker failed: {exc}")
         finally:
-            self._close_http_client()
+            self._transport.close()
+            if failure is not None:
+                self._drain_failed_queue(failure)
+            with self._state_lock:
+                if failure is None:
+                    self._state = _ClientState.CLOSED
+                else:
+                    self._state = _ClientState.FAILED
+                    self._failure = failure
             self._worker_done.set()
 
+    def _run_worker(self) -> None:
+        while True:
+            if self._stop_requested.is_set() and self._queue.empty():
+                return
+            try:
+                first = self._queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+            if first is _STOP_WORKER:
+                self._queue.task_done()
+                continue
+
+            batch = [cast(LogEvent, first)]
+            deadline = time.monotonic() + self._flush_interval
+            while len(batch) < self._batch_size:
+                try:
+                    if self._stop_requested.is_set():
+                        queued = self._queue.get_nowait()
+                    else:
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            break
+                        queued = self._queue.get(timeout=remaining)
+                except queue.Empty:
+                    break
+                if queued is _STOP_WORKER:
+                    self._queue.task_done()
+                    break
+                batch.append(cast(LogEvent, queued))
+
+            try:
+                self._send_batch(batch)
+            finally:
+                for _ in batch:
+                    self._queue.task_done()
+
     def _send_batch(self, events: list[LogEvent]) -> bool:
-        payload = json.dumps(
-            BatchIngestRequest(events=events).model_dump(mode="json"),
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).encode()
+        try:
+            payload = self._transport.encode(events)
+        except Exception as exc:  # noqa: BLE001 - isolate serialization failures.
+            for event in events:
+                self._drop(event, exc)
+            return False
         if len(payload) > self._max_body_bytes:
             if len(events) == 1:
                 self._drop(
@@ -240,53 +271,70 @@ class Client:
             return left_sent and right_sent
 
         try:
-            response = self._get_http_client().post(
-                f"{self._base_url}/v1/log-events/batch",
-                content=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Logging-Service-Token": self.config.token,
-                },
-            )
-            response.raise_for_status()
-            body = response.json()
-            data = body.get("data") if isinstance(body, dict) else None
-            if (
-                not isinstance(body, dict)
-                or body.get("code") != 202
-                or not isinstance(data, dict)
-                or data.get("accepted") != len(events)
-            ):
-                raise ValueError("logging service returned an invalid accepted count")
+            self._transport.send(events, payload)
         except Exception as exc:  # noqa: BLE001 - logging must not break callers.
             for event in events:
                 self._drop(event, exc)
             return False
         return True
 
-    def _get_http_client(self) -> httpx.Client:
-        if self._http_client is None or self._http_client.is_closed:
-            self._http_client = httpx.Client(
-                timeout=self._timeout,
-                transport=self._transport,
-                trust_env=False,
-            )
-        return self._http_client
-
-    def _close_http_client(self) -> None:
-        if self._http_client is not None:
-            self._http_client.close()
-            self._http_client = None
+    def _drain_failed_queue(self, failure: Exception) -> None:
+        while True:
+            try:
+                queued = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                if queued is not _STOP_WORKER:
+                    self._drop(cast(LogEvent, queued), failure)
+            finally:
+                self._queue.task_done()
 
     def _drop(self, event: LogEvent | None, exc: Exception) -> None:
-        if self.config.drop_handler is not None:
-            self.config.drop_handler(event, exc)
+        handler = self.config.drop_handler
+        if handler is None:
+            self._fallback_warning(str(exc))
             return
-        self._fallback_warning(str(exc))
+        try:
+            handler(event, exc)
+        except Exception as callback_error:  # noqa: BLE001 - callbacks are isolated.
+            self._fallback_warning(f"logging drop handler failed: {callback_error}")
 
     def _fallback_warning(self, message: str) -> None:
-        now = time.monotonic()
-        if now - self._last_fallback_warning < 30:
-            return
-        self._last_fallback_warning = now
-        print(f"[stellarmesh-logging-fallback] {message}", file=sys.stderr)
+        with self._fallback_lock:
+            now = time.monotonic()
+            if (
+                self._last_fallback_warning > 0
+                and now - self._last_fallback_warning < 30
+            ):
+                return
+            self._last_fallback_warning = now
+            print(f"[stellarmesh-logging-fallback] {message}", file=sys.stderr)
+
+    def _state_snapshot(self) -> _ClientState:
+        with self._state_lock:
+            return self._state
+
+
+def _validate_config(config: ClientConfig) -> None:
+    try:
+        url = httpx.URL(config.base_url)
+    except Exception as exc:  # noqa: BLE001 - normalize configuration errors.
+        raise ValueError("logging base URL is invalid") from exc
+    if url.scheme not in {"http", "https"} or not url.host:
+        raise ValueError("logging base URL must be an absolute HTTP or HTTPS URL")
+    if not config.token.strip():
+        raise ValueError("logging service token is required")
+    if not config.service.strip():
+        raise ValueError("logging service name is required")
+    if config.timeout_seconds <= 0:
+        raise ValueError("logging timeout_seconds must be positive")
+    if config.queue_size <= 0:
+        raise ValueError("logging queue_size must be positive")
+    if config.batch_size <= 0:
+        raise ValueError("logging batch_size must be positive")
+    if config.flush_interval_ms <= 0:
+        raise ValueError("logging flush_interval_ms must be positive")
+    if config.max_body_bytes <= 0:
+        raise ValueError("logging max_body_bytes must be positive")
+    normalize_level(config.minimum_level)

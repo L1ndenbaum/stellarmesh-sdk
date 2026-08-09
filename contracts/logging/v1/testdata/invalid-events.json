@@ -1,0 +1,75 @@
+[
+  {
+    "name": "unknown field",
+    "payload": {
+      "event_id": "b6dd42df-660d-4aca-a712-6ce1c85ceafd",
+      "timestamp": "2026-08-01T12:00:00Z",
+      "level": "INFO",
+      "service": "contract-test",
+      "message": "valid message",
+      "trace_id": "trace-123",
+      "metadata": {},
+      "unknown": true
+    }
+  },
+  {
+    "name": "naive timestamp",
+    "payload": {
+      "event_id": "b6dd42df-660d-4aca-a712-6ce1c85ceafd",
+      "timestamp": "2026-08-01T12:00:00",
+      "level": "INFO",
+      "service": "contract-test",
+      "message": "valid message",
+      "trace_id": "trace-123",
+      "metadata": {}
+    }
+  },
+  {
+    "name": "non-canonical uuid",
+    "payload": {
+      "event_id": "B6DD42DF-660D-4ACA-A712-6CE1C85CEAFD",
+      "timestamp": "2026-08-01T12:00:00Z",
+      "level": "INFO",
+      "service": "contract-test",
+      "message": "valid message",
+      "trace_id": "trace-123",
+      "metadata": {}
+    }
+  },
+  {
+    "name": "invalid level",
+    "payload": {
+      "event_id": "b6dd42df-660d-4aca-a712-6ce1c85ceafd",
+      "timestamp": "2026-08-01T12:00:00Z",
+      "level": "NOTICE",
+      "service": "contract-test",
+      "message": "valid message",
+      "trace_id": "trace-123",
+      "metadata": {}
+    }
+  },
+  {
+    "name": "empty service",
+    "payload": {
+      "event_id": "b6dd42df-660d-4aca-a712-6ce1c85ceafd",
+      "timestamp": "2026-08-01T12:00:00Z",
+      "level": "INFO",
+      "service": " ",
+      "message": "valid message",
+      "trace_id": "trace-123",
+      "metadata": {}
+    }
+  },
+  {
+    "name": "non-object metadata",
+    "payload": {
+      "event_id": "b6dd42df-660d-4aca-a712-6ce1c85ceafd",
+      "timestamp": "2026-08-01T12:00:00Z",
+      "level": "INFO",
+      "service": "contract-test",
+      "message": "valid message",
+      "trace_id": "trace-123",
+      "metadata": ["invalid"]
+    }
+  }
+]

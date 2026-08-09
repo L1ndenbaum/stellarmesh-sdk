@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -11,6 +12,7 @@ const (
 	maxSequenceLength   = 50
 	redactedValue       = "[REDACTED]"
 	maxDepthValue       = "[MAX_DEPTH]"
+	unserializableValue = "[UNSERIALIZABLE]"
 	truncatedValueLabel = "...[TRUNCATED]"
 )
 
@@ -63,8 +65,9 @@ func sanitizeValue(value any, depth int) any {
 		}
 		return result
 	case string:
-		if len(typed) > maxStringLength {
-			return typed[:maxStringLength] + truncatedValueLabel
+		runes := []rune(typed)
+		if len(runes) > maxStringLength {
+			return string(runes[:maxStringLength]) + truncatedValueLabel
 		}
 		return typed
 	case []byte:
@@ -72,8 +75,24 @@ func sanitizeValue(value any, depth int) any {
 	case nil, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
 		return typed
 	default:
-		return fmt.Sprint(typed)
+		normalized, err := normalizeJSONValue(typed)
+		if err != nil {
+			return unserializableValue
+		}
+		return sanitizeValue(normalized, depth)
 	}
+}
+
+func normalizeJSONValue(value any) (any, error) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var normalized any
+	if err := json.Unmarshal(payload, &normalized); err != nil {
+		return nil, err
+	}
+	return normalized, nil
 }
 
 func sensitiveKey(key string) bool {

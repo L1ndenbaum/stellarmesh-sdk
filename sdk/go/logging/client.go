@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -33,36 +36,43 @@ type DropHandler func(Event, error)
 
 // ClientConfig controls asynchronous HTTP delivery.
 type ClientConfig struct {
-	BaseURL       string
-	Token         string
-	Timeout       time.Duration
-	QueueSize     int
-	BatchSize     int
-	FlushInterval time.Duration
-	MaxBodyBytes  int
-	HTTPClient    *http.Client
-	OnDrop        DropHandler
+	BaseURL        string
+	Token          string
+	Timeout        time.Duration
+	QueueSize      int
+	BatchSize      int
+	FlushInterval  time.Duration
+	MaxBodyBytes   int
+	HTTPClient     *http.Client
+	OnDrop         DropHandler
+	FallbackWriter io.Writer
 }
 
 // Client asynchronously delivers v1 log batches.
 type Client struct {
-	baseURL       string
-	token         string
-	timeout       time.Duration
-	batchSize     int
-	flushInterval time.Duration
-	maxBodyBytes  int
-	httpClient    *http.Client
-	onDrop        DropHandler
-	queue         chan Event
-	done          chan struct{}
-	mu            sync.RWMutex
-	closed        bool
-	closeOnce     sync.Once
+	baseURL             string
+	token               string
+	timeout             time.Duration
+	batchSize           int
+	flushInterval       time.Duration
+	maxBodyBytes        int
+	httpClient          *http.Client
+	onDrop              DropHandler
+	fallbackWriter      io.Writer
+	queue               chan Event
+	done                chan struct{}
+	mu                  sync.RWMutex
+	closed              bool
+	closeOnce           sync.Once
+	fallbackMu          sync.Mutex
+	lastFallbackWarning time.Time
 }
 
 // NewClient creates and starts an asynchronous logging client.
-func NewClient(config ClientConfig) *Client {
+func NewClient(config ClientConfig) (*Client, error) {
+	if err := validateClientConfig(config); err != nil {
+		return nil, err
+	}
 	timeout := config.Timeout
 	if timeout <= 0 {
 		timeout = defaultClientTimeout
@@ -90,10 +100,28 @@ func NewClient(config ClientConfig) *Client {
 	client := &Client{
 		baseURL: strings.TrimRight(config.BaseURL, "/"), token: config.Token, timeout: timeout,
 		batchSize: batchSize, flushInterval: flushInterval, maxBodyBytes: maxBodyBytes,
-		httpClient: httpClient, onDrop: config.OnDrop, queue: make(chan Event, queueSize), done: make(chan struct{}),
+		httpClient: httpClient, onDrop: config.OnDrop, fallbackWriter: config.FallbackWriter,
+		queue: make(chan Event, queueSize), done: make(chan struct{}),
+	}
+	if client.fallbackWriter == nil {
+		client.fallbackWriter = os.Stderr
 	}
 	go client.run()
-	return client
+	return client, nil
+}
+
+func validateClientConfig(config ClientConfig) error {
+	parsed, err := url.Parse(config.BaseURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return errors.New("logging base URL must be an absolute HTTP or HTTPS URL")
+	}
+	if strings.TrimSpace(config.Token) == "" {
+		return errors.New("logging service token is required")
+	}
+	if config.Timeout < 0 || config.QueueSize < 0 || config.BatchSize < 0 || config.FlushInterval < 0 || config.MaxBodyBytes < 0 {
+		return errors.New("logging client limits must not be negative")
+	}
+	return nil
 }
 
 // Emit normalizes and queues one event without waiting for network delivery.
@@ -222,7 +250,7 @@ func (client *Client) sendBatch(events []Event) {
 		client.dropBatch(events, err)
 		return
 	}
-	if envelope.Code != http.StatusAccepted || envelope.Data.Accepted != len(events) {
+	if (envelope.Code != http.StatusOK && envelope.Code != http.StatusAccepted) || envelope.Code != response.StatusCode || envelope.Data.Accepted != len(events) {
 		client.dropBatch(events, fmt.Errorf("invalid accepted count: code=%d accepted=%d expected=%d", envelope.Code, envelope.Data.Accepted, len(events)))
 	}
 }
@@ -234,7 +262,25 @@ func (client *Client) dropBatch(events []Event, err error) {
 }
 
 func (client *Client) drop(event Event, err error) {
-	if client.onDrop != nil {
-		client.onDrop(event, err)
+	if client.onDrop == nil {
+		client.fallbackWarning(err)
+		return
 	}
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			client.fallbackWarning(fmt.Errorf("logging drop handler panicked: %v", recovered))
+		}
+	}()
+	client.onDrop(event, err)
+}
+
+func (client *Client) fallbackWarning(err error) {
+	client.fallbackMu.Lock()
+	defer client.fallbackMu.Unlock()
+	now := time.Now()
+	if !client.lastFallbackWarning.IsZero() && now.Sub(client.lastFallbackWarning) < 30*time.Second {
+		return
+	}
+	client.lastFallbackWarning = now
+	_, _ = fmt.Fprintf(client.fallbackWriter, "[stellarmesh-logging-fallback] %v\n", err)
 }

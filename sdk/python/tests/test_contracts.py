@@ -6,6 +6,8 @@ from pathlib import Path
 import jsonschema
 import pytest
 import yaml
+from openapi_spec_validator import validate
+from openapi_spec_validator.readers import read_from_filename
 from pydantic import ValidationError
 
 from stellarmesh_logging import (
@@ -50,6 +52,20 @@ def test_event_rejects_invalid_identifier() -> None:
         LogEvent(event_id="not-a-uuid", service="backend", message="invalid")
 
 
+def test_shared_invalid_fixtures_are_rejected() -> None:
+    fixture_path = (
+        _REPOSITORY_ROOT
+        / "contracts"
+        / "logging"
+        / "v1"
+        / "testdata"
+        / "invalid-events.json"
+    )
+    for fixture in json.loads(fixture_path.read_text()):
+        with pytest.raises(ValidationError):
+            LogEvent.model_validate(fixture["payload"])
+
+
 def test_level_filtering() -> None:
     assert should_emit_level("WARN", "INFO")
     assert not should_emit_level("DEBUG", "INFO")
@@ -72,3 +88,5 @@ def test_openapi_document_is_valid_yaml() -> None:
     document = yaml.safe_load(openapi_path.read_text())
     assert document["openapi"] == "3.1.0"
     assert "/v1/log-events/batch" in document["paths"]
+    specification, base_uri = read_from_filename(str(openapi_path))
+    validate(specification, base_uri=base_uri)

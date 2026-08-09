@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
+import pytest
 
-from stellarmesh_logging import Client, ClientConfig, Level, get_logger
+from stellarmesh_logging import Client, ClientConfig, Level, LogEvent, get_logger
 
 
 def _response(accepted: int) -> httpx.Response:
@@ -14,6 +16,18 @@ def _response(accepted: int) -> httpx.Response:
         202,
         json={
             "code": 202,
+            "message": "accepted",
+            "data": {"accepted": accepted},
+            "timestamp": "2026-08-01T12:00:00Z",
+        },
+    )
+
+
+def _legacy_response(accepted: int) -> httpx.Response:
+    return httpx.Response(
+        200,
+        json={
+            "code": 200,
             "message": "accepted",
             "data": {"accepted": accepted},
             "timestamp": "2026-08-01T12:00:00Z",
@@ -110,3 +124,78 @@ def test_aclose_does_not_block_event_loop() -> None:
     )
     assert client.emit_event(Level.INFO, message="event")
     assert asyncio.run(client.aclose(timeout=1))
+
+
+def test_client_accepts_legacy_ok_response() -> None:
+    client = Client(
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            batch_size=1,
+        ),
+        transport=httpx.MockTransport(lambda _: _legacy_response(1)),
+    )
+    assert client.emit_event(Level.INFO, message="event")
+    assert client.close(timeout=1)
+
+
+def test_client_isolates_provider_and_drop_handler_errors(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def provider() -> str:
+        raise RuntimeError("provider failed")
+
+    def drop_handler(_event: Any, _error: Exception) -> None:
+        raise RuntimeError("callback failed")
+
+    client = Client(
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            trace_id_provider=provider,
+            drop_handler=drop_handler,
+        )
+    )
+    assert not client.emit_event(Level.INFO, message="event")
+    assert "drop handler failed" in capsys.readouterr().err
+    assert client.close(timeout=1)
+
+
+def test_client_rejects_invalid_configuration() -> None:
+    invalid = [
+        ClientConfig(base_url="://bad", token="token", service="backend"),
+        ClientConfig(base_url="http://logging-service", token="", service="backend"),
+        ClientConfig(base_url="http://logging-service", token="token", service=""),
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            queue_size=0,
+        ),
+    ]
+    for config in invalid:
+        try:
+            Client(config)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted invalid config: {config}")
+
+
+def test_typed_metadata_is_redacted_and_unknown_objects_fail_closed() -> None:
+    @dataclass
+    class Credentials:
+        password: str
+        safe: str
+
+    event = LogEvent(
+        service="backend",
+        message="event",
+        metadata={
+            "typed": Credentials(password="secret", safe="value"),
+            "unknown": object(),
+        },
+    )
+    assert event.metadata["typed"] == {"password": "[REDACTED]", "safe": "value"}
+    assert event.metadata["unknown"] == "[UNSERIALIZABLE]"

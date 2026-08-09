@@ -35,20 +35,26 @@ import (
 )
 
 func main() {
-    client := logging.NewClient(logging.ClientConfig{
+    client, err := logging.NewClient(logging.ClientConfig{
         BaseURL: "http://logging-service:8091",
         Token:   "由业务配置层注入",
         OnDrop: func(event logging.Event, err error) {
             log.Printf("remote log dropped: event_id=%s err=%v", event.EventID, err)
         },
     })
-    logger := logging.NewLogger(logging.LoggerConfig{
+    if err != nil {
+        log.Fatal(err)
+    }
+    logger, err := logging.NewLogger(logging.LoggerConfig{
         Service: "example-api",
         Emitter: client,
         TraceIDProvider: func(ctx context.Context) string {
             return traceIDFromProjectContext(ctx)
         },
     })
+    if err != nil {
+        log.Fatal(err)
+    }
 
     ctx := context.Background()
     logger.Info(ctx, "order created", "", map[string]any{"order_id": "123"})
@@ -68,6 +74,7 @@ func traceIDFromProjectContext(context.Context) string {
 注意：
 
 - `Debug`、`Info`、`Warning`、`Error` 和 `Audit` 返回值表示事件是否成功进入 SDK 队列；
+- Go 构造函数会立即拒绝非法 URL、空 token、空 service 和负数限制，不把配置错误延迟到后台 worker；
 - `true` 不代表事件已持久化；
 - `traceID` 参数非空时优先使用显式值，否则调用 `TraceIDProvider`；
 - `OnDrop` 只应执行轻量、不会递归调用同一 logger 的降级动作；
@@ -155,7 +162,7 @@ async def application_shutdown() -> None:
 
 容器必须能写入 `STELLARMESH_LOGGING_DATA_DIR`，且该目录应使用业务项目管理的持久卷。服务启动时会检查 Topic；Topic 不存在或 ACL 不允许访问时启动失败，不会自行创建资源。
 
-健康检查调用 `GET /health`。SDK 写入使用 `POST /v1/log-events/batch` 和 `X-Logging-Service-Token`，成功状态是 `202`。
+健康检查调用 `GET /health`。SDK 写入使用 `POST /v1/log-events/batch` 和 `X-Logging-Service-Token`，正式成功状态是 `202`；客户端在迁移期也接受状态与 envelope 同为 `200` 的旧服务响应。
 
 ## 部署 ClickHouse sink
 

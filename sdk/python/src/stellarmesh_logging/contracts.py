@@ -7,7 +7,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, field_serializer, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 from .sanitizer import sanitize_metadata
 
@@ -27,7 +27,13 @@ class Level(StrEnum):
 _LEVEL_ORDER = {level: index for index, level in enumerate(Level)}
 
 
-class LogEvent(BaseModel):
+class ContractModel(BaseModel):
+    """Base model that matches additionalProperties=false contracts."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LogEvent(ContractModel):
     """Canonical logging v1 event."""
 
     event_id: str = Field(default_factory=lambda: str(uuid4()))
@@ -41,7 +47,11 @@ class LogEvent(BaseModel):
     @field_validator("event_id", mode="before")
     @classmethod
     def _canonical_event_id(cls, value: object) -> str:
-        return str(UUID(str(value)))
+        raw = str(value)
+        canonical = str(UUID(raw))
+        if raw != canonical:
+            raise ValueError("event_id must be a canonical lowercase UUID")
+        return canonical
 
     @field_validator("service", "message")
     @classmethod
@@ -55,7 +65,7 @@ class LogEvent(BaseModel):
     @classmethod
     def _ensure_timezone(cls, value: datetime) -> datetime:
         if value.tzinfo is None:
-            return value.replace(tzinfo=UTC)
+            raise ValueError("timestamp must include a timezone")
         return value.astimezone(UTC)
 
     @field_validator("level", mode="before")
@@ -76,19 +86,19 @@ class LogEvent(BaseModel):
         return value.isoformat().replace("+00:00", "Z")
 
 
-class IngestRequest(BaseModel):
+class IngestRequest(ContractModel):
     """Single-event HTTP request."""
 
     event: LogEvent
 
 
-class BatchIngestRequest(BaseModel):
+class BatchIngestRequest(ContractModel):
     """Batch HTTP request."""
 
     events: list[LogEvent]
 
 
-class IngestResult(BaseModel):
+class IngestResult(ContractModel):
     """Accepted event count returned by the ingester."""
 
     accepted: int

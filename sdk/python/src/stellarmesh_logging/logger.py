@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import sys
 import threading
 import traceback
@@ -138,3 +139,15 @@ def shutdown_logging_sync(*, timeout: float = 2.0) -> bool:
     except RuntimeError:
         return asyncio.run(shutdown_logging(timeout=timeout))
     raise RuntimeError("use await shutdown_logging() from an active event loop")
+
+
+def _shutdown_at_exit() -> None:
+    global _default_client
+    with _default_client_lock:
+        client = _default_client
+        _default_client = None
+    if client is not None:
+        client.close(timeout=1.0)
+
+
+atexit.register(_shutdown_at_exit)

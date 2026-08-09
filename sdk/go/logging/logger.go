@@ -2,6 +2,8 @@ package logging
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
 )
 
@@ -30,12 +32,18 @@ type Logger struct {
 }
 
 // NewLogger creates a structured logger facade.
-func NewLogger(config LoggerConfig) *Logger {
+func NewLogger(config LoggerConfig) (*Logger, error) {
+	if strings.TrimSpace(config.Service) == "" {
+		return nil, errors.New("logging service name is required")
+	}
+	if config.Emitter == nil {
+		return nil, errors.New("logging emitter is required")
+	}
 	now := config.Now
 	if now == nil {
 		now = time.Now
 	}
-	return &Logger{service: config.Service, emitter: config.Emitter, now: now, traceIDProvider: config.TraceIDProvider}
+	return &Logger{service: config.Service, emitter: config.Emitter, now: now, traceIDProvider: config.TraceIDProvider}, nil
 }
 
 func (logger *Logger) Debug(ctx context.Context, message, traceID string, metadata map[string]any) bool {

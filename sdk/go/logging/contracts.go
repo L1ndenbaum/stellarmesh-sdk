@@ -2,10 +2,13 @@
 package logging
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 )
@@ -97,8 +100,31 @@ func NewEventID() (string, error) {
 	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32], nil
 }
 
+// DecodeEvent strictly decodes one canonical event and rejects unknown fields.
+func DecodeEvent(payload []byte) (Event, error) {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var event Event
+	if err := decoder.Decode(&event); err != nil {
+		return Event{}, err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return Event{}, errors.New("event payload must contain one JSON value")
+		}
+		return Event{}, err
+	}
+	if err := event.Validate(); err != nil {
+		return Event{}, err
+	}
+	return event, nil
+}
+
 func validEventID(value string) bool {
 	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	if strings.ToLower(value) != value {
 		return false
 	}
 	decoded := strings.ReplaceAll(value, "-", "")
