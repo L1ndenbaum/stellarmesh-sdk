@@ -18,7 +18,7 @@
 
 | 路径 | 内容 | 发布形式 |
 | --- | --- | --- |
-| `contracts/logging/v1/` | 日志事件 JSON Schema、OpenAPI 和共享测试数据 | 随仓库版本发布 |
+| `contracts/logging/v1/` | 日志事件、DLQ 记录的 JSON Schema、OpenAPI 和共享测试数据 | 随仓库版本发布 |
 | `sdk/go/` | Go 公共 HTTP、Kafka、环境配置与日志客户端 | Go module |
 | `sdk/python/` | Python 日志客户端、类型模型与日志门面 | Python package |
 | `services/logging/` | HTTP 接收、内存队列、控制台输出、Kafka 发布与失败暂存 | 常驻服务镜像 |
@@ -59,7 +59,7 @@ HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不
 - `http/api`：统一响应 envelope、JSON 解码、路由和中间件；
 - `http/headers`：标准请求头读写；
 - `http/server`：带超时的 HTTP server 构造；
-- `mq/kafka`：具有显式 topic、启动检查、TLS、mTLS、SASL/PLAIN 和 SCRAM 配置的 Kafka publisher；
+- `mq/kafka`：具有显式 topic、可复用 Topic 启动检查、TLS、mTLS、SASL/PLAIN 和 SCRAM 配置的 Kafka publisher；
 - `envconfig`：不依赖业务 settings 的基础环境变量解析。
 
 日志客户端使用有界内存队列，调用 `Emit` 或日志级别方法时不会等待网络。构造函数会立即校验 URL、token、service 和容量限制。队列满、事件无效、客户端关闭、请求失败或响应不符合契约时，客户端返回 `false` 或调用 `OnDrop`；callback 的 panic 会被隔离并限频写到 stderr。客户端不会在业务请求线程中无限重试；进程退出前应调用 `Close` 并给出明确超时。
@@ -69,6 +69,7 @@ HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不
 `stellarmesh_logging` 提供：
 
 - Pydantic `LogEvent`、批量请求与响应模型；
+- Pydantic `DeadLetter` 与标准事件、DLQ Topic 常量；
 - `ClientConfig` 和有界队列 `Client`；
 - `Logger`、`get_logger`、`set_default_client`；
 - 同步和异步关闭入口；
@@ -85,7 +86,8 @@ Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业�
   -> logging-service HTTP 内存队列
   -> Kafka topic
   -> clickhouse sink
-  -> ClickHouse log_events
+       -> 有效事件 -> ClickHouse log_events
+       -> 无效消息 -> Kafka DLQ topic
 ```
 
 `logging-service` 从挂载的受保护 JSON 文件加载 service-token 绑定关系；token 只以 SHA-256 digest 留在进程内，比较使用常量时间操作。同一 service 可以同时配置新旧 token 完成滚动轮换，事件不能伪造其他 service 身份。服务启动时还会使用与运行期相同的 Kafka TLS/SASL transport 检查 Topic 可访问性。
@@ -94,7 +96,9 @@ Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业�
 
 接收队列按尚未开始发布的事件数限制，不按 HTTP 请求数限制。队列已满、服务关闭或 Kafka 失败且 spool 无法继续持久化时，服务会通过 `503` 或 readiness 暴露背压。`/health/live` 只判断进程存活，`/health/ready` 表示服务仍能可靠转交或缓冲新事件，`/metrics` 暴露有界标签的 Prometheus 指标。`/health` 保留为存活检查兼容入口。
 
-ClickHouse sink 使用显式 consumer group，只有在整批事件成功写入 `log_events` 后才提交 Kafka offset。当前版本遇到无效 Kafka 消息时会保留 offset 并重试，从而阻止同一批次继续前进；死信队列不属于 v1 范围，生产告警应覆盖持续消费失败。
+ClickHouse sink 使用显式 consumer group，并要求独立 DLQ Topic。每批消息先严格解析：有效事件批量写入 `log_events`，无效事件按 `dead-letter.schema.json` 编码，保留原 Topic、partition、offset、时间、key 和 Base64 原始载荷。只有 ClickHouse 插入、DLQ 发布和整批 offset 提交依次成功后，该批次才完成；任一步失败都保留整批重试。这样坏消息不会永久阻塞分区，但 ClickHouse 行和 DLQ 记录都可能因提交失败而重复，消费者必须按 at-least-once 处理。
+
+sink 启动时检查源 Topic、DLQ Topic 和 ClickHouse 运行时凭据。独立观测端口提供 `/health/live`、`/health/ready` 和 `/metrics`；Kafka 拉取、ClickHouse 插入、DLQ 发布或 offset 提交失败时 readiness 下降，成功恢复后回升。关闭时使用独立的排空超时处理内存中的最后一批，不复用已经取消的进程 context。
 
 ## ClickHouse Schema 与迁移
 
@@ -119,6 +123,7 @@ resources plan/apply
 ## 版本兼容规则
 
 - 协议目录的 `v1` 是消息兼容边界；新增可选字段必须同时更新契约与四方测试。
+- DLQ 记录是独立的 v1 协议，不得直接投回正常事件 Topic；修复并重放前必须显式解码 `payload_base64`、校验来源坐标并经过审计。
 - 删除字段、改变含义或收紧校验属于破坏性变化，应创建新的协议版本与 Topic。
 - SDK、接收服务、sink 与迁移镜像应使用同一仓库 tag 构建。
 - 每个业务项目可以选择自己的升级窗口，但不能混用未验证的协议版本。

@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -20,36 +21,109 @@ func (inserter *fakeInserter) InsertEvents(_ context.Context, events []sharedlog
 	return inserter.err
 }
 
+type fakeDeadLetterPublisher struct {
+	err     error
+	records []sharedlogging.DeadLetter
+}
+
+func (publisher *fakeDeadLetterPublisher) PublishDeadLetters(
+	_ context.Context,
+	records []sharedlogging.DeadLetter,
+) error {
+	publisher.records = append(publisher.records, records...)
+	return publisher.err
+}
+
 type fakeCommitter struct {
-	committed bool
+	err      error
+	messages []Message
 }
 
-func (committer *fakeCommitter) Commit(context.Context, []Message) error {
-	committer.committed = true
-	return nil
+func (committer *fakeCommitter) Commit(_ context.Context, messages []Message) error {
+	committer.messages = append(committer.messages, messages...)
+	return committer.err
 }
 
-func TestProcessBatchCommitsAfterInsert(t *testing.T) {
+func TestProcessorInsertsValidDeadLettersInvalidThenCommitsAll(t *testing.T) {
 	payload, err := json.Marshal(validEvent(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	inserter := &fakeInserter{}
+	deadLetters := &fakeDeadLetterPublisher{}
 	committer := &fakeCommitter{}
-	if err := ProcessBatch(context.Background(), []Message{{Value: payload}}, inserter, committer); err != nil {
+	processor := newTestProcessor(t, inserter, deadLetters, committer)
+	messages := []Message{
+		validSourceMessage(payload, 10),
+		validSourceMessage([]byte(`{"unknown":true}`), 11),
+	}
+	if err := processor.ProcessBatch(context.Background(), messages); err != nil {
 		t.Fatal(err)
 	}
-	if len(inserter.events) != 1 || !committer.committed {
-		t.Fatalf("events=%d committed=%v", len(inserter.events), committer.committed)
+	if len(inserter.events) != 1 || len(deadLetters.records) != 1 || len(committer.messages) != 2 {
+		t.Fatalf("events=%d dead_letters=%d committed=%d", len(inserter.events), len(deadLetters.records), len(committer.messages))
+	}
+	record := deadLetters.records[0]
+	decoded, err := base64.StdEncoding.DecodeString(record.PayloadBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(decoded) != `{"unknown":true}` || record.SourceOffset != 11 {
+		t.Fatalf("dead letter = %#v", record)
 	}
 }
 
-func TestProcessBatchDoesNotCommitFailedInsert(t *testing.T) {
+func TestProcessorDoesNotDeadLetterOrCommitFailedInsert(t *testing.T) {
 	payload, _ := json.Marshal(validEvent(t))
+	deadLetters := &fakeDeadLetterPublisher{}
 	committer := &fakeCommitter{}
-	err := ProcessBatch(context.Background(), []Message{{Value: payload}}, &fakeInserter{err: errors.New("unavailable")}, committer)
-	if err == nil || committer.committed {
-		t.Fatalf("error=%v committed=%v", err, committer.committed)
+	processor := newTestProcessor(t, &fakeInserter{err: errors.New("unavailable")}, deadLetters, committer)
+	err := processor.ProcessBatch(context.Background(), []Message{validSourceMessage(payload, 1)})
+	if !errors.Is(err, ErrClickHouseInsert) || len(deadLetters.records) != 0 || len(committer.messages) != 0 {
+		t.Fatalf("error=%v dead_letters=%d committed=%d", err, len(deadLetters.records), len(committer.messages))
+	}
+}
+
+func TestProcessorDoesNotCommitFailedDeadLetterPublish(t *testing.T) {
+	committer := &fakeCommitter{}
+	processor := newTestProcessor(t, &fakeInserter{}, &fakeDeadLetterPublisher{err: errors.New("unavailable")}, committer)
+	err := processor.ProcessBatch(context.Background(), []Message{validSourceMessage([]byte("invalid"), 1)})
+	if !errors.Is(err, ErrDeadLetterPublish) || len(committer.messages) != 0 {
+		t.Fatalf("error=%v committed=%d", err, len(committer.messages))
+	}
+}
+
+func TestProcessorReportsFailedCommit(t *testing.T) {
+	payload, _ := json.Marshal(validEvent(t))
+	processor := newTestProcessor(t, &fakeInserter{}, &fakeDeadLetterPublisher{}, &fakeCommitter{err: errors.New("unavailable")})
+	err := processor.ProcessBatch(context.Background(), []Message{validSourceMessage(payload, 1)})
+	if !errors.Is(err, ErrOffsetCommit) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func newTestProcessor(
+	t *testing.T,
+	inserter Inserter,
+	deadLetters DeadLetterPublisher,
+	committer Committer,
+) *Processor {
+	t.Helper()
+	processor, err := NewProcessor(ProcessorConfig{
+		Inserter: inserter, DeadLetters: deadLetters, Committer: committer,
+		Now: func() time.Time { return time.Date(2026, 8, 1, 12, 0, 1, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return processor
+}
+
+func validSourceMessage(payload []byte, offset int64) Message {
+	return Message{
+		Topic: sharedlogging.TopicV1, Partition: 1, Offset: offset,
+		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+		Key:       []byte("trace-123"), Value: payload,
 	}
 }
 

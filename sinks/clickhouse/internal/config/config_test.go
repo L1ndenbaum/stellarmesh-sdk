@@ -26,7 +26,24 @@ func TestLoadUsesCanonicalTopic(t *testing.T) {
 	if cfg.KafkaTopic != sharedlogging.TopicV1 {
 		t.Fatalf("topic = %q", cfg.KafkaTopic)
 	}
+	if cfg.KafkaDLQTopic != sharedlogging.DeadLetterTopicV1 || cfg.ObservabilityAddr != ":8092" {
+		t.Fatalf("runtime config = %#v", cfg)
+	}
+	if cfg.MaxSourceMessageBytes != 1<<20 {
+		t.Fatalf("max source message bytes = %d", cfg.MaxSourceMessageBytes)
+	}
 	if cfg.KafkaConnection.SecurityProtocol != "PLAINTEXT" {
 		t.Fatalf("Kafka security protocol = %q", cfg.KafkaConnection.SecurityProtocol)
+	}
+}
+
+func TestLoadRejectsSourceTopicAsDLQ(t *testing.T) {
+	t.Setenv("STELLARMESH_LOGGING_CLICKHOUSE_DATABASE", "logging_db")
+	t.Setenv("STELLARMESH_LOGGING_CLICKHOUSE_USER", "logging_runtime")
+	t.Setenv("STELLARMESH_LOGGING_KAFKA_TOPIC", "same-topic")
+	t.Setenv("STELLARMESH_LOGGING_KAFKA_DLQ_TOPIC", "same-topic")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "DLQ") {
+		t.Fatalf("error = %v", err)
 	}
 }

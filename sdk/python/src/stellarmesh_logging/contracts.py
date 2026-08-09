@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
@@ -12,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_valid
 from .sanitizer import sanitize_metadata
 
 LOG_EVENT_TOPIC = "stellarmesh.logging.events.v1"
+LOG_DEAD_LETTER_TOPIC = "stellarmesh.logging.events.v1.dlq"
 
 
 class Level(StrEnum):
@@ -102,6 +105,57 @@ class IngestResult(ContractModel):
     """Accepted event count returned by the ingester."""
 
     accepted: int
+
+
+class DeadLetter(ContractModel):
+    """Rejected Kafka payload with stable source coordinates."""
+
+    schema_version: Literal["v1"]
+    source_topic: str = Field(min_length=1)
+    source_partition: int = Field(ge=0)
+    source_offset: int = Field(ge=0)
+    source_timestamp: datetime | None = None
+    source_key_base64: str
+    reason: Literal["invalid_event"]
+    error: str = Field(min_length=1, max_length=2048)
+    payload_base64: str
+    failed_at: datetime
+
+    @field_validator("source_topic", "error")
+    @classmethod
+    def _require_dead_letter_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("value must not be empty")
+        return value
+
+    @field_validator("source_key_base64", "payload_base64")
+    @classmethod
+    def _validate_base64(cls, value: str) -> str:
+        try:
+            decoded = base64.b64decode(value, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ValueError("value must be canonical base64") from exc
+        if base64.b64encode(decoded).decode() != value:
+            raise ValueError("value must be canonical base64")
+        return value
+
+    @field_validator("source_timestamp", "failed_at", mode="after")
+    @classmethod
+    def _ensure_optional_timezone(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("timestamp must include a timezone")
+        normalized = value.astimezone(UTC)
+        if normalized == datetime.min.replace(tzinfo=UTC):
+            raise ValueError("timestamp must not be zero")
+        return normalized
+
+    @field_serializer("source_timestamp", "failed_at", when_used="json")
+    def _serialize_dead_letter_timestamp(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        return value.isoformat().replace("+00:00", "Z")
 
 
 def normalize_level(value: object) -> Level:

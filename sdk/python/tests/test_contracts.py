@@ -11,6 +11,7 @@ from openapi_spec_validator.readers import read_from_filename
 from pydantic import ValidationError
 
 from stellarmesh_logging import (
+    DeadLetter,
     Level,
     LogEvent,
     decode_event,
@@ -93,6 +94,20 @@ def test_service_auth_schema_accepts_rotating_tokens() -> None:
             }
         }
     )
+
+
+def test_dead_letter_schema_and_python_model_accept_shared_fixture() -> None:
+    contract_dir = _REPOSITORY_ROOT / "contracts" / "logging" / "v1"
+    schema = json.loads((contract_dir / "dead-letter.schema.json").read_text())
+    fixture = json.loads(
+        (contract_dir / "testdata" / "valid-dead-letter.json").read_text()
+    )
+    jsonschema.Draft202012Validator(
+        schema,
+        format_checker=jsonschema.FormatChecker(),
+    ).validate(fixture)
+    dead_letter = DeadLetter.model_validate(fixture)
+    assert dead_letter.source_offset == 42
 
 
 def test_openapi_document_is_valid_yaml() -> None:

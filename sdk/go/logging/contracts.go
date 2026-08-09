@@ -4,6 +4,7 @@ package logging
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -13,8 +14,16 @@ import (
 	"time"
 )
 
-// TopicV1 is the canonical Kafka topic name for logging v1 events.
-const TopicV1 = "stellarmesh.logging.events.v1"
+const (
+	// TopicV1 is the canonical Kafka topic name for logging v1 events.
+	TopicV1 = "stellarmesh.logging.events.v1"
+	// DeadLetterTopicV1 is the canonical Kafka topic name for rejected v1 payloads.
+	DeadLetterTopicV1 = "stellarmesh.logging.events.v1.dlq"
+	// DeadLetterSchemaV1 identifies the dead-letter record layout.
+	DeadLetterSchemaV1 = "v1"
+)
+
+const maxDeadLetterErrorRunes = 2048
 
 // Level is a severity value accepted by the logging contract.
 type Level string
@@ -57,6 +66,20 @@ type IngestResult struct {
 	Accepted int `json:"accepted"`
 }
 
+// DeadLetter preserves one rejected Kafka message and its source coordinates.
+type DeadLetter struct {
+	SchemaVersion   string     `json:"schema_version"`
+	SourceTopic     string     `json:"source_topic"`
+	SourcePartition int        `json:"source_partition"`
+	SourceOffset    int64      `json:"source_offset"`
+	SourceTimestamp *time.Time `json:"source_timestamp,omitempty"`
+	SourceKeyBase64 string     `json:"source_key_base64"`
+	Reason          string     `json:"reason"`
+	Error           string     `json:"error"`
+	PayloadBase64   string     `json:"payload_base64"`
+	FailedAt        time.Time  `json:"failed_at"`
+}
+
 // Validate verifies a severity value.
 func (level Level) Validate() error {
 	if _, ok := validLevels[level]; !ok {
@@ -84,6 +107,38 @@ func (event Event) Validate() error {
 	}
 	if event.Metadata == nil {
 		return errors.New("metadata is required")
+	}
+	return nil
+}
+
+// Validate verifies every field required by the v1 dead-letter contract.
+func (deadLetter DeadLetter) Validate() error {
+	if deadLetter.SchemaVersion != DeadLetterSchemaV1 {
+		return fmt.Errorf("unsupported dead-letter schema version %q", deadLetter.SchemaVersion)
+	}
+	if strings.TrimSpace(deadLetter.SourceTopic) == "" {
+		return errors.New("dead-letter source_topic is required")
+	}
+	if deadLetter.SourcePartition < 0 || deadLetter.SourceOffset < 0 {
+		return errors.New("dead-letter source coordinates must not be negative")
+	}
+	if deadLetter.SourceTimestamp != nil && deadLetter.SourceTimestamp.IsZero() {
+		return errors.New("dead-letter source_timestamp must not be zero")
+	}
+	if deadLetter.Reason != "invalid_event" {
+		return fmt.Errorf("unsupported dead-letter reason %q", deadLetter.Reason)
+	}
+	if strings.TrimSpace(deadLetter.Error) == "" || len([]rune(deadLetter.Error)) > maxDeadLetterErrorRunes {
+		return errors.New("dead-letter error must contain 1 to 2048 characters")
+	}
+	if _, err := decodeBase64(deadLetter.SourceKeyBase64); err != nil {
+		return fmt.Errorf("dead-letter source_key_base64: %w", err)
+	}
+	if _, err := decodeBase64(deadLetter.PayloadBase64); err != nil {
+		return fmt.Errorf("dead-letter payload_base64: %w", err)
+	}
+	if deadLetter.FailedAt.IsZero() {
+		return errors.New("dead-letter failed_at is required")
 	}
 	return nil
 }
@@ -118,6 +173,30 @@ func DecodeEvent(payload []byte) (Event, error) {
 		return Event{}, err
 	}
 	return event, nil
+}
+
+// DecodeDeadLetter strictly decodes one v1 dead-letter record.
+func DecodeDeadLetter(payload []byte) (DeadLetter, error) {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var deadLetter DeadLetter
+	if err := decoder.Decode(&deadLetter); err != nil {
+		return DeadLetter{}, err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return DeadLetter{}, errors.New("dead-letter payload must contain one JSON value")
+		}
+		return DeadLetter{}, err
+	}
+	if err := deadLetter.Validate(); err != nil {
+		return DeadLetter{}, err
+	}
+	return deadLetter, nil
+}
+
+func decodeBase64(value string) ([]byte, error) {
+	return base64.StdEncoding.Strict().DecodeString(value)
 }
 
 func validEventID(value string) bool {

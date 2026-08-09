@@ -8,6 +8,7 @@
 - 项目独立的服务令牌；
 - 稳定且可区分的业务 `service` 名称；
 - 项目独立的 Kafka Topic、consumer group 和 ACL；
+- 项目独立的 Kafka DLQ Topic、保留策略和 sink 生产权限；
 - 项目独立的 ClickHouse database、迁移身份与运行时身份；
 - 日志接收服务本地 spool 的持久化目录。
 
@@ -189,14 +190,19 @@ async def application_shutdown() -> None:
 | --- | --- | --- |
 | `STELLARMESH_LOGGING_KAFKA_BROKERS` | `kafka:9092` | 逗号分隔的 broker 地址 |
 | `STELLARMESH_LOGGING_KAFKA_TOPIC` | `stellarmesh.logging.events.v1` | 与接收服务一致的 Topic |
+| `STELLARMESH_LOGGING_KAFKA_DLQ_TOPIC` | `stellarmesh.logging.events.v1.dlq` | 必须预先创建且不能与源 Topic 相同 |
 | `STELLARMESH_LOGGING_WRITER_GROUP_ID` | `stellarmesh-logging-clickhouse` | 项目独立的 consumer group |
 | `STELLARMESH_LOGGING_CLICKHOUSE_HTTP_URL` | `http://clickhouse:8123` | ClickHouse HTTP 地址 |
 | `STELLARMESH_LOGGING_CLICKHOUSE_DATABASE` | 无 | 必填；项目 database |
 | `STELLARMESH_LOGGING_CLICKHOUSE_USER` | 无 | 必填；低权限运行时用户 |
 | `STELLARMESH_LOGGING_CLICKHOUSE_PASSWORD` | 空 | 运行时用户密码 |
 | `STELLARMESH_LOGGING_WRITER_BATCH_SIZE` | `500` | ClickHouse 写入批量大小 |
-| `STELLARMESH_LOGGING_WRITER_FLUSH_INTERVAL` | `1s` | 不满一批时的刷新间隔 |
+| `STELLARMESH_LOGGING_WRITER_FLUSH_INTERVAL` | `1s` | 不满一批时从首条消息开始计算的最大等待时间 |
+| `STELLARMESH_LOGGING_WRITER_RETRY_INTERVAL` | `1s` | 下游或 Kafka 操作失败后的重试间隔 |
+| `STELLARMESH_LOGGING_WRITER_SHUTDOWN_TIMEOUT` | `10s` | 关闭时最后一批的独立排空超时 |
 | `STELLARMESH_LOGGING_WRITER_HTTP_TIMEOUT` | `5s` | ClickHouse 请求超时 |
+| `STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES` | `1MiB` | Kafka 单条源消息读取上限，最大允许配置 `1GiB` |
+| `STELLARMESH_LOGGING_WRITER_OBSERVABILITY_ADDR` | `:8092` | sink 健康检查与 Prometheus 监听地址 |
 
 ingester、ClickHouse sink 和后续 DLQ producer 共用以下 Kafka 安全配置：
 
@@ -213,7 +219,13 @@ ingester、ClickHouse sink 和后续 DLQ producer 共用以下 Kafka 安全配�
 
 TLS 最低版本为 1.2，服务不提供跳过证书校验的配置。使用 `SASL_PLAINTEXT` 时凭据不受 TLS 保护，只应在已有可信网络加密层的环境使用。
 
-运行时用户需要对既有 `log_events` 表执行插入，并能完成必要的连通性检查，但不应具备创建 database、用户或表的权限。Kafka offset 只在 ClickHouse 插入成功后提交。
+运行时用户需要对既有 `log_events` 表执行插入，并能完成 `SELECT 1` 连通性检查，但不应具备创建 database、用户或表的权限。Kafka 身份需要消费源 Topic、使用指定 consumer group，并生产 DLQ Topic；不需要创建或修改 Topic 的管理权限。
+
+sink 会严格解析每条源消息。有效事件写入 ClickHouse；无效事件写入 DLQ，记录格式由 `contracts/logging/v1/dead-letter.schema.json` 定义，原始 key 和 payload 使用 Base64 保存。处理顺序固定为 ClickHouse 插入、DLQ 发布、源 offset 提交，三步全部成功才清空内存批次。任何一步失败都会重试整批，因此 ClickHouse 与 DLQ 都可能出现重复，不能依赖“恰好一次”语义。
+
+源 Topic 的单条消息上限不能超过 `STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES`。Base64 会扩大 DLQ 记录，DLQ Topic 的 `max.message.bytes` 应至少覆盖“源消息上限的 `4/3` 加 `16KiB` 协议余量”，例如源消息上限为 `1MiB` 时应允许至少约 `1.35MiB`。DLQ 可能保存原始敏感载荷，必须使用受限 ACL、加密传输、明确保留期和独立告警，不得向普通业务消费者开放。
+
+容器观测端口默认为 `8092`。存活检查使用 `GET /health/live`，就绪检查使用 `GET /health/ready`，Prometheus 使用 `GET /metrics`。启动期间、Kafka 拉取失败、ClickHouse 插入失败、DLQ 发布失败或 offset 提交失败时，就绪检查返回 `503`；恢复并成功处理后返回 `200`。
 
 ## 执行迁移制品
 
@@ -246,7 +258,8 @@ docker run --rm stellarmesh-logging-clickhouse-migrate:0.1.0 \
 - logging-service 的 `400`、`401`、`413`、`503`、readiness 和队列排空失败；
 - `stellarmesh_logging_ingester_queue_events`、Kafka 发布失败计数、分级 spool 字节数与重放失败计数；
 - Kafka consumer lag；
-- ClickHouse 批量插入错误、无效消息重试和磁盘容量；
+- `stellarmesh_logging_clickhouse_sink_pending_messages`、各阶段失败计数和 sink readiness；
+- ClickHouse 批量插入错误、DLQ 产生速率、DLQ lag、DLQ 保留容量和重复记录；
 - 应用关闭时 SDK drain 是否超时。
 
 收到 `202` 后仍可能在后续链路失败，所以不能只用 HTTP 成功率判断日志是否完整。审计类业务若需要强于当前异步链路的持久化保证，应单独设计同步确认或事务性审计存储，不能把 `202` 解释为落盘承诺。

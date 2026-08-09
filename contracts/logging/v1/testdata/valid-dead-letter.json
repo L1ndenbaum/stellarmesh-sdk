@@ -1,0 +1,12 @@
+{
+  "schema_version": "v1",
+  "source_topic": "stellarmesh.logging.events.v1",
+  "source_partition": 2,
+  "source_offset": 42,
+  "source_timestamp": "2026-08-01T12:00:00Z",
+  "source_key_base64": "dHJhY2UtMTIz",
+  "reason": "invalid_event",
+  "error": "invalid character 'n' looking for beginning of object key string",
+  "payload_base64": "e25vdC12YWxpZC1qc29ufQ==",
+  "failed_at": "2026-08-01T12:00:01Z"
+}

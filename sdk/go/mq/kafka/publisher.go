@@ -16,6 +16,7 @@ type Config struct {
 	Brokers      []string
 	Topic        string
 	BatchTimeout time.Duration
+	BatchBytes   int64
 	Connection   ConnectionConfig
 }
 
@@ -37,6 +38,9 @@ type Publisher struct {
 
 // NewPublisher creates a publisher using hash partitioning and leader acknowledgement.
 func NewPublisher(cfg Config) (*Publisher, error) {
+	if cfg.BatchBytes < 0 {
+		return nil, errors.New("Kafka publisher batch bytes must not be negative")
+	}
 	connection, err := NewConnection(cfg.Connection)
 	if err != nil {
 		return nil, err
@@ -57,6 +61,7 @@ func NewPublisher(cfg Config) (*Publisher, error) {
 			RequiredAcks: segmentio.RequireOne,
 			Balancer:     &segmentio.Hash{},
 			BatchTimeout: batchTimeout,
+			BatchBytes:   cfg.BatchBytes,
 			Transport:    transport,
 		},
 	}, nil
@@ -64,27 +69,35 @@ func NewPublisher(cfg Config) (*Publisher, error) {
 
 // Check verifies that a configured broker exposes the configured topic.
 func (publisher *Publisher) Check(ctx context.Context) error {
-	if len(publisher.brokers) == 0 {
+	return CheckTopic(ctx, publisher.dialer, publisher.brokers, publisher.topic)
+}
+
+// CheckTopic verifies that a configured broker exposes one existing topic.
+func CheckTopic(ctx context.Context, dialer *segmentio.Dialer, brokers []string, topic string) error {
+	if len(brokers) == 0 {
 		return errors.New("kafka brokers are required")
 	}
-	if strings.TrimSpace(publisher.topic) == "" {
+	if strings.TrimSpace(topic) == "" {
 		return errors.New("kafka topic is required")
 	}
+	if dialer == nil {
+		return errors.New("Kafka dialer is required")
+	}
 	var failures []string
-	for _, broker := range publisher.brokers {
+	for _, broker := range brokers {
 		broker = strings.TrimSpace(broker)
 		if broker == "" {
 			continue
 		}
-		conn, err := publisher.dialer.DialContext(ctx, "tcp", broker)
+		conn, err := dialer.DialContext(ctx, "tcp", broker)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", broker, err))
 			continue
 		}
-		partitions, readErr := conn.ReadPartitions(publisher.topic)
+		partitions, readErr := conn.ReadPartitions(topic)
 		closeErr := conn.Close()
 		if readErr != nil {
-			failures = append(failures, fmt.Sprintf("%s topic %q: %v", broker, publisher.topic, readErr))
+			failures = append(failures, fmt.Sprintf("%s topic %q: %v", broker, topic, readErr))
 			continue
 		}
 		if closeErr != nil {
@@ -94,12 +107,12 @@ func (publisher *Publisher) Check(ctx context.Context) error {
 		if len(partitions) > 0 {
 			return nil
 		}
-		failures = append(failures, fmt.Sprintf("%s topic %q has no partitions", broker, publisher.topic))
+		failures = append(failures, fmt.Sprintf("%s topic %q has no partitions", broker, topic))
 	}
 	if len(failures) == 0 {
 		return errors.New("kafka brokers are required")
 	}
-	return fmt.Errorf("kafka startup check failed for topic %q: %s", publisher.topic, strings.Join(failures, "; "))
+	return fmt.Errorf("kafka startup check failed for topic %q: %s", topic, strings.Join(failures, "; "))
 }
 
 // Publish writes serialized messages to Kafka.

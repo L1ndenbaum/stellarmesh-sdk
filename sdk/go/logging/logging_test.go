@@ -46,6 +46,20 @@ func TestInvalidContractFixtures(t *testing.T) {
 	}
 }
 
+func TestDeadLetterContractFixture(t *testing.T) {
+	payload, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "logging", "v1", "testdata", "valid-dead-letter.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadLetter, err := DecodeDeadLetter(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deadLetter.SourceOffset != 42 || deadLetter.Reason != "invalid_event" {
+		t.Fatalf("dead letter = %#v", deadLetter)
+	}
+}
+
 func TestSanitizeMetadata(t *testing.T) {
 	type credentials struct {
 		Password string `json:"password"`

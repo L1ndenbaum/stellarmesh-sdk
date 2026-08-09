@@ -3,8 +3,10 @@
 from .client import Client, ClientConfig, DropHandler, TraceIDProvider
 from .codec import decode_event, encode_event
 from .contracts import (
+    LOG_DEAD_LETTER_TOPIC,
     LOG_EVENT_TOPIC,
     BatchIngestRequest,
+    DeadLetter,
     IngestRequest,
     IngestResult,
     Level,
@@ -22,10 +24,12 @@ from .sanitizer import sanitize_metadata
 
 __all__ = [
     "LOG_EVENT_TOPIC",
+    "LOG_DEAD_LETTER_TOPIC",
     "BatchIngestRequest",
     "Client",
     "ClientConfig",
     "DropHandler",
+    "DeadLetter",
     "IngestRequest",
     "IngestResult",
     "Level",

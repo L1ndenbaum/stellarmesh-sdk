@@ -3,116 +3,147 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os/signal"
 	"syscall"
 	"time"
 
+	httpserver "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/server"
 	sharedkafka "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/application"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/config"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/infrastructure"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/observability"
 	segmentio "github.com/segmentio/kafka-go"
 )
 
+const startupCheckTimeout = 10 * time.Second
+
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() (result error) {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	signalCtx, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stopSignals()
+	ctx, cancel := context.WithCancel(signalCtx)
+	defer cancel()
+
+	metrics := observability.NewMetrics()
+	monitorServer := httpserver.New(httpserver.Config{
+		Addr: cfg.ObservabilityAddr, ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second,
+	}, observability.NewRouter(metrics))
+	listener, err := net.Listen("tcp", cfg.ObservabilityAddr)
+	if err != nil {
+		return fmt.Errorf("listen for ClickHouse sink observability: %w", err)
+	}
+	serverErrors := make(chan error, 1)
+	go func() {
+		if serveErr := monitorServer.Serve(listener); serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			serverErrors <- serveErr
+			cancel()
+		}
+	}()
+	defer func() {
+		metrics.SetReady(false)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer shutdownCancel()
+		result = errors.Join(result, monitorServer.Shutdown(shutdownCtx))
+	}()
+
 	connection, err := sharedkafka.NewConnection(cfg.KafkaConnection)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	reader := segmentio.NewReader(segmentio.ReaderConfig{
-		Brokers: cfg.KafkaBrokers, Topic: cfg.KafkaTopic, GroupID: cfg.KafkaGroupID,
-		Dialer: connection.Dialer(), MinBytes: 1, MaxBytes: 10e6, CommitInterval: 0,
-	})
-	defer reader.Close()
-	writer := infrastructure.NewWriter(infrastructure.WriterConfig{
+	if err := checkTopic(ctx, connection, cfg.KafkaBrokers, cfg.KafkaTopic); err != nil {
+		return err
+	}
+
+	dlqConnection := cfg.KafkaConnection
+	dlqConnection.ClientID = "stellarmesh-logging-clickhouse-dlq"
+	deadLetters, err := infrastructure.NewDeadLetterPublisher(
+		cfg.KafkaBrokers, cfg.KafkaDLQTopic, dlqConnection, deadLetterBatchBytes(cfg.MaxSourceMessageBytes),
+	)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, deadLetters.Close()) }()
+	if err := withStartupTimeout(ctx, deadLetters.Check); err != nil {
+		return fmt.Errorf("check Kafka DLQ topic: %w", err)
+	}
+
+	writer, err := infrastructure.NewWriter(infrastructure.WriterConfig{
 		BaseURL: cfg.ClickHouseHTTPURL, Database: cfg.ClickHouseDatabase,
 		Username: cfg.ClickHouseUser, Password: cfg.ClickHousePassword, Timeout: cfg.HTTPTimeout,
 	})
-	log.Printf("clickhouse sink consuming topic=%s group=%s", cfg.KafkaTopic, cfg.KafkaGroupID)
-	if err := run(ctx, reader, writer, &kafkaCommitter{reader: reader}, cfg.BatchSize, cfg.FlushInterval); err != nil {
-		log.Fatal(err)
+	if err != nil {
+		return err
 	}
+	if err := withStartupTimeout(ctx, writer.Check); err != nil {
+		return fmt.Errorf("check ClickHouse runtime access: %w", err)
+	}
+
+	reader := segmentio.NewReader(segmentio.ReaderConfig{
+		Brokers: cfg.KafkaBrokers, Topic: cfg.KafkaTopic, GroupID: cfg.KafkaGroupID,
+		Dialer: connection.Dialer(), MinBytes: 1, MaxBytes: int(cfg.MaxSourceMessageBytes), CommitInterval: 0,
+	})
+	source, err := infrastructure.NewKafkaSource(reader)
+	if err != nil {
+		return err
+	}
+	defer func() { result = errors.Join(result, source.Close()) }()
+	processor, err := application.NewProcessor(application.ProcessorConfig{
+		Inserter: writer, DeadLetters: deadLetters, Committer: source, Observer: metrics,
+	})
+	if err != nil {
+		return err
+	}
+
+	metrics.SetReady(true)
+	log.Printf(
+		"clickhouse sink consuming topic=%s group=%s dlq=%s observability=%s",
+		cfg.KafkaTopic, cfg.KafkaGroupID, cfg.KafkaDLQTopic, cfg.ObservabilityAddr,
+	)
+	result = application.Run(ctx, source, processor, application.ConsumerConfig{
+		BatchSize: cfg.BatchSize, FlushInterval: cfg.FlushInterval,
+		RetryInterval: cfg.RetryInterval, ShutdownTimeout: cfg.ShutdownTimeout, Observer: metrics,
+		OnError: func(err error) { log.Printf("clickhouse sink processing failed: %v", err) },
+	})
+	select {
+	case serveErr := <-serverErrors:
+		result = errors.Join(result, fmt.Errorf("ClickHouse sink observability server: %w", serveErr))
+	default:
+	}
+	return result
 }
 
-func run(
+func checkTopic(
 	ctx context.Context,
-	reader *segmentio.Reader,
-	inserter application.Inserter,
-	committer application.Committer,
-	batchSize int,
-	flushInterval time.Duration,
+	connection *sharedkafka.Connection,
+	brokers []string,
+	topic string,
 ) error {
-	if batchSize <= 0 {
-		batchSize = 500
-	}
-	if flushInterval <= 0 {
-		flushInterval = time.Second
-	}
-	batch := make([]application.Message, 0, batchSize)
-	flush := func() error {
-		if len(batch) == 0 {
-			return nil
-		}
-		processing := append([]application.Message(nil), batch...)
-		if err := application.ProcessBatch(ctx, processing, inserter, committer); err != nil {
-			return err
-		}
-		batch = batch[:0]
-		return nil
-	}
-	for {
-		if len(batch) >= batchSize {
-			if err := flush(); err != nil {
-				log.Printf("clickhouse batch flush failed: %v", err)
-				time.Sleep(time.Second)
-			}
-			continue
-		}
-		fetchCtx := ctx
-		cancel := func() {}
-		if len(batch) > 0 {
-			fetchCtx, cancel = context.WithTimeout(ctx, flushInterval)
-		}
-		message, err := reader.FetchMessage(fetchCtx)
-		cancel()
-		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) && len(batch) > 0 {
-				if flushErr := flush(); flushErr != nil {
-					log.Printf("clickhouse batch flush failed: %v", flushErr)
-				}
-				continue
-			}
-			if ctx.Err() != nil {
-				return flush()
-			}
-			log.Printf("kafka fetch failed: %v", err)
-			time.Sleep(time.Second)
-			continue
-		}
-		batch = append(batch, application.Message{Value: message.Value, Handle: message})
-	}
+	return withStartupTimeout(ctx, func(checkCtx context.Context) error {
+		return sharedkafka.CheckTopic(checkCtx, connection.Dialer(), brokers, topic)
+	})
 }
 
-type kafkaCommitter struct {
-	reader *segmentio.Reader
+func withStartupTimeout(ctx context.Context, check func(context.Context) error) error {
+	checkCtx, cancel := context.WithTimeout(ctx, startupCheckTimeout)
+	defer cancel()
+	return check(checkCtx)
 }
 
-func (committer *kafkaCommitter) Commit(ctx context.Context, messages []application.Message) error {
-	kafkaMessages := make([]segmentio.Message, 0, len(messages))
-	for _, message := range messages {
-		if kafkaMessage, ok := message.Handle.(segmentio.Message); ok {
-			kafkaMessages = append(kafkaMessages, kafkaMessage)
-		}
-	}
-	if len(kafkaMessages) == 0 {
-		return nil
-	}
-	return committer.reader.CommitMessages(ctx, kafkaMessages...)
+func deadLetterBatchBytes(sourceBytes int64) int64 {
+	return ((sourceBytes + 2) / 3 * 4) + (16 << 10)
 }

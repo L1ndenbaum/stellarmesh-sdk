@@ -6,7 +6,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -39,7 +41,20 @@ type Writer struct {
 }
 
 // NewWriter creates a ClickHouse HTTP writer.
-func NewWriter(config WriterConfig) *Writer {
+func NewWriter(config WriterConfig) (*Writer, error) {
+	parsed, err := url.Parse(strings.TrimSpace(config.BaseURL))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, errors.New("ClickHouse base URL must be an absolute HTTP URL")
+	}
+	if parsed.User != nil {
+		return nil, errors.New("ClickHouse credentials must not be embedded in the base URL")
+	}
+	if strings.TrimSpace(config.Database) == "" || strings.TrimSpace(config.Username) == "" {
+		return nil, errors.New("ClickHouse database and runtime user are required")
+	}
+	if config.Timeout < 0 {
+		return nil, errors.New("ClickHouse HTTP timeout must not be negative")
+	}
 	timeout := config.Timeout
 	if timeout <= 0 {
 		timeout = 5 * time.Second
@@ -53,9 +68,32 @@ func NewWriter(config WriterConfig) *Writer {
 		now = func() time.Time { return time.Now().UTC() }
 	}
 	return &Writer{
-		baseURL: strings.TrimRight(config.BaseURL, "/"), database: config.Database,
-		username: config.Username, password: config.Password, client: client, now: now,
+		baseURL: strings.TrimRight(strings.TrimSpace(config.BaseURL), "/"), database: strings.TrimSpace(config.Database),
+		username: strings.TrimSpace(config.Username), password: config.Password, client: client, now: now,
+	}, nil
+}
+
+// Check verifies ClickHouse connectivity and runtime credentials without requiring DDL access.
+func (writer *Writer) Check(ctx context.Context) error {
+	requestURL, err := writer.queryURL("SELECT 1")
+	if err != nil {
+		return err
 	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return err
+	}
+	request.SetBasicAuth(writer.username, writer.password)
+	response, err := writer.client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return clickHouseResponseError(response)
+	}
+	_, err = io.Copy(io.Discard, response.Body)
+	return err
 }
 
 // InsertEvents inserts one JSONEachRow batch.
@@ -99,22 +137,36 @@ func (writer *Writer) InsertEvents(ctx context.Context, events []sharedlogging.E
 		return err
 	}
 	defer response.Body.Close()
-	if response.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("clickhouse insert returned %d", response.StatusCode)
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return clickHouseResponseError(response)
 	}
-	return nil
+	_, err = io.Copy(io.Discard, response.Body)
+	return err
 }
 
 func (writer *Writer) insertURL() (string, error) {
+	return writer.queryURL("INSERT INTO " + tableName + " FORMAT JSONEachRow")
+}
+
+func (writer *Writer) queryURL(queryText string) (string, error) {
 	parsed, err := url.Parse(writer.baseURL)
 	if err != nil {
 		return "", err
 	}
 	query := parsed.Query()
 	query.Set("database", writer.database)
-	query.Set("query", "INSERT INTO "+tableName+" FORMAT JSONEachRow")
+	query.Set("query", queryText)
 	parsed.RawQuery = query.Encode()
 	return parsed.String(), nil
+}
+
+func clickHouseResponseError(response *http.Response) error {
+	payload, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+	detail := strings.TrimSpace(string(payload))
+	if detail == "" {
+		return fmt.Errorf("ClickHouse returned HTTP %d", response.StatusCode)
+	}
+	return fmt.Errorf("ClickHouse returned HTTP %d: %s", response.StatusCode, detail)
 }
 
 func formatTime(value time.Time) string {

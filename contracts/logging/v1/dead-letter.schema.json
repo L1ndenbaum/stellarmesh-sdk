@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stellarmesh.dev/contracts/logging/v1/dead-letter.schema.json",
+  "title": "LoggingDeadLetterV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_topic",
+    "source_partition",
+    "source_offset",
+    "source_key_base64",
+    "reason",
+    "error",
+    "payload_base64",
+    "failed_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "v1"
+    },
+    "source_topic": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "source_partition": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source_timestamp": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "source_key_base64": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "reason": {
+      "const": "invalid_event"
+    },
+    "error": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "\\S"
+    },
+    "payload_base64": {
+      "type": "string",
+      "contentEncoding": "base64"
+    },
+    "failed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -25,4 +25,5 @@ RUN apk add --no-cache ca-certificates \
     && adduser -D -H -u 10001 appuser
 COPY --from=builder /out/stellarmesh-logging-clickhouse-sink /usr/local/bin/stellarmesh-logging-clickhouse-sink
 USER appuser
+EXPOSE 8092
 ENTRYPOINT ["stellarmesh-logging-clickhouse-sink"]
