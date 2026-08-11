@@ -23,7 +23,7 @@ const (
 	defaultClientQueueSize     = 4096
 	defaultClientBatchSize     = 128
 	defaultClientFlushInterval = 100 * time.Millisecond
-	defaultMaxBatchBodyBytes   = 900 * 1024
+	defaultMaxBatchBodyBytes   = MaxHTTPBodyBytesV1
 	defaultClientQueueBytes    = 16 << 20
 	defaultClientMaxAttempts   = 3
 	defaultInitialBackoff      = 100 * time.Millisecond

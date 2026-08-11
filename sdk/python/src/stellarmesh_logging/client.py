@@ -60,7 +60,7 @@ class ClientConfig:
     queue_bytes: int = 16 << 20
     batch_size: int = 128
     flush_interval_ms: int = 100
-    max_body_bytes: int = 900 * 1024
+    max_body_bytes: int = MAX_HTTP_BODY_BYTES
     max_attempts: int = 3
     initial_backoff_seconds: float = 0.1
     max_backoff_seconds: float = 1.0
@@ -149,7 +149,8 @@ class Client:
         ):
             return False
         try:
-            event_bytes = len(encode_event(event))
+            snapshot = event.model_copy(deep=True)
+            event_bytes = len(encode_event(snapshot))
         except Exception as exc:  # noqa: BLE001 - serialization is isolated.
             self._drop(event, exc)
             return False
@@ -174,7 +175,7 @@ class Client:
                 failure = RuntimeError("logging client queue is full")
             else:
                 try:
-                    self._queue.put_nowait(_QueuedEvent(event, event_bytes))
+                    self._queue.put_nowait(_QueuedEvent(snapshot, event_bytes))
                 except queue.Full:
                     failure = RuntimeError("logging client queue is full")
                 else:

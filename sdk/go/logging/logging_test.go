@@ -349,6 +349,21 @@ func TestClientQueueBytesIncludeInFlightBatch(t *testing.T) {
 	}
 }
 
+func TestClientDefaultBodyLimitIncludesBatchEnvelope(t *testing.T) {
+	client, err := NewClient(ClientConfig{BaseURL: "http://logging-service", Token: "token"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client.maxBodyBytes != MaxHTTPBodyBytesV1 {
+		t.Fatalf("max body bytes = %d", client.maxBodyBytes)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := client.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestClientAcceptsLegacyOKResponse(t *testing.T) {
 	httpClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		payload := `{"code":200,"message":"ok","data":{"accepted":1},"timestamp":"2026-08-01T12:00:00Z"}`

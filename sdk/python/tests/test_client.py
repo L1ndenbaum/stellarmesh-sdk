@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from stellarmesh_logging import (
+    MAX_HTTP_BODY_BYTES,
     Client,
     ClientConfig,
     Level,
@@ -236,6 +237,48 @@ def test_client_queue_bytes_include_in_flight_batch() -> None:
     assert client.close(timeout=1)
     assert len(dropped) == 1
     assert "queue is full" in str(dropped[0])
+
+
+def test_client_enqueue_keeps_an_immutable_snapshot() -> None:
+    started = threading.Event()
+    release = threading.Event()
+    captured: list[dict[str, Any]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        captured.extend(payload["events"])
+        if len(captured) == 1:
+            started.set()
+            assert release.wait(timeout=1)
+        return _response(len(payload["events"]))
+
+    client = Client(
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            batch_size=1,
+        ),
+        transport=httpx.MockTransport(handle),
+    )
+    assert client.emit_event(Level.INFO, message="first")
+    assert started.wait(timeout=1)
+    event = LogEvent(service="backend", message="before", metadata={"state": "before"})
+    assert client.enqueue(event)
+    event.message = "after"
+    event.metadata["state"] = "after"
+    event.metadata["large"] = "x" * (2 << 20)
+    release.set()
+    assert client.close(timeout=1)
+    assert captured[1]["message"] == "before"
+    assert captured[1]["metadata"] == {"state": "before"}
+
+
+def test_client_default_body_limit_includes_batch_envelope() -> None:
+    config = ClientConfig(
+        base_url="http://logging-service", token="token", service="backend"
+    )
+    assert config.max_body_bytes == MAX_HTTP_BODY_BYTES
 
 
 def test_client_isolates_provider_and_drop_handler_errors(

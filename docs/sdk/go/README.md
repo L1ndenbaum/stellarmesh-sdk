@@ -163,7 +163,7 @@ func Shutdown(runtime *Runtime) {
 | `QueueBytes` | `16MiB` | 尚未完成发送的规范化事件累计字节上限 |
 | `BatchSize` | `128` | 单次发送目标事件数 |
 | `FlushInterval` | `100ms` | 未达到批量大小时的刷新周期 |
-| `MaxBodyBytes` | `900KiB` | 单次 HTTP body 上限，超限批次会继续拆分 |
+| `MaxBodyBytes` | `1MiB` | 单次 HTTP body 上限，包含 batch envelope；超限批次会继续拆分 |
 | `MaxAttempts` | `3` | 单批总尝试次数，包含首次请求 |
 | `InitialBackoff` | `100ms` | 首次重试的最大抖动退避 |
 | `MaxBackoff` | `1s` | 指数退避上限 |
