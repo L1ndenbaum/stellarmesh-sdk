@@ -18,7 +18,7 @@
 
 | 路径 | 内容 | 发布形式 |
 | --- | --- | --- |
-| `contracts/logging/v1/` | 日志事件、DLQ 记录的 JSON Schema、OpenAPI 和共享测试数据 | 随仓库版本发布 |
+| `contracts/logging/v1/` | 日志事件、DLQ v1/v2、尺寸限制、OpenAPI 和共享测试数据 | 随仓库版本发布 |
 | `sdk/go/` | Go 公共 HTTP、Kafka、环境配置与日志客户端 | Go module |
 | `sdk/python/` | Python 日志客户端、类型模型与日志门面 | Python package |
 | `services/logging/` | HTTP 接收、内存队列、控制台输出、Kafka 发布与失败暂存 | 常驻服务镜像 |
@@ -96,7 +96,7 @@ Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业�
 
 接收队列同时限制尚未获得持久确认的事件数和规范化 JSON 字节数，不按 HTTP 请求数限制；发布批次也同时受事件数和字节数约束。请求进入队列后会等待当前批次由 Kafka 全部同步副本确认，或在 Kafka 失败时由本地 spool 原子提交；只有满足其中一项才返回 `202`，两者均失败则返回 `503`。客户端请求提前取消不会撤销已经入队的事件，客户端重试可能产生重复。队列已满、服务关闭或持久路径均不可用时，服务会通过 `503` 或 readiness 暴露背压。`/health/live` 只判断进程存活，`/health/ready` 表示服务最近一次确认仍能可靠转交或缓冲新事件，后台 Kafka 检查可在空 spool 时恢复就绪状态；后续请求也会重新探测持久路径。`/metrics` 暴露有界标签的 Prometheus 指标，`/health` 保留为存活检查兼容入口。
 
-ClickHouse sink 使用显式 consumer group，并要求独立 DLQ Topic。消费批次同时受消息数和 Kafka key/value 总字节数约束，避免合法的大消息批次无界占用内存。每批消息先严格解析：有效事件批量写入 `log_events`，无效事件按 `dead-letter.schema.json` 编码，保留原 Topic、partition、offset、时间、key 和 Base64 原始载荷。只有 ClickHouse 插入、DLQ 发布和整批 offset 提交依次成功后，该批次才完成；任一步失败都保留整批重试。这样坏消息不会永久阻塞分区，但 ClickHouse 行和 DLQ 记录都可能因提交失败而重复，消费者必须按 at-least-once 处理。
+ClickHouse sink 使用显式 consumer group，并要求独立 DLQ Topic。消费批次同时受消息数和 Kafka key/value 总字节数约束，避免合法的大消息批次无界占用内存。每批消息先严格解析：普通无效事件按 `dead-letter.schema.json` 编码，保留原 Topic、partition、offset、时间、key 和 Base64 原始载荷；超过源消息上限且不适合复制原始载荷的消息按 `dead-letter-v2.schema.json` 编码，只保留源坐标、长度和 SHA-256 摘要。只有 ClickHouse 插入、DLQ 发布和整批 offset 提交依次成功后，该批次才完成；任一步失败都保留整批重试。这样坏消息不会永久阻塞分区，但 ClickHouse 行和 DLQ 记录都可能因提交失败而重复，消费者必须按 at-least-once 处理。
 
 sink 启动时检查源 Topic、DLQ Topic 和 ClickHouse 运行时凭据。独立观测端口提供 `/health/live`、`/health/ready` 和 `/metrics`；Kafka 拉取、ClickHouse 插入、DLQ 发布或 offset 提交失败时 readiness 下降，成功恢复后回升。关闭时使用独立的排空超时处理内存中的最后一批，不复用已经取消的进程 context。
 

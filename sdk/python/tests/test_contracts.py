@@ -11,9 +11,13 @@ from openapi_spec_validator.readers import read_from_filename
 from pydantic import ValidationError
 
 from stellarmesh_logging import (
+    MAX_EVENT_JSON_BYTES,
+    MAX_HTTP_BODY_BYTES,
+    MAX_KAFKA_MESSAGE_BYTES,
     DeadLetter,
     Level,
     LogEvent,
+    OversizeDeadLetter,
     decode_event,
     encode_event,
     should_emit_level,
@@ -108,6 +112,32 @@ def test_dead_letter_schema_and_python_model_accept_shared_fixture() -> None:
     ).validate(fixture)
     dead_letter = DeadLetter.model_validate(fixture)
     assert dead_letter.source_offset == 42
+
+
+def test_oversize_dead_letter_schema_and_python_model_accept_shared_fixture() -> None:
+    contract_dir = _REPOSITORY_ROOT / "contracts" / "logging" / "v1"
+    schema = json.loads((contract_dir / "dead-letter-v2.schema.json").read_text())
+    fixture = json.loads(
+        (contract_dir / "testdata" / "valid-dead-letter-v2.json").read_text()
+    )
+    jsonschema.Draft202012Validator(
+        schema,
+        format_checker=jsonschema.FormatChecker(),
+    ).validate(fixture)
+    dead_letter = OversizeDeadLetter.model_validate(fixture)
+    assert dead_letter.source_offset == 43
+    assert dead_letter.content_omitted is True
+
+
+def test_contract_limits_match_python_constants() -> None:
+    limits_path = _REPOSITORY_ROOT / "contracts" / "logging" / "v1" / "limits.json"
+    limits = json.loads(limits_path.read_text())
+    assert limits == {
+        "schema_version": "v1",
+        "max_event_json_bytes": MAX_EVENT_JSON_BYTES,
+        "max_http_body_bytes": MAX_HTTP_BODY_BYTES,
+        "max_kafka_message_bytes": MAX_KAFKA_MESSAGE_BYTES,
+    }
 
 
 def test_openapi_document_is_valid_yaml() -> None:

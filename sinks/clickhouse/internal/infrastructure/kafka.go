@@ -105,6 +105,26 @@ func (publisher *DeadLetterPublisher) PublishDeadLetters(
 	return publisher.base.Publish(ctx, messages)
 }
 
+// PublishOversizeDeadLetters writes compact v2 records without copying source content.
+func (publisher *DeadLetterPublisher) PublishOversizeDeadLetters(
+	ctx context.Context,
+	records []sharedlogging.OversizeDeadLetter,
+) error {
+	messages := make([]sharedkafka.Message, 0, len(records))
+	for _, record := range records {
+		if err := record.Validate(); err != nil {
+			return err
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return err
+		}
+		key := []byte(fmt.Sprintf("%s/%d/%d", record.SourceTopic, record.SourcePartition, record.SourceOffset))
+		messages = append(messages, sharedkafka.Message{Key: key, Value: payload, Time: record.FailedAt})
+	}
+	return publisher.base.Publish(ctx, messages)
+}
+
 // Close releases the DLQ producer.
 func (publisher *DeadLetterPublisher) Close() error {
 	return publisher.base.Close()

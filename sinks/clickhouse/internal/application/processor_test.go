@@ -22,8 +22,18 @@ func (inserter *fakeInserter) InsertEvents(_ context.Context, events []sharedlog
 }
 
 type fakeDeadLetterPublisher struct {
-	err     error
-	records []sharedlogging.DeadLetter
+	err             error
+	oversizeErr     error
+	records         []sharedlogging.DeadLetter
+	oversizeRecords []sharedlogging.OversizeDeadLetter
+}
+
+func (publisher *fakeDeadLetterPublisher) PublishOversizeDeadLetters(
+	_ context.Context,
+	records []sharedlogging.OversizeDeadLetter,
+) error {
+	publisher.oversizeRecords = append(publisher.oversizeRecords, records...)
+	return publisher.oversizeErr
 }
 
 func (publisher *fakeDeadLetterPublisher) PublishDeadLetters(
@@ -84,6 +94,49 @@ func TestProcessorDoesNotDeadLetterOrCommitFailedInsert(t *testing.T) {
 	}
 }
 
+func TestProcessorPublishesCompactV2ForOversizeMessageThenCommits(t *testing.T) {
+	deadLetters := &fakeDeadLetterPublisher{}
+	committer := &fakeCommitter{}
+	processor, err := NewProcessor(ProcessorConfig{
+		Inserter: &fakeInserter{}, DeadLetters: deadLetters, Committer: committer,
+		MaxSourceMessageBytes: 16,
+		Now:                   func() time.Time { return time.Date(2026, 8, 1, 12, 0, 1, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	message := validSourceMessage([]byte("oversized-payload"), 43)
+	if err := processor.ProcessBatch(context.Background(), []Message{message}); err != nil {
+		t.Fatal(err)
+	}
+	if len(deadLetters.records) != 0 || len(deadLetters.oversizeRecords) != 1 || len(committer.messages) != 1 {
+		t.Fatalf(
+			"v1=%d v2=%d committed=%d",
+			len(deadLetters.records), len(deadLetters.oversizeRecords), len(committer.messages),
+		)
+	}
+	record := deadLetters.oversizeRecords[0]
+	if record.PayloadBytes != int64(len(message.Value)) || record.PayloadSHA256 == "" || !record.ContentOmitted {
+		t.Fatalf("oversized dead letter = %#v", record)
+	}
+}
+
+func TestProcessorDoesNotCommitFailedOversizeDeadLetterPublish(t *testing.T) {
+	deadLetters := &fakeDeadLetterPublisher{oversizeErr: errors.New("unavailable")}
+	committer := &fakeCommitter{}
+	processor, err := NewProcessor(ProcessorConfig{
+		Inserter: &fakeInserter{}, DeadLetters: deadLetters, Committer: committer,
+		MaxSourceMessageBytes: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = processor.ProcessBatch(context.Background(), []Message{validSourceMessage([]byte("x"), 1)})
+	if !errors.Is(err, ErrDeadLetterPublish) || len(committer.messages) != 0 {
+		t.Fatalf("error=%v committed=%d", err, len(committer.messages))
+	}
+}
+
 func TestProcessorDoesNotCommitFailedDeadLetterPublish(t *testing.T) {
 	committer := &fakeCommitter{}
 	processor := newTestProcessor(t, &fakeInserter{}, &fakeDeadLetterPublisher{err: errors.New("unavailable")}, committer)
@@ -111,7 +164,8 @@ func newTestProcessor(
 	t.Helper()
 	processor, err := NewProcessor(ProcessorConfig{
 		Inserter: inserter, DeadLetters: deadLetters, Committer: committer,
-		Now: func() time.Time { return time.Date(2026, 8, 1, 12, 0, 1, 0, time.UTC) },
+		Now:                   func() time.Time { return time.Date(2026, 8, 1, 12, 0, 1, 0, time.UTC) },
+		MaxSourceMessageBytes: sharedlogging.MaxKafkaMessageBytesV1,
 	})
 	if err != nil {
 		t.Fatal(err)

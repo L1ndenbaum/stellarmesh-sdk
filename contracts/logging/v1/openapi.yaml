@@ -62,7 +62,7 @@ paths:
               $ref: "#/components/schemas/LogEventIngestRequest"
       responses:
         "202":
-          description: 事件已进入内存队列
+          description: 事件已持久写入 Kafka 或本地 spool
           content:
             application/json:
               schema:
@@ -90,7 +90,7 @@ paths:
               $ref: "#/components/schemas/LogEventBatchIngestRequest"
       responses:
         "202":
-          description: 事件已进入内存队列
+          description: 事件已持久写入 Kafka 或本地 spool
           content:
             application/json:
               schema:
@@ -180,7 +180,7 @@ components:
           schema:
             $ref: "#/components/schemas/ApiEnvelope"
     PayloadTooLarge:
-      description: 请求体或批量事件数超过限制
+      description: 请求体、单条事件或批量事件数超过契约限制
       content:
         application/json:
           schema:

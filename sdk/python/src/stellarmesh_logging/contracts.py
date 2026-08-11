@@ -15,6 +15,9 @@ from .sanitizer import sanitize_metadata
 
 LOG_EVENT_TOPIC = "stellarmesh.logging.events.v1"
 LOG_DEAD_LETTER_TOPIC = "stellarmesh.logging.events.v1.dlq"
+MAX_EVENT_JSON_BYTES = 900 * 1024
+MAX_HTTP_BODY_BYTES = 1 << 20
+MAX_KAFKA_MESSAGE_BYTES = 1 << 20
 
 
 class Level(StrEnum):
@@ -153,6 +156,49 @@ class DeadLetter(ContractModel):
 
     @field_serializer("source_timestamp", "failed_at", when_used="json")
     def _serialize_dead_letter_timestamp(self, value: datetime | None) -> str | None:
+        if value is None:
+            return None
+        return value.isoformat().replace("+00:00", "Z")
+
+
+class OversizeDeadLetter(ContractModel):
+    """Compact digest for a Kafka source message that is too large for DLQ v1."""
+
+    schema_version: Literal["v2"]
+    source_topic: str = Field(min_length=1)
+    source_partition: int = Field(ge=0)
+    source_offset: int = Field(ge=0)
+    source_timestamp: datetime | None = None
+    reason: Literal["source_message_too_large"]
+    error: str = Field(min_length=1, max_length=2048)
+    source_key_bytes: int = Field(ge=0)
+    source_key_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    payload_bytes: int = Field(ge=0)
+    payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    content_omitted: Literal[True]
+    failed_at: datetime
+
+    @field_validator("source_topic", "error")
+    @classmethod
+    def _require_oversize_dead_letter_text(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("value must not be empty")
+        return value
+
+    @field_validator("source_timestamp", "failed_at", mode="after")
+    @classmethod
+    def _ensure_oversize_timestamp(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError("timestamp must include a timezone")
+        normalized = value.astimezone(UTC)
+        if normalized == datetime.min.replace(tzinfo=UTC):
+            raise ValueError("timestamp must not be zero")
+        return normalized
+
+    @field_serializer("source_timestamp", "failed_at", when_used="json")
+    def _serialize_oversize_timestamp(self, value: datetime | None) -> str | None:
         if value is None:
             return None
         return value.isoformat().replace("+00:00", "Z")

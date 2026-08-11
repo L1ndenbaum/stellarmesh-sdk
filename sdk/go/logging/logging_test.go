@@ -60,6 +60,40 @@ func TestDeadLetterContractFixture(t *testing.T) {
 	}
 }
 
+func TestOversizeDeadLetterContractFixture(t *testing.T) {
+	payload, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "logging", "v1", "testdata", "valid-dead-letter-v2.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadLetter, err := DecodeOversizeDeadLetter(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deadLetter.SourceOffset != 43 || deadLetter.Reason != "source_message_too_large" || !deadLetter.ContentOmitted {
+		t.Fatalf("oversized dead letter = %#v", deadLetter)
+	}
+}
+
+func TestContractLimitsMatchGoConstants(t *testing.T) {
+	payload, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "logging", "v1", "limits.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var limits struct {
+		SchemaVersion        string `json:"schema_version"`
+		MaxEventJSONBytes    int    `json:"max_event_json_bytes"`
+		MaxHTTPBodyBytes     int    `json:"max_http_body_bytes"`
+		MaxKafkaMessageBytes int    `json:"max_kafka_message_bytes"`
+	}
+	if err := json.Unmarshal(payload, &limits); err != nil {
+		t.Fatal(err)
+	}
+	if limits.SchemaVersion != "v1" || limits.MaxEventJSONBytes != MaxEventJSONBytesV1 ||
+		limits.MaxHTTPBodyBytes != MaxHTTPBodyBytesV1 || limits.MaxKafkaMessageBytes != MaxKafkaMessageBytesV1 {
+		t.Fatalf("contract limits do not match Go constants: %#v", limits)
+	}
+}
+
 func TestSanitizeMetadata(t *testing.T) {
 	type credentials struct {
 		Password string `json:"password"`

@@ -227,7 +227,7 @@ TLS 最低版本为 1.2，服务不提供跳过证书校验的配置。使用 `S
 
 运行时用户需要对既有 `log_events` 表执行插入，并能完成 `SELECT 1` 连通性检查，但不应具备创建 database、用户或表的权限。Kafka 身份需要消费源 Topic、使用指定 consumer group，并生产 DLQ Topic；不需要创建或修改 Topic 的管理权限。
 
-sink 会严格解析每条源消息。有效事件写入 ClickHouse；无效事件写入 DLQ，记录格式由 `contracts/logging/v1/dead-letter.schema.json` 定义，原始 key 和 payload 使用 Base64 保存。处理顺序固定为 ClickHouse 插入、DLQ 发布、源 offset 提交，三步全部成功才清空内存批次。任何一步失败都会重试整批，因此 ClickHouse 与 DLQ 都可能出现重复，不能依赖“恰好一次”语义。
+sink 会严格解析每条源消息。有效事件写入 ClickHouse；普通无效事件按 `contracts/logging/v1/dead-letter.schema.json` 写入 DLQ，原始 key 和 payload 使用 Base64 保存；超过源消息上限的消息按 `contracts/logging/v1/dead-letter-v2.schema.json` 写入同一 DLQ Topic，只保存源坐标、字节数和 SHA-256，不复制原始内容。处理顺序固定为 ClickHouse 插入、DLQ 发布、源 offset 提交，三步全部成功才清空内存批次。任何一步失败都会重试整批，因此 ClickHouse 与 DLQ 都可能出现重复，不能依赖“恰好一次”语义。
 
 源 Topic 的单条消息上限不能超过 `STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES`。Base64 会扩大 DLQ 记录，DLQ Topic 的 `max.message.bytes` 应至少覆盖“源消息上限的 `4/3` 加 `16KiB` 协议余量”，例如源消息上限为 `1MiB` 时应允许至少约 `1.35MiB`。DLQ 可能保存原始敏感载荷，必须使用受限 ACL、加密传输、明确保留期和独立告警，不得向普通业务消费者开放。
 

@@ -95,7 +95,8 @@ func run() (result error) {
 
 	reader := segmentio.NewReader(segmentio.ReaderConfig{
 		Brokers: cfg.KafkaBrokers, Topic: cfg.KafkaTopic, GroupID: cfg.KafkaGroupID,
-		Dialer: connection.Dialer(), MinBytes: 1, MaxBytes: int(cfg.MaxSourceMessageBytes), CommitInterval: 0,
+		Dialer: connection.Dialer(), MinBytes: 1, MaxBytes: int(cfg.MaxSourceMessageBytes), QueueCapacity: 1,
+		CommitInterval: 0,
 	})
 	source, err := infrastructure.NewKafkaSource(reader)
 	if err != nil {
@@ -104,6 +105,7 @@ func run() (result error) {
 	defer func() { result = errors.Join(result, source.Close()) }()
 	processor, err := application.NewProcessor(application.ProcessorConfig{
 		Inserter: writer, DeadLetters: deadLetters, Committer: source, Observer: metrics,
+		MaxSourceMessageBytes: cfg.MaxSourceMessageBytes,
 	})
 	if err != nil {
 		return err

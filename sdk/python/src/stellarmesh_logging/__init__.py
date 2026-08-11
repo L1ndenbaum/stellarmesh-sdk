@@ -5,12 +5,16 @@ from .codec import decode_event, encode_event
 from .contracts import (
     LOG_DEAD_LETTER_TOPIC,
     LOG_EVENT_TOPIC,
+    MAX_EVENT_JSON_BYTES,
+    MAX_HTTP_BODY_BYTES,
+    MAX_KAFKA_MESSAGE_BYTES,
     BatchIngestRequest,
     DeadLetter,
     IngestRequest,
     IngestResult,
     Level,
     LogEvent,
+    OversizeDeadLetter,
     should_emit_level,
 )
 from .logger import (
@@ -25,6 +29,9 @@ from .sanitizer import sanitize_metadata
 __all__ = [
     "LOG_EVENT_TOPIC",
     "LOG_DEAD_LETTER_TOPIC",
+    "MAX_EVENT_JSON_BYTES",
+    "MAX_HTTP_BODY_BYTES",
+    "MAX_KAFKA_MESSAGE_BYTES",
     "BatchIngestRequest",
     "Client",
     "ClientConfig",
@@ -34,6 +41,7 @@ __all__ = [
     "IngestResult",
     "Level",
     "LogEvent",
+    "OversizeDeadLetter",
     "Logger",
     "TraceIDProvider",
     "decode_event",

@@ -21,6 +21,14 @@ const (
 	DeadLetterTopicV1 = "stellarmesh.logging.events.v1.dlq"
 	// DeadLetterSchemaV1 identifies the dead-letter record layout.
 	DeadLetterSchemaV1 = "v1"
+	// DeadLetterSchemaV2 identifies the compact oversized-message dead-letter layout.
+	DeadLetterSchemaV2 = "v2"
+	// MaxEventJSONBytesV1 is the maximum compact JSON size of one canonical event.
+	MaxEventJSONBytesV1 = 900 * 1024
+	// MaxHTTPBodyBytesV1 is the maximum accepted ingestion request body size.
+	MaxHTTPBodyBytesV1 = 1 << 20
+	// MaxKafkaMessageBytesV1 is the maximum Kafka key/value payload budget.
+	MaxKafkaMessageBytesV1 = 1 << 20
 )
 
 const maxDeadLetterErrorRunes = 2048
@@ -61,7 +69,7 @@ type BatchIngestRequest struct {
 	Events []Event `json:"events"`
 }
 
-// IngestResult reports how many events entered the ingester queue.
+// IngestResult reports how many events were durably accepted by Kafka or the local spool.
 type IngestResult struct {
 	Accepted int `json:"accepted"`
 }
@@ -77,6 +85,23 @@ type DeadLetter struct {
 	Reason          string     `json:"reason"`
 	Error           string     `json:"error"`
 	PayloadBase64   string     `json:"payload_base64"`
+	FailedAt        time.Time  `json:"failed_at"`
+}
+
+// OversizeDeadLetter records a compact digest for a Kafka message that cannot be copied into DLQ v1.
+type OversizeDeadLetter struct {
+	SchemaVersion   string     `json:"schema_version"`
+	SourceTopic     string     `json:"source_topic"`
+	SourcePartition int        `json:"source_partition"`
+	SourceOffset    int64      `json:"source_offset"`
+	SourceTimestamp *time.Time `json:"source_timestamp,omitempty"`
+	Reason          string     `json:"reason"`
+	Error           string     `json:"error"`
+	SourceKeyBytes  int64      `json:"source_key_bytes"`
+	SourceKeySHA256 string     `json:"source_key_sha256"`
+	PayloadBytes    int64      `json:"payload_bytes"`
+	PayloadSHA256   string     `json:"payload_sha256"`
+	ContentOmitted  bool       `json:"content_omitted"`
 	FailedAt        time.Time  `json:"failed_at"`
 }
 
@@ -143,6 +168,41 @@ func (deadLetter DeadLetter) Validate() error {
 	return nil
 }
 
+// Validate verifies every field required by the v2 oversized-message dead-letter contract.
+func (deadLetter OversizeDeadLetter) Validate() error {
+	if deadLetter.SchemaVersion != DeadLetterSchemaV2 {
+		return fmt.Errorf("unsupported oversized dead-letter schema version %q", deadLetter.SchemaVersion)
+	}
+	if strings.TrimSpace(deadLetter.SourceTopic) == "" {
+		return errors.New("oversized dead-letter source_topic is required")
+	}
+	if deadLetter.SourcePartition < 0 || deadLetter.SourceOffset < 0 {
+		return errors.New("oversized dead-letter source coordinates must not be negative")
+	}
+	if deadLetter.SourceTimestamp != nil && deadLetter.SourceTimestamp.IsZero() {
+		return errors.New("oversized dead-letter source_timestamp must not be zero")
+	}
+	if deadLetter.Reason != "source_message_too_large" {
+		return fmt.Errorf("unsupported oversized dead-letter reason %q", deadLetter.Reason)
+	}
+	if strings.TrimSpace(deadLetter.Error) == "" || len([]rune(deadLetter.Error)) > maxDeadLetterErrorRunes {
+		return errors.New("oversized dead-letter error must contain 1 to 2048 characters")
+	}
+	if deadLetter.SourceKeyBytes < 0 || deadLetter.PayloadBytes < 0 {
+		return errors.New("oversized dead-letter byte sizes must not be negative")
+	}
+	if !validSHA256(deadLetter.SourceKeySHA256) || !validSHA256(deadLetter.PayloadSHA256) {
+		return errors.New("oversized dead-letter hashes must be lowercase SHA-256 values")
+	}
+	if !deadLetter.ContentOmitted {
+		return errors.New("oversized dead-letter content_omitted must be true")
+	}
+	if deadLetter.FailedAt.IsZero() {
+		return errors.New("oversized dead-letter failed_at is required")
+	}
+	return nil
+}
+
 // NewEventID creates a random RFC 4122 version 4 UUID.
 func NewEventID() (string, error) {
 	raw := make([]byte, 16)
@@ -195,6 +255,26 @@ func DecodeDeadLetter(payload []byte) (DeadLetter, error) {
 	return deadLetter, nil
 }
 
+// DecodeOversizeDeadLetter strictly decodes one v2 oversized-message dead-letter record.
+func DecodeOversizeDeadLetter(payload []byte) (OversizeDeadLetter, error) {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	var deadLetter OversizeDeadLetter
+	if err := decoder.Decode(&deadLetter); err != nil {
+		return OversizeDeadLetter{}, err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return OversizeDeadLetter{}, errors.New("oversized dead-letter payload must contain one JSON value")
+		}
+		return OversizeDeadLetter{}, err
+	}
+	if err := deadLetter.Validate(); err != nil {
+		return OversizeDeadLetter{}, err
+	}
+	return deadLetter, nil
+}
+
 func decodeBase64(value string) ([]byte, error) {
 	return base64.StdEncoding.Strict().DecodeString(value)
 }
@@ -208,5 +288,13 @@ func validEventID(value string) bool {
 	}
 	decoded := strings.ReplaceAll(value, "-", "")
 	_, err := hex.DecodeString(decoded)
+	return err == nil
+}
+
+func validSHA256(value string) bool {
+	if len(value) != 64 || strings.ToLower(value) != value {
+		return false
+	}
+	_, err := hex.DecodeString(value)
 	return err == nil
 }

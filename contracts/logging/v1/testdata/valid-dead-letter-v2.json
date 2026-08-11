@@ -1,0 +1,15 @@
+{
+  "schema_version": "v2",
+  "source_topic": "stellarmesh.logging.events.v1",
+  "source_partition": 1,
+  "source_offset": 43,
+  "source_timestamp": "2026-08-01T12:00:01Z",
+  "reason": "source_message_too_large",
+  "error": "Kafka source message exceeds 1048576 bytes",
+  "source_key_bytes": 10,
+  "source_key_sha256": "71c1084c0104da6f40bef23d147a4892582782e09a4acfe0ebd0d49d66ff90a2",
+  "payload_bytes": 17,
+  "payload_sha256": "1c8b234cf0d418eecfddb21dd0b2c6b17d8305048ad13bcee8b2a499df0fb092",
+  "content_omitted": true,
+  "failed_at": "2026-08-01T12:00:02Z"
+}
