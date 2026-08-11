@@ -68,8 +68,11 @@ func Load() (Config, error) {
 	if cfg.BatchSize <= 0 || cfg.BatchMaxBytes <= 0 || cfg.BatchMaxBytes > 1<<30 {
 		return Config{}, errors.New("logging writer batch limits must be positive and bytes must not exceed 1 GiB")
 	}
-	if cfg.MaxSourceMessageBytes <= 0 || cfg.MaxSourceMessageBytes > 1<<30 {
-		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES must be between 1 byte and 1 GiB")
+	if cfg.MaxSourceMessageBytes <= 0 || cfg.MaxSourceMessageBytes > sharedlogging.MaxKafkaMessageBytesV1 {
+		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES must be between 1 byte and 1 MiB")
+	}
+	if cfg.BatchMaxBytes < cfg.MaxSourceMessageBytes {
+		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES must cover one maximum source message")
 	}
 	if strings.TrimSpace(cfg.ObservabilityAddr) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_OBSERVABILITY_ADDR is required")

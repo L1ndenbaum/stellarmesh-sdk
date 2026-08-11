@@ -21,6 +21,7 @@ import (
 )
 
 const startupCheckTimeout = 10 * time.Second
+const kafkaFetchProtocolOverhead = 64 << 10
 
 func main() {
 	if err := run(); err != nil {
@@ -95,7 +96,8 @@ func run() (result error) {
 
 	reader := segmentio.NewReader(segmentio.ReaderConfig{
 		Brokers: cfg.KafkaBrokers, Topic: cfg.KafkaTopic, GroupID: cfg.KafkaGroupID,
-		Dialer: connection.Dialer(), MinBytes: 1, MaxBytes: int(cfg.MaxSourceMessageBytes), QueueCapacity: 1,
+		Dialer: connection.Dialer(), MinBytes: 1,
+		MaxBytes: int(cfg.MaxSourceMessageBytes + kafkaFetchProtocolOverhead), QueueCapacity: 1,
 		CommitInterval: 0,
 	})
 	source, err := infrastructure.NewKafkaSource(reader)

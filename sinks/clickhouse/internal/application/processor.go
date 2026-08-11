@@ -165,6 +165,7 @@ func (processor *Processor) ProcessBatch(ctx context.Context, messages []Message
 	processor.observeOperation("offset_commit", "success")
 	processor.observeMessages("inserted", len(events))
 	processor.observeMessages("dead_lettered", len(deadLetters)+len(oversizeDeadLetters))
+	processor.observeMessages("oversized", len(oversizeDeadLetters))
 	return nil
 }
 

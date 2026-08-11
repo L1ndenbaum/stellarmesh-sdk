@@ -81,6 +81,8 @@ docker run -d --name "$kafka" --hostname kafka --network "$network" \
     --advertise-kafka-addr internal://kafka:9092 >/dev/null
 
 wait_until 'ClickHouse 就绪' docker exec "$clickhouse" clickhouse-client --query 'SELECT 1'
+wait_until 'ClickHouse 容器网络就绪' docker run --rm --network "$network" "$clickhouse_image" \
+    clickhouse-client --host clickhouse --query 'SELECT 1'
 wait_until 'Kafka 就绪' docker exec "$kafka" rpk cluster health --exit-when-healthy
 docker exec "$kafka" rpk topic create "$source_topic" "$dlq_topic" >/dev/null
 
@@ -94,6 +96,7 @@ docker run -d --name "$sink" --network "$network" \
     -e STELLARMESH_LOGGING_CLICKHOUSE_HTTP_URL=http://clickhouse:8123 \
     -e STELLARMESH_LOGGING_CLICKHOUSE_DATABASE=logging \
     -e STELLARMESH_LOGGING_CLICKHOUSE_USER=default \
+    -e STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES=512 \
     stellarmesh-logging-clickhouse-sink:test >/dev/null
 wait_until 'ClickHouse sink 就绪' sink_is_ready
 
@@ -123,6 +126,13 @@ printf '%s\n' '{"not":"a-log-event"}' | docker exec -i "$kafka" rpk topic produc
 dlq_payload="$(timeout 20 docker exec "$kafka" rpk topic consume "$dlq_topic" --num 1 --offset start --format '%v')"
 printf '%s' "$dlq_payload" | grep -q '"reason":"invalid_event"'
 printf '%s' "$dlq_payload" | grep -q '"source_topic":"stellarmesh.logging.events.v1"'
+
+oversize_payload="$(dd if=/dev/zero bs=1024 count=1 2>/dev/null | tr '\000' x)"
+printf '%s\n' "$oversize_payload" | docker exec -i "$kafka" rpk topic produce "$source_topic" >/dev/null
+dlq_v2_payload="$(timeout 20 docker exec "$kafka" rpk topic consume "$dlq_topic" --num 1 --offset 1 --format '%v')"
+printf '%s' "$dlq_v2_payload" | grep -q '"schema_version":"v2"'
+printf '%s' "$dlq_v2_payload" | grep -q '"reason":"source_message_too_large"'
+printf '%s' "$dlq_v2_payload" | grep -q '"content_omitted":true'
 
 docker stop "$kafka" >/dev/null
 status="$(curl --max-time 10 -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$ingester_port/v1/log-events" \

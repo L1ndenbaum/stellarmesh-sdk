@@ -140,8 +140,8 @@ func Run(ctx context.Context, source Source, processor BatchProcessor, config Co
 			setReady(config.Observer, true)
 			message = fetched
 		}
-		messageBytes := int64(len(message.Key) + len(message.Value))
-		if len(batch) > 0 && batchBytes+messageBytes > config.BatchMaxBytes {
+		messageBytes := int64(len(message.Key)) + int64(len(message.Value))
+		if len(batch) > 0 && messageBytes > config.BatchMaxBytes-batchBytes {
 			deferred = &message
 			continue
 		}

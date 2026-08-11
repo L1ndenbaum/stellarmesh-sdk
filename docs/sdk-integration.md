@@ -209,7 +209,7 @@ async def application_shutdown() -> None:
 | `STELLARMESH_LOGGING_WRITER_RETRY_INTERVAL` | `1s` | 下游或 Kafka 操作失败后的重试间隔 |
 | `STELLARMESH_LOGGING_WRITER_SHUTDOWN_TIMEOUT` | `10s` | 关闭时最后一批的独立排空超时 |
 | `STELLARMESH_LOGGING_WRITER_HTTP_TIMEOUT` | `5s` | ClickHouse 请求超时 |
-| `STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES` | `1MiB` | Kafka 单条源消息读取上限，最大允许配置 `1GiB` |
+| `STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES` | `1MiB` | Kafka 单条 key/value 硬判定上限，最大允许配置 `1MiB` |
 | `STELLARMESH_LOGGING_WRITER_OBSERVABILITY_ADDR` | `:8092` | sink 健康检查与 Prometheus 监听地址 |
 
 ingester、ClickHouse sink 和后续 DLQ producer 共用以下 Kafka 安全配置：
@@ -231,7 +231,9 @@ TLS 最低版本为 1.2，服务不提供跳过证书校验的配置。使用 `S
 
 sink 会严格解析每条源消息。有效事件写入 ClickHouse；普通无效事件按 `contracts/logging/v1/dead-letter.schema.json` 写入 DLQ，原始 key 和 payload 使用 Base64 保存；超过源消息上限的消息按 `contracts/logging/v1/dead-letter-v2.schema.json` 写入同一 DLQ Topic，只保存源坐标、字节数和 SHA-256，不复制原始内容。处理顺序固定为 ClickHouse 插入、DLQ 发布、源 offset 提交，三步全部成功才清空内存批次。任何一步失败都会重试整批，因此 ClickHouse 与 DLQ 都可能出现重复，不能依赖“恰好一次”语义。
 
-源 Topic 的单条消息上限不能超过 `STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES`。Base64 会扩大 DLQ 记录，DLQ Topic 的 `max.message.bytes` 应至少覆盖“源消息上限的 `4/3` 加 `16KiB` 协议余量”，例如源消息上限为 `1MiB` 时应允许至少约 `1.35MiB`。DLQ 可能保存原始敏感载荷，必须使用受限 ACL、加密传输、明确保留期和独立告警，不得向普通业务消费者开放。
+源 Topic 的 broker `max.message.bytes` 必须与 `1MiB` 契约保持一致，不能把 Kafka reader 的 `MaxBytes` 当作拒绝超大消息的安全边界：Kafka 为保证消费进度仍可能返回第一个更大的 record batch。sink 将 reader 预取容量固定为一条，fetch 后再按 key/value 总字节执行硬判定；超限消息只生成 DLQ v2 摘要。消费批次的消息数和 payload 字节预算限制应用持有的载荷，不是进程 RSS 硬上限，JSON 解析、Base64、Kafka 协议缓冲和 ClickHouse 编码仍会产生有界临时分配。
+
+普通无效消息使用 DLQ v1，Base64 会扩大记录，因此 DLQ Topic 的 `max.message.bytes` 应至少覆盖“源消息上限的 `4/3` 加 `16KiB` 协议余量”，例如源消息上限为 `1MiB` 时应允许至少约 `1.35MiB`。DLQ 可能保存原始敏感载荷，必须使用受限 ACL、加密传输、明确保留期和独立告警，不得向普通业务消费者开放。
 
 容器观测端口默认为 `8092`。存活检查使用 `GET /health/live`，就绪检查使用 `GET /health/ready`，Prometheus 使用 `GET /metrics`。启动期间、Kafka 拉取失败、ClickHouse 插入失败、DLQ 发布失败或 offset 提交失败时，就绪检查返回 `503`；恢复并成功处理后返回 `200`。
 

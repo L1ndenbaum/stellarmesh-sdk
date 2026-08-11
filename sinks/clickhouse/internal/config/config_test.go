@@ -63,3 +63,25 @@ func TestLoadRejectsSourceTopicAsDLQ(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+func TestLoadRejectsUnsafeSourceMessageLimits(t *testing.T) {
+	tests := []struct {
+		name        string
+		sourceBytes string
+		batchBytes  string
+	}{
+		{name: "source exceeds contract", sourceBytes: "2MiB", batchBytes: "16MiB"},
+		{name: "batch cannot hold source", sourceBytes: "1MiB", batchBytes: "512KiB"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("STELLARMESH_LOGGING_CLICKHOUSE_DATABASE", "logging_db")
+			t.Setenv("STELLARMESH_LOGGING_CLICKHOUSE_USER", "logging_runtime")
+			t.Setenv("STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES", test.sourceBytes)
+			t.Setenv("STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES", test.batchBytes)
+			if _, err := Load(); err == nil {
+				t.Fatal("Load() accepted unsafe source message limits")
+			}
+		})
+	}
+}
