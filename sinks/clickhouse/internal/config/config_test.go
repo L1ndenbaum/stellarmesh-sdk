@@ -85,3 +85,26 @@ func TestLoadRejectsUnsafeSourceMessageLimits(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadRejectsInvalidAndOutOfBoundsWriterValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "invalid duration", key: "STELLARMESH_LOGGING_WRITER_HTTP_TIMEOUT", value: "forever"},
+		{name: "invalid integer", key: "STELLARMESH_LOGGING_WRITER_BATCH_SIZE", value: "many"},
+		{name: "batch count upper bound", key: "STELLARMESH_LOGGING_WRITER_BATCH_SIZE", value: "10001"},
+		{name: "batch byte upper bound", key: "STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES", value: "65MiB"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("STELLARMESH_LOGGING_CLICKHOUSE_DATABASE", "logging_db")
+			t.Setenv("STELLARMESH_LOGGING_CLICKHOUSE_USER", "logging_runtime")
+			t.Setenv(test.key, test.value)
+			if _, err := Load(); err == nil {
+				t.Fatal("Load() accepted invalid configuration")
+			}
+		})
+	}
+}

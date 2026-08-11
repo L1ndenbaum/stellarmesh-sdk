@@ -28,6 +28,11 @@ const (
 	defaultClientMaxAttempts   = 3
 	defaultInitialBackoff      = 100 * time.Millisecond
 	defaultMaxBackoff          = time.Second
+	maxClientQueueEvents       = 1_000_000
+	maxClientQueueBytes        = int64(1 << 30)
+	maxClientBatchEvents       = 10_000
+	maxClientAttempts          = 10
+	maxClientDuration          = time.Hour
 )
 
 var (
@@ -164,6 +169,17 @@ func validateClientConfig(config ClientConfig) error {
 	}
 	if config.MaxBodyBytes > MaxHTTPBodyBytesV1 {
 		return fmt.Errorf("logging max body bytes must not exceed %d", MaxHTTPBodyBytesV1)
+	}
+	if config.QueueSize > maxClientQueueEvents || config.QueueBytes > maxClientQueueBytes ||
+		config.BatchSize > maxClientBatchEvents || config.MaxAttempts > maxClientAttempts {
+		return errors.New("logging client capacity is outside supported bounds")
+	}
+	for _, duration := range []time.Duration{
+		config.Timeout, config.FlushInterval, config.InitialBackoff, config.MaxBackoff,
+	} {
+		if duration > maxClientDuration {
+			return errors.New("logging client duration is outside supported bounds")
+		}
 	}
 	if config.InitialBackoff > 0 && config.MaxBackoff > 0 && config.InitialBackoff > config.MaxBackoff {
 		return errors.New("logging initial backoff must not exceed maximum backoff")

@@ -3,12 +3,19 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/envconfig"
 	sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
 	sharedkafka "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka"
+)
+
+const (
+	maxWriterBatchSize     = 10_000
+	maxWriterBatchBytes    = int64(64 << 20)
+	maxWriterRuntimePeriod = 24 * time.Hour
 )
 
 // Config contains Kafka consumer and ClickHouse writer settings.
@@ -34,24 +41,28 @@ type Config struct {
 
 // Load reads canonical STELLARMESH_LOGGING_* environment variables.
 func Load() (Config, error) {
+	loader := envconfig.NewStrictLoader()
 	cfg := Config{
-		KafkaBrokers:          envconfig.CSV("STELLARMESH_LOGGING_KAFKA_BROKERS", "kafka:9092"),
+		KafkaBrokers:          loader.CSV("STELLARMESH_LOGGING_KAFKA_BROKERS", "kafka:9092"),
 		KafkaTopic:            envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV1),
 		KafkaDLQTopic:         envconfig.String("STELLARMESH_LOGGING_KAFKA_DLQ_TOPIC", sharedlogging.DeadLetterTopicV1),
 		KafkaGroupID:          envconfig.String("STELLARMESH_LOGGING_WRITER_GROUP_ID", "stellarmesh-logging-clickhouse"),
 		KafkaConnection:       kafkaConnectionConfig(),
-		MaxSourceMessageBytes: envconfig.ByteSize("STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES", 1<<20),
+		MaxSourceMessageBytes: loader.ByteSize("STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES", 1<<20),
 		ClickHouseHTTPURL:     envconfig.String("STELLARMESH_LOGGING_CLICKHOUSE_HTTP_URL", "http://clickhouse:8123"),
 		ClickHouseDatabase:    envconfig.String("STELLARMESH_LOGGING_CLICKHOUSE_DATABASE", ""),
 		ClickHouseUser:        envconfig.String("STELLARMESH_LOGGING_CLICKHOUSE_USER", ""),
 		ClickHousePassword:    envconfig.String("STELLARMESH_LOGGING_CLICKHOUSE_PASSWORD", ""),
-		BatchSize:             envconfig.Int("STELLARMESH_LOGGING_WRITER_BATCH_SIZE", 500),
-		BatchMaxBytes:         envconfig.ByteSize("STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES", 16<<20),
-		FlushInterval:         envconfig.Duration("STELLARMESH_LOGGING_WRITER_FLUSH_INTERVAL", time.Second),
-		RetryInterval:         envconfig.Duration("STELLARMESH_LOGGING_WRITER_RETRY_INTERVAL", time.Second),
-		ShutdownTimeout:       envconfig.Duration("STELLARMESH_LOGGING_WRITER_SHUTDOWN_TIMEOUT", 10*time.Second),
-		HTTPTimeout:           envconfig.Duration("STELLARMESH_LOGGING_WRITER_HTTP_TIMEOUT", 5*time.Second),
+		BatchSize:             loader.Int("STELLARMESH_LOGGING_WRITER_BATCH_SIZE", 500),
+		BatchMaxBytes:         loader.ByteSize("STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES", 16<<20),
+		FlushInterval:         loader.Duration("STELLARMESH_LOGGING_WRITER_FLUSH_INTERVAL", time.Second),
+		RetryInterval:         loader.Duration("STELLARMESH_LOGGING_WRITER_RETRY_INTERVAL", time.Second),
+		ShutdownTimeout:       loader.Duration("STELLARMESH_LOGGING_WRITER_SHUTDOWN_TIMEOUT", 10*time.Second),
+		HTTPTimeout:           loader.Duration("STELLARMESH_LOGGING_WRITER_HTTP_TIMEOUT", 5*time.Second),
 		ObservabilityAddr:     envconfig.String("STELLARMESH_LOGGING_WRITER_OBSERVABILITY_ADDR", ":8092"),
+	}
+	if err := loader.Err(); err != nil {
+		return Config{}, err
 	}
 	if len(cfg.KafkaBrokers) == 0 || strings.TrimSpace(cfg.KafkaTopic) == "" {
 		return Config{}, errors.New("Kafka brokers and topic are required")
@@ -59,20 +70,40 @@ func Load() (Config, error) {
 	if strings.TrimSpace(cfg.KafkaDLQTopic) == "" || cfg.KafkaDLQTopic == cfg.KafkaTopic {
 		return Config{}, errors.New("Kafka DLQ topic is required and must differ from the source topic")
 	}
+	if strings.TrimSpace(cfg.KafkaGroupID) == "" {
+		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_GROUP_ID is required")
+	}
+	if strings.TrimSpace(cfg.ClickHouseHTTPURL) == "" {
+		return Config{}, errors.New("STELLARMESH_LOGGING_CLICKHOUSE_HTTP_URL is required")
+	}
 	if strings.TrimSpace(cfg.ClickHouseDatabase) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_CLICKHOUSE_DATABASE is required")
 	}
 	if strings.TrimSpace(cfg.ClickHouseUser) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_CLICKHOUSE_USER is required")
 	}
-	if cfg.BatchSize <= 0 || cfg.BatchMaxBytes <= 0 || cfg.BatchMaxBytes > 1<<30 {
-		return Config{}, errors.New("logging writer batch limits must be positive and bytes must not exceed 1 GiB")
+	if cfg.BatchSize <= 0 || cfg.BatchSize > maxWriterBatchSize ||
+		cfg.BatchMaxBytes <= 0 || cfg.BatchMaxBytes > maxWriterBatchBytes {
+		return Config{}, errors.New("logging writer batch limits are outside supported bounds")
 	}
 	if cfg.MaxSourceMessageBytes <= 0 || cfg.MaxSourceMessageBytes > sharedlogging.MaxKafkaMessageBytesV1 {
 		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES must be between 1 byte and 1 MiB")
 	}
 	if cfg.BatchMaxBytes < cfg.MaxSourceMessageBytes {
 		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES must cover one maximum source message")
+	}
+	for _, setting := range []struct {
+		name  string
+		value time.Duration
+	}{
+		{name: "flush interval", value: cfg.FlushInterval},
+		{name: "retry interval", value: cfg.RetryInterval},
+		{name: "shutdown timeout", value: cfg.ShutdownTimeout},
+		{name: "HTTP timeout", value: cfg.HTTPTimeout},
+	} {
+		if setting.value <= 0 || setting.value > maxWriterRuntimePeriod {
+			return Config{}, fmt.Errorf("logging writer %s is outside supported bounds", setting.name)
+		}
 	}
 	if strings.TrimSpace(cfg.ObservabilityAddr) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_OBSERVABILITY_ADDR is required")

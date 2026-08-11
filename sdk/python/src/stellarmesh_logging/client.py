@@ -31,6 +31,11 @@ from .transport import BatchTransport
 TraceIDProvider: TypeAlias = Callable[[], str]
 DropHandler: TypeAlias = Callable[[LogEvent | None, Exception], None]
 _STOP_WORKER = object()
+_MAX_QUEUE_EVENTS = 1_000_000
+_MAX_QUEUE_BYTES = 1 << 30
+_MAX_BATCH_EVENTS = 10_000
+_MAX_ATTEMPTS = 10
+_MAX_DURATION_SECONDS = 3600.0
 
 
 class _ClientState(StrEnum):
@@ -420,6 +425,24 @@ def _validate_config(config: ClientConfig) -> None:
         raise ValueError(
             "logging initial_backoff_seconds must not exceed max_backoff_seconds"
         )
+    if config.queue_size > _MAX_QUEUE_EVENTS:
+        raise ValueError("logging queue_size is outside supported bounds")
+    if config.queue_bytes > _MAX_QUEUE_BYTES:
+        raise ValueError("logging queue_bytes is outside supported bounds")
+    if config.batch_size > _MAX_BATCH_EVENTS:
+        raise ValueError("logging batch_size is outside supported bounds")
+    if config.max_attempts > _MAX_ATTEMPTS:
+        raise ValueError("logging max_attempts is outside supported bounds")
+    if any(
+        duration > _MAX_DURATION_SECONDS
+        for duration in (
+            config.timeout_seconds,
+            config.flush_interval_ms / 1000,
+            config.initial_backoff_seconds,
+            config.max_backoff_seconds,
+        )
+    ):
+        raise ValueError("logging client duration is outside supported bounds")
     normalize_level(config.minimum_level)
 
 

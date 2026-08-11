@@ -60,7 +60,7 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 - `http/headers`：标准请求头读写；
 - `http/server`：带超时的 HTTP server 构造；
 - `mq/kafka`：具有显式 topic、可复用 Topic 启动检查、TLS、mTLS、SASL/PLAIN 和 SCRAM 配置的 Kafka publisher；
-- `envconfig`：不依赖业务 settings 的基础环境变量解析。
+- `envconfig`：不依赖业务 settings 的基础环境变量解析，并提供显式错误的严格 loader。
 
 日志客户端使用同时受事件数和规范化 JSON 字节数限制的内存队列，调用 `Emit` 或日志级别方法时不会等待网络。构造函数会立即校验 URL、token、service、容量和重试限制。客户端后台对网络异常及明确的临时 HTTP 状态执行最多三次带抖动指数退避，并复用原 `event_id`；队列满、事件无效、客户端关闭、重试耗尽或响应不符合契约时调用 `OnDrop`，callback 的 panic 会被隔离并限频写到 stderr。SDK 没有落盘队列，因此在收到合法 `202` 以前只提供 best-effort 投递；进程退出前应调用 `Close` 并给出明确超时。
 

@@ -381,6 +381,11 @@ func TestClientAndLoggerRejectInvalidConfiguration(t *testing.T) {
 	if _, err := NewClient(ClientConfig{BaseURL: "http://logging-service"}); err == nil {
 		t.Fatal("NewClient() accepted empty token")
 	}
+	if _, err := NewClient(ClientConfig{
+		BaseURL: "http://logging-service", Token: "token", QueueBytes: 2 << 30,
+	}); err == nil {
+		t.Fatal("NewClient() accepted an unsafe queue byte limit")
+	}
 	if _, err := NewLogger(LoggerConfig{}); err == nil {
 		t.Fatal("NewLogger() accepted invalid configuration")
 	}

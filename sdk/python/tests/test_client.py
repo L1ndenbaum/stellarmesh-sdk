@@ -284,6 +284,12 @@ def test_client_rejects_invalid_configuration() -> None:
             service="backend",
             max_attempts=0,
         ),
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            queue_bytes=2 << 30,
+        ),
     ]
     for config in invalid:
         try:

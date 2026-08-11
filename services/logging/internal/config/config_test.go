@@ -62,3 +62,26 @@ func TestLoadReadsEventQueueAndSpoolByteSizes(t *testing.T) {
 		t.Fatalf("config = %#v", cfg)
 	}
 }
+
+func TestLoadRejectsInvalidAndOutOfBoundsValues(t *testing.T) {
+	tests := []struct {
+		name  string
+		key   string
+		value string
+	}{
+		{name: "invalid duration", key: "STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT", value: "forever"},
+		{name: "invalid boolean", key: "STELLARMESH_LOGGING_CONSOLE_COLOR", value: "sometimes"},
+		{name: "queue event upper bound", key: "STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS", value: "1000001"},
+		{name: "queue byte upper bound", key: "STELLARMESH_LOGGING_QUEUE_CAPACITY_BYTES", value: "2GiB"},
+		{name: "spool byte upper bound", key: "STELLARMESH_LOGGING_SPOOL_MAX_BYTES", value: "2TiB"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("STELLARMESH_LOGGING_AUTH_FILE", "/run/secrets/logging-auth.json")
+			t.Setenv(test.key, test.value)
+			if _, err := Load(); err == nil {
+				t.Fatal("Load() accepted invalid configuration")
+			}
+		})
+	}
+}

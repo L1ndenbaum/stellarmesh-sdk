@@ -156,17 +156,17 @@ async def application_shutdown() -> None:
 | `STELLARMESH_LOGGING_BATCH_FLUSH_INTERVAL` | `500ms` | 接收队列批量刷新间隔 |
 | `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT` | `5s` | 单次 Kafka 发布及后台可用性检查超时 |
 | `STELLARMESH_LOGGING_KAFKA_REPLAY_INTERVAL` | `5s` | spool 重放间隔 |
-| `STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS` | `4096` | 尚未获得持久确认的事件容量，不是请求批次数 |
-| `STELLARMESH_LOGGING_QUEUE_CAPACITY_BYTES` | `16MiB` | 队列中规范化事件 JSON 的总字节容量 |
-| `STELLARMESH_LOGGING_MAX_BATCH_SIZE` | `512` | 发布 Kafka 的目标批量大小 |
-| `STELLARMESH_LOGGING_MAX_BATCH_BYTES` | `4MiB` | 单次发布批次的目标规范化 JSON 字节数；单个请求可以独立超过该目标 |
-| `STELLARMESH_LOGGING_MAX_REQUEST_EVENTS` | `512` | 单次 HTTP 请求最大事件数 |
+| `STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS` | `4096` | 尚未获得持久确认的事件容量，最大 `1000000` |
+| `STELLARMESH_LOGGING_QUEUE_CAPACITY_BYTES` | `16MiB` | 队列中规范化事件 JSON 的总字节容量，最大 `1GiB` |
+| `STELLARMESH_LOGGING_MAX_BATCH_SIZE` | `512` | 发布 Kafka 的目标批量大小，最大 `10000` |
+| `STELLARMESH_LOGGING_MAX_BATCH_BYTES` | `4MiB` | 目标规范化 JSON 字节数，最大 `64MiB`；单个请求可以独立超过目标 |
+| `STELLARMESH_LOGGING_MAX_REQUEST_EVENTS` | `512` | 单次 HTTP 请求最大事件数，最大 `10000` |
 | `STELLARMESH_LOGGING_KAFKA_BROKERS` | `kafka:9092` | 逗号分隔的 broker 地址 |
 | `STELLARMESH_LOGGING_KAFKA_TOPIC` | `stellarmesh.logging.events.v1` | 已由基础设施创建的 Topic |
 | `STELLARMESH_LOGGING_SPOOL_DIR` | `<data-dir>/spool` | Kafka 失败分段缓冲根目录 |
-| `STELLARMESH_LOGGING_SPOOL_MAX_BYTES` | `1GiB` | `regular`、`priority` 与 `quarantine` 共用的数据容量上限 |
-| `STELLARMESH_LOGGING_SPOOL_SEGMENT_BYTES` | `16MiB` | 目标分段大小；单条事件另受 `900KiB` 契约上限约束 |
-| `STELLARMESH_LOGGING_SPOOL_REPLAY_BATCH_SIZE` | `128` | 回放每次 Kafka 发布的事件数 |
+| `STELLARMESH_LOGGING_SPOOL_MAX_BYTES` | `1GiB` | 三类 spool 共用的数据容量上限，最大 `1TiB` |
+| `STELLARMESH_LOGGING_SPOOL_SEGMENT_BYTES` | `16MiB` | 目标分段大小，最大 `64MiB`；单条事件另受 `900KiB` 契约限制 |
+| `STELLARMESH_LOGGING_SPOOL_REPLAY_BATCH_SIZE` | `128` | 回放每次 Kafka 发布的事件数，最大 `10000` |
 
 认证文件由业务部署以只读 Secret 挂载，不提交到本仓库。格式如下：
 
@@ -180,6 +180,8 @@ async def application_shutdown() -> None:
   }
 }
 ```
+
+所有显式设置的整数、布尔、duration、byte size 和 CSV 都使用严格解析；格式错误、溢出或超过上述边界会直接导致服务启动失败，不会静默退回默认值。所有时间参数最大允许 `24h`。
 
 同一个 service 可以同时配置两个 token，用于滚动轮换；同一 token 不得绑定到不同 service。请求中的每个事件都必须使用与 token 绑定一致的 `service`，否则返回 `403`。轮换顺序是先同时配置新旧 token 并滚动重启 ingester，再切换客户端，最后移除旧 token 并再次滚动重启。
 
@@ -203,8 +205,8 @@ async def application_shutdown() -> None:
 | `STELLARMESH_LOGGING_CLICKHOUSE_DATABASE` | 无 | 必填；项目 database |
 | `STELLARMESH_LOGGING_CLICKHOUSE_USER` | 无 | 必填；低权限运行时用户 |
 | `STELLARMESH_LOGGING_CLICKHOUSE_PASSWORD` | 空 | 运行时用户密码 |
-| `STELLARMESH_LOGGING_WRITER_BATCH_SIZE` | `500` | ClickHouse 写入批量大小 |
-| `STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES` | `16MiB` | 单批 Kafka key/value 总字节上限；单条消息可以独立超过该值 |
+| `STELLARMESH_LOGGING_WRITER_BATCH_SIZE` | `500` | ClickHouse 写入批量大小，最大 `10000` |
+| `STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES` | `16MiB` | 单批 Kafka key/value 上限，最大 `64MiB`，且不能小于源消息上限 |
 | `STELLARMESH_LOGGING_WRITER_FLUSH_INTERVAL` | `1s` | 不满一批时从首条消息开始计算的最大等待时间 |
 | `STELLARMESH_LOGGING_WRITER_RETRY_INTERVAL` | `1s` | 下游或 Kafka 操作失败后的重试间隔 |
 | `STELLARMESH_LOGGING_WRITER_SHUTDOWN_TIMEOUT` | `10s` | 关闭时最后一批的独立排空超时 |
