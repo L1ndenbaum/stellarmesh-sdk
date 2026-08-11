@@ -53,6 +53,7 @@ type Committer interface {
 type Observer interface {
 	SetReady(bool)
 	SetPendingMessages(int)
+	SetPendingBytes(int64)
 	ObserveMessages(result string, count int)
 	ObserveOperation(operation, result string)
 }

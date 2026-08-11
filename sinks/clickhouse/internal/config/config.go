@@ -24,6 +24,7 @@ type Config struct {
 	ClickHouseUser        string
 	ClickHousePassword    string
 	BatchSize             int
+	BatchMaxBytes         int64
 	FlushInterval         time.Duration
 	RetryInterval         time.Duration
 	ShutdownTimeout       time.Duration
@@ -45,6 +46,7 @@ func Load() (Config, error) {
 		ClickHouseUser:        envconfig.String("STELLARMESH_LOGGING_CLICKHOUSE_USER", ""),
 		ClickHousePassword:    envconfig.String("STELLARMESH_LOGGING_CLICKHOUSE_PASSWORD", ""),
 		BatchSize:             envconfig.Int("STELLARMESH_LOGGING_WRITER_BATCH_SIZE", 500),
+		BatchMaxBytes:         envconfig.ByteSize("STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES", 16<<20),
 		FlushInterval:         envconfig.Duration("STELLARMESH_LOGGING_WRITER_FLUSH_INTERVAL", time.Second),
 		RetryInterval:         envconfig.Duration("STELLARMESH_LOGGING_WRITER_RETRY_INTERVAL", time.Second),
 		ShutdownTimeout:       envconfig.Duration("STELLARMESH_LOGGING_WRITER_SHUTDOWN_TIMEOUT", 10*time.Second),
@@ -63,8 +65,8 @@ func Load() (Config, error) {
 	if strings.TrimSpace(cfg.ClickHouseUser) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_CLICKHOUSE_USER is required")
 	}
-	if cfg.BatchSize <= 0 {
-		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_BATCH_SIZE must be positive")
+	if cfg.BatchSize <= 0 || cfg.BatchMaxBytes <= 0 || cfg.BatchMaxBytes > 1<<30 {
+		return Config{}, errors.New("logging writer batch limits must be positive and bytes must not exceed 1 GiB")
 	}
 	if cfg.MaxSourceMessageBytes <= 0 || cfg.MaxSourceMessageBytes > 1<<30 {
 		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES must be between 1 byte and 1 GiB")

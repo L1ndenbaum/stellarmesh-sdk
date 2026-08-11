@@ -12,6 +12,7 @@ ingester="stellarmesh-it-ingester-$run_id"
 source_topic='stellarmesh.logging.events.v1'
 dlq_topic='stellarmesh.logging.events.v1.dlq'
 event_id='11111111-1111-4111-8111-111111111111'
+spooled_event_id='22222222-2222-4222-8222-222222222222'
 service_token="$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')"
 auth_file="$(mktemp)"
 
@@ -49,6 +50,19 @@ wait_until() {
 clickhouse_has_event() {
     count="$(docker exec "$clickhouse" clickhouse-client --database logging --query "SELECT count() FROM log_events WHERE event_id = '$event_id'")"
     [ "$count" = '1' ]
+}
+
+clickhouse_has_spooled_event() {
+    count="$(docker exec "$clickhouse" clickhouse-client --database logging --query "SELECT count() FROM log_events WHERE event_id = '$spooled_event_id'")"
+    [ "$count" = '1' ]
+}
+
+spool_has_segments() {
+    docker exec "$ingester" find /var/lib/stellarmesh-logging/spool/batches -type f -name '*.ready.jsonl' | grep -q .
+}
+
+spool_is_empty() {
+    ! spool_has_segments
 }
 
 sink_is_ready() {
@@ -90,6 +104,8 @@ docker run -d --name "$ingester" --network "$network" -p 127.0.0.1:0:8091 \
     -e STELLARMESH_LOGGING_AUTH_FILE=/run/secrets/logging-auth.json \
     -e STELLARMESH_LOGGING_KAFKA_BROKERS=kafka:9092 \
     -e STELLARMESH_LOGGING_KAFKA_TOPIC="$source_topic" \
+    -e STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT=2s \
+    -e STELLARMESH_LOGGING_KAFKA_REPLAY_INTERVAL=1s \
     -e STELLARMESH_LOGGING_CONSOLE_COLOR=false \
     stellarmesh-logging-service:test >/dev/null
 port_mapping="$(docker port "$ingester" 8091/tcp)"
@@ -108,4 +124,18 @@ dlq_payload="$(timeout 20 docker exec "$kafka" rpk topic consume "$dlq_topic" --
 printf '%s' "$dlq_payload" | grep -q '"reason":"invalid_event"'
 printf '%s' "$dlq_payload" | grep -q '"source_topic":"stellarmesh.logging.events.v1"'
 
-echo '日志链路与 DLQ 集成测试通过'
+docker stop "$kafka" >/dev/null
+status="$(curl --max-time 10 -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$ingester_port/v1/log-events" \
+    -H 'Content-Type: application/json' \
+    -H "X-Logging-Service-Token: $service_token" \
+    --data "{\"event\":{\"event_id\":\"$spooled_event_id\",\"timestamp\":\"2026-08-01T12:00:01Z\",\"level\":\"ERROR\",\"service\":\"integration-service\",\"message\":\"spooled integration event\",\"trace_id\":\"spooled-trace\",\"metadata\":{\"source\":\"integration\"}}}")"
+[ "$status" = '202' ]
+wait_until 'Kafka 中断事件进入 spool' spool_has_segments
+
+docker start "$kafka" >/dev/null
+wait_until 'Kafka 恢复' docker exec "$kafka" rpk cluster health --exit-when-healthy
+wait_until 'spool 事件写入 ClickHouse' clickhouse_has_spooled_event
+wait_until 'spool 回放完成' spool_is_empty
+wait_until 'logging-service 恢复就绪' curl -fsS "http://127.0.0.1:$ingester_port/health/ready"
+
+echo '日志链路、DLQ 与 Kafka 中断回放集成测试通过'

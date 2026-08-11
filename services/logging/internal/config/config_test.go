@@ -25,7 +25,8 @@ func TestLoadUsesCanonicalDefaults(t *testing.T) {
 	if cfg.KafkaTopic != sharedlogging.TopicV1 || cfg.MaxRequestEvents != 512 {
 		t.Fatalf("config = %#v", cfg)
 	}
-	if cfg.QueueCapacityEvents != 4096 || cfg.SpoolMaxBytes != 1<<30 || cfg.SpoolSegmentBytes != 16<<20 || cfg.PublishTimeout != 5*time.Second {
+	if cfg.QueueCapacityEvents != 4096 || cfg.QueueCapacityBytes != 16<<20 || cfg.MaxBatchBytes != 4<<20 ||
+		cfg.SpoolMaxBytes != 1<<30 || cfg.SpoolSegmentBytes != 16<<20 || cfg.PublishTimeout != 5*time.Second {
 		t.Fatalf("buffer config = %#v", cfg)
 	}
 	if cfg.KafkaConnection.SecurityProtocol != "PLAINTEXT" {
@@ -48,13 +49,16 @@ func TestLoadReadsPublishTimeout(t *testing.T) {
 func TestLoadReadsEventQueueAndSpoolByteSizes(t *testing.T) {
 	t.Setenv("STELLARMESH_LOGGING_AUTH_FILE", "/run/secrets/logging-auth.json")
 	t.Setenv("STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS", "23")
+	t.Setenv("STELLARMESH_LOGGING_QUEUE_CAPACITY_BYTES", "24MiB")
+	t.Setenv("STELLARMESH_LOGGING_MAX_BATCH_BYTES", "3MiB")
 	t.Setenv("STELLARMESH_LOGGING_SPOOL_MAX_BYTES", "2GiB")
 	t.Setenv("STELLARMESH_LOGGING_SPOOL_SEGMENT_BYTES", "8MiB")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.QueueCapacityEvents != 23 || cfg.SpoolMaxBytes != 2<<30 || cfg.SpoolSegmentBytes != 8<<20 {
+	if cfg.QueueCapacityEvents != 23 || cfg.QueueCapacityBytes != 24<<20 || cfg.MaxBatchBytes != 3<<20 ||
+		cfg.SpoolMaxBytes != 2<<30 || cfg.SpoolSegmentBytes != 8<<20 {
 		t.Fatalf("config = %#v", cfg)
 	}
 }

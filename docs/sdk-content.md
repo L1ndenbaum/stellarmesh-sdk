@@ -94,9 +94,9 @@ Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业�
 
 正常批次写到控制台并发布 Kafka；Kafka 发布失败时，批次写入有总容量上限的本地分段 spool，后台按段定期重放。`ERROR` 和 `AUDIT` 进入高优先级分段，其他级别进入普通分段，重放时始终先处理高优先级。一个接收批次先完整写入 `.staging/` 并执行 `fsync`，再通过目录重命名一次提交到 `batches/`，因此不会暴露只包含部分优先级或部分分段的批次。升级时仍会读取旧版本 `regular/` 和 `priority/` 中的 `.ready.jsonl`；这项兼容不包括业务项目自行实现的其他 JSONL 格式。只有整段发布成功才删除，因此 Kafka 在中途恢复时允许出现重复事件，不能把这条链路理解为 exactly-once。数据目录必须由业务部署持久化，但目录挂载方式由业务项目管理。
 
-接收队列按尚未获得持久确认的事件数限制，不按 HTTP 请求数限制。请求进入队列后会等待当前批次由 Kafka 全部同步副本确认，或在 Kafka 失败时由本地 spool 原子提交；只有满足其中一项才返回 `202`，两者均失败则返回 `503`。客户端请求提前取消不会撤销已经入队的事件，客户端重试可能产生重复。队列已满、服务关闭或持久路径均不可用时，服务会通过 `503` 或 readiness 暴露背压。`/health/live` 只判断进程存活，`/health/ready` 表示服务最近一次确认仍能可靠转交或缓冲新事件，后台 Kafka 检查可在空 spool 时恢复就绪状态；后续请求也会重新探测持久路径。`/metrics` 暴露有界标签的 Prometheus 指标，`/health` 保留为存活检查兼容入口。
+接收队列同时限制尚未获得持久确认的事件数和规范化 JSON 字节数，不按 HTTP 请求数限制；发布批次也同时受事件数和字节数约束。请求进入队列后会等待当前批次由 Kafka 全部同步副本确认，或在 Kafka 失败时由本地 spool 原子提交；只有满足其中一项才返回 `202`，两者均失败则返回 `503`。客户端请求提前取消不会撤销已经入队的事件，客户端重试可能产生重复。队列已满、服务关闭或持久路径均不可用时，服务会通过 `503` 或 readiness 暴露背压。`/health/live` 只判断进程存活，`/health/ready` 表示服务最近一次确认仍能可靠转交或缓冲新事件，后台 Kafka 检查可在空 spool 时恢复就绪状态；后续请求也会重新探测持久路径。`/metrics` 暴露有界标签的 Prometheus 指标，`/health` 保留为存活检查兼容入口。
 
-ClickHouse sink 使用显式 consumer group，并要求独立 DLQ Topic。每批消息先严格解析：有效事件批量写入 `log_events`，无效事件按 `dead-letter.schema.json` 编码，保留原 Topic、partition、offset、时间、key 和 Base64 原始载荷。只有 ClickHouse 插入、DLQ 发布和整批 offset 提交依次成功后，该批次才完成；任一步失败都保留整批重试。这样坏消息不会永久阻塞分区，但 ClickHouse 行和 DLQ 记录都可能因提交失败而重复，消费者必须按 at-least-once 处理。
+ClickHouse sink 使用显式 consumer group，并要求独立 DLQ Topic。消费批次同时受消息数和 Kafka key/value 总字节数约束，避免合法的大消息批次无界占用内存。每批消息先严格解析：有效事件批量写入 `log_events`，无效事件按 `dead-letter.schema.json` 编码，保留原 Topic、partition、offset、时间、key 和 Base64 原始载荷。只有 ClickHouse 插入、DLQ 发布和整批 offset 提交依次成功后，该批次才完成；任一步失败都保留整批重试。这样坏消息不会永久阻塞分区，但 ClickHouse 行和 DLQ 记录都可能因提交失败而重复，消费者必须按 at-least-once 处理。
 
 sink 启动时检查源 Topic、DLQ Topic 和 ClickHouse 运行时凭据。独立观测端口提供 `/health/live`、`/health/ready` 和 `/metrics`；Kafka 拉取、ClickHouse 插入、DLQ 发布或 offset 提交失败时 readiness 下降，成功恢复后回升。关闭时使用独立的排空超时处理内存中的最后一批，不复用已经取消的进程 context。
 

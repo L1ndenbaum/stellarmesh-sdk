@@ -20,6 +20,7 @@ type BatchProcessor interface {
 // ConsumerConfig controls batching, retry, and shutdown drain behavior.
 type ConsumerConfig struct {
 	BatchSize       int
+	BatchMaxBytes   int64
 	FlushInterval   time.Duration
 	RetryInterval   time.Duration
 	ShutdownTimeout time.Duration
@@ -35,6 +36,9 @@ func Run(ctx context.Context, source Source, processor BatchProcessor, config Co
 	if config.BatchSize <= 0 {
 		config.BatchSize = 500
 	}
+	if config.BatchMaxBytes <= 0 {
+		config.BatchMaxBytes = 16 << 20
+	}
 	if config.FlushInterval <= 0 {
 		config.FlushInterval = time.Second
 	}
@@ -46,6 +50,8 @@ func Run(ctx context.Context, source Source, processor BatchProcessor, config Co
 	}
 
 	batch := make([]Message, 0, config.BatchSize)
+	var batchBytes int64
+	var deferred *Message
 	var batchStarted time.Time
 	flush := func(flushCtx context.Context) error {
 		if len(batch) == 0 {
@@ -58,8 +64,10 @@ func Run(ctx context.Context, source Source, processor BatchProcessor, config Co
 			return err
 		}
 		batch = batch[:0]
+		batchBytes = 0
 		batchStarted = time.Time{}
 		setPending(config.Observer, 0)
+		setPendingBytes(config.Observer, 0)
 		setReady(config.Observer, true)
 		return nil
 	}
@@ -78,7 +86,15 @@ func Run(ctx context.Context, source Source, processor BatchProcessor, config Co
 		if err := ctx.Err(); err != nil {
 			return drain()
 		}
-		if len(batch) >= config.BatchSize {
+		if len(batch) >= config.BatchSize || batchBytes >= config.BatchMaxBytes {
+			if err := flush(ctx); err != nil {
+				if !waitForRetry(ctx, config.RetryInterval) {
+					return drain()
+				}
+			}
+			continue
+		}
+		if deferred != nil && len(batch) > 0 {
 			if err := flush(ctx); err != nil {
 				if !waitForRetry(ctx, config.RetryInterval) {
 					return drain()
@@ -87,41 +103,60 @@ func Run(ctx context.Context, source Source, processor BatchProcessor, config Co
 			continue
 		}
 
-		fetchCtx := ctx
-		cancel := func() {}
-		if len(batch) > 0 {
-			fetchCtx, cancel = context.WithDeadline(ctx, batchStarted.Add(config.FlushInterval))
-		}
-		message, err := source.FetchMessage(fetchCtx)
-		cancel()
-		if err != nil {
-			if ctx.Err() != nil {
-				return drain()
+		var message Message
+		if deferred != nil {
+			message = *deferred
+			deferred = nil
+		} else {
+			fetchCtx := ctx
+			cancel := func() {}
+			if len(batch) > 0 {
+				fetchCtx, cancel = context.WithDeadline(ctx, batchStarted.Add(config.FlushInterval))
 			}
-			if errors.Is(err, context.DeadlineExceeded) && len(batch) > 0 {
-				if flushErr := flush(ctx); flushErr != nil && !waitForRetry(ctx, config.RetryInterval) {
+			fetched, err := source.FetchMessage(fetchCtx)
+			cancel()
+			if err != nil {
+				if ctx.Err() != nil {
+					return drain()
+				}
+				if errors.Is(err, context.DeadlineExceeded) && len(batch) > 0 {
+					if flushErr := flush(ctx); flushErr != nil && !waitForRetry(ctx, config.RetryInterval) {
+						return drain()
+					}
+					continue
+				}
+				observeOperation(config.Observer, "kafka_fetch", "failed")
+				setReady(config.Observer, false)
+				reportError(config.OnError, fmt.Errorf("fetch Kafka message: %w", err))
+				if !waitForRetry(ctx, config.RetryInterval) {
 					return drain()
 				}
 				continue
 			}
-			observeOperation(config.Observer, "kafka_fetch", "failed")
-			setReady(config.Observer, false)
-			reportError(config.OnError, fmt.Errorf("fetch Kafka message: %w", err))
-			if !waitForRetry(ctx, config.RetryInterval) {
-				return drain()
+			observeOperation(config.Observer, "kafka_fetch", "success")
+			if config.Observer != nil {
+				config.Observer.ObserveMessages("fetched", 1)
 			}
+			setReady(config.Observer, true)
+			message = fetched
+		}
+		messageBytes := int64(len(message.Key) + len(message.Value))
+		if len(batch) > 0 && batchBytes+messageBytes > config.BatchMaxBytes {
+			deferred = &message
 			continue
 		}
-		observeOperation(config.Observer, "kafka_fetch", "success")
-		if config.Observer != nil {
-			config.Observer.ObserveMessages("fetched", 1)
-		}
-		setReady(config.Observer, true)
 		if len(batch) == 0 {
 			batchStarted = time.Now()
 		}
 		batch = append(batch, message)
+		batchBytes += messageBytes
 		setPending(config.Observer, len(batch))
+		setPendingBytes(config.Observer, batchBytes)
+		if batchBytes >= config.BatchMaxBytes {
+			if err := flush(ctx); err != nil && !waitForRetry(ctx, config.RetryInterval) {
+				return drain()
+			}
+		}
 	}
 }
 
@@ -145,6 +180,12 @@ func setReady(observer Observer, ready bool) {
 func setPending(observer Observer, count int) {
 	if observer != nil {
 		observer.SetPendingMessages(count)
+	}
+}
+
+func setPendingBytes(observer Observer, size int64) {
+	if observer != nil {
+		observer.SetPendingBytes(size)
 	}
 }
 

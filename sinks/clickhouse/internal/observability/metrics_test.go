@@ -12,6 +12,7 @@ func TestRouterExposesHealthReadinessAndMetrics(t *testing.T) {
 	metrics.ObserveMessages("fetched", 1)
 	metrics.ObserveOperation("kafka_fetch", "success")
 	metrics.SetPendingMessages(1)
+	metrics.SetPendingBytes(128)
 	router := NewRouter(metrics)
 
 	ready := httptest.NewRecorder()
@@ -32,6 +33,7 @@ func TestRouterExposesHealthReadinessAndMetrics(t *testing.T) {
 		"stellarmesh_logging_clickhouse_sink_messages_total",
 		"stellarmesh_logging_clickhouse_sink_operations_total",
 		"stellarmesh_logging_clickhouse_sink_pending_messages",
+		"stellarmesh_logging_clickhouse_sink_pending_bytes",
 	} {
 		if !strings.Contains(recorder.Body.String(), metric) {
 			t.Fatalf("metrics output missing %s", metric)

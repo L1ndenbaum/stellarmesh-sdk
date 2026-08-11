@@ -12,11 +12,12 @@ import (
 
 // Metrics owns one isolated registry and the current sink readiness state.
 type Metrics struct {
-	registry   *prometheus.Registry
-	ready      atomic.Bool
-	messages   *prometheus.CounterVec
-	operations *prometheus.CounterVec
-	pending    prometheus.Gauge
+	registry     *prometheus.Registry
+	ready        atomic.Bool
+	messages     *prometheus.CounterVec
+	operations   *prometheus.CounterVec
+	pending      prometheus.Gauge
+	pendingBytes prometheus.Gauge
 }
 
 // NewMetrics registers the ClickHouse sink metric set.
@@ -35,8 +36,12 @@ func NewMetrics() *Metrics {
 			Namespace: "stellarmesh", Subsystem: "logging_clickhouse_sink", Name: "pending_messages",
 			Help: "Source messages held in the current uncommitted batch.",
 		}),
+		pendingBytes: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "stellarmesh", Subsystem: "logging_clickhouse_sink", Name: "pending_bytes",
+			Help: "Kafka key and value bytes held in the current uncommitted batch.",
+		}),
 	}
-	metrics.registry.MustRegister(metrics.messages, metrics.operations, metrics.pending)
+	metrics.registry.MustRegister(metrics.messages, metrics.operations, metrics.pending, metrics.pendingBytes)
 	return metrics
 }
 
@@ -53,6 +58,11 @@ func (metrics *Metrics) Ready() bool {
 // SetPendingMessages records the current uncommitted batch size.
 func (metrics *Metrics) SetPendingMessages(count int) {
 	metrics.pending.Set(float64(count))
+}
+
+// SetPendingBytes records source bytes held in the current uncommitted batch.
+func (metrics *Metrics) SetPendingBytes(size int64) {
+	metrics.pendingBytes.Set(float64(size))
 }
 
 // ObserveMessages records message outcomes.

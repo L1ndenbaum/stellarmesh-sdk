@@ -17,6 +17,7 @@ type Metrics struct {
 	httpRequests *prometheus.CounterVec
 	ingestEvents *prometheus.CounterVec
 	queueDepth   prometheus.Gauge
+	queueBytes   prometheus.Gauge
 	kafkaPublish *prometheus.CounterVec
 	spoolBytes   *prometheus.GaugeVec
 	spoolEvents  *prometheus.CounterVec
@@ -39,6 +40,10 @@ func NewMetrics() *Metrics {
 			Namespace: "stellarmesh", Subsystem: "logging_ingester", Name: "queue_events",
 			Help: "Events currently waiting in the ingestion queue.",
 		}),
+		queueBytes: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "stellarmesh", Subsystem: "logging_ingester", Name: "queue_bytes",
+			Help: "Serialized event bytes waiting for durable ingestion acknowledgement.",
+		}),
 		kafkaPublish: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "stellarmesh", Subsystem: "logging_ingester", Name: "kafka_publish_events_total",
 			Help: "Events passed to Kafka publishing attempts.",
@@ -57,7 +62,7 @@ func NewMetrics() *Metrics {
 		}, []string{"priority", "result"}),
 	}
 	metrics.registry.MustRegister(
-		metrics.httpRequests, metrics.ingestEvents, metrics.queueDepth, metrics.kafkaPublish,
+		metrics.httpRequests, metrics.ingestEvents, metrics.queueDepth, metrics.queueBytes, metrics.kafkaPublish,
 		metrics.spoolBytes, metrics.spoolEvents, metrics.spoolReplay,
 	)
 	metrics.spoolBytes.WithLabelValues("regular").Set(0)
@@ -93,6 +98,11 @@ func (metrics *Metrics) ObserveIngest(result, reason string, count int) {
 // SetQueueDepth records the number of events still queued.
 func (metrics *Metrics) SetQueueDepth(depth int) {
 	metrics.queueDepth.Set(float64(depth))
+}
+
+// SetQueueBytes records serialized bytes still awaiting durability acknowledgement.
+func (metrics *Metrics) SetQueueBytes(size int64) {
+	metrics.queueBytes.Set(float64(size))
 }
 
 // ObserveKafkaPublish records a Kafka batch result by event count.

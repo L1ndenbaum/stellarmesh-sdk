@@ -115,7 +115,7 @@ func run() (result error) {
 		cfg.KafkaTopic, cfg.KafkaGroupID, cfg.KafkaDLQTopic, cfg.ObservabilityAddr,
 	)
 	result = application.Run(ctx, source, processor, application.ConsumerConfig{
-		BatchSize: cfg.BatchSize, FlushInterval: cfg.FlushInterval,
+		BatchSize: cfg.BatchSize, BatchMaxBytes: cfg.BatchMaxBytes, FlushInterval: cfg.FlushInterval,
 		RetryInterval: cfg.RetryInterval, ShutdownTimeout: cfg.ShutdownTimeout, Observer: metrics,
 		OnError: func(err error) { log.Printf("clickhouse sink processing failed: %v", err) },
 	})

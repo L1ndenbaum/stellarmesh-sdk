@@ -27,7 +27,9 @@ type Config struct {
 	PublishTimeout       time.Duration
 	ReplayInterval       time.Duration
 	QueueCapacityEvents  int
+	QueueCapacityBytes   int64
 	MaxBatchSize         int
+	MaxBatchBytes        int64
 	MaxRequestEvents     int
 	KafkaBrokers         []string
 	KafkaTopic           string
@@ -55,7 +57,9 @@ func Load() (Config, error) {
 		PublishTimeout:       envconfig.Duration("STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT", 5*time.Second),
 		ReplayInterval:       envconfig.Duration("STELLARMESH_LOGGING_KAFKA_REPLAY_INTERVAL", 5*time.Second),
 		QueueCapacityEvents:  envconfig.Int("STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS", 4096),
+		QueueCapacityBytes:   envconfig.ByteSize("STELLARMESH_LOGGING_QUEUE_CAPACITY_BYTES", 16<<20),
 		MaxBatchSize:         envconfig.Int("STELLARMESH_LOGGING_MAX_BATCH_SIZE", 512),
+		MaxBatchBytes:        envconfig.ByteSize("STELLARMESH_LOGGING_MAX_BATCH_BYTES", 4<<20),
 		MaxRequestEvents:     envconfig.Int("STELLARMESH_LOGGING_MAX_REQUEST_EVENTS", 512),
 		KafkaBrokers:         envconfig.CSV("STELLARMESH_LOGGING_KAFKA_BROKERS", "kafka:9092"),
 		KafkaTopic:           envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV1),
@@ -74,7 +78,8 @@ func Load() (Config, error) {
 	if strings.TrimSpace(cfg.KafkaTopic) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_KAFKA_TOPIC is required")
 	}
-	if cfg.QueueCapacityEvents <= 0 || cfg.MaxBatchSize <= 0 || cfg.MaxRequestEvents <= 0 {
+	if cfg.QueueCapacityEvents <= 0 || cfg.QueueCapacityBytes <= 0 || cfg.MaxBatchSize <= 0 ||
+		cfg.MaxBatchBytes <= 0 || cfg.MaxRequestEvents <= 0 {
 		return Config{}, errors.New("logging queue and batch limits must be positive")
 	}
 	if cfg.PublishTimeout <= 0 {

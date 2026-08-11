@@ -32,8 +32,24 @@ func TestLoadUsesCanonicalTopic(t *testing.T) {
 	if cfg.MaxSourceMessageBytes != 1<<20 {
 		t.Fatalf("max source message bytes = %d", cfg.MaxSourceMessageBytes)
 	}
+	if cfg.BatchMaxBytes != 16<<20 {
+		t.Fatalf("batch max bytes = %d", cfg.BatchMaxBytes)
+	}
 	if cfg.KafkaConnection.SecurityProtocol != "PLAINTEXT" {
 		t.Fatalf("Kafka security protocol = %q", cfg.KafkaConnection.SecurityProtocol)
+	}
+}
+
+func TestLoadReadsWriterBatchByteLimit(t *testing.T) {
+	t.Setenv("STELLARMESH_LOGGING_CLICKHOUSE_DATABASE", "logging_db")
+	t.Setenv("STELLARMESH_LOGGING_CLICKHOUSE_USER", "logging_runtime")
+	t.Setenv("STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES", "8MiB")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BatchMaxBytes != 8<<20 {
+		t.Fatalf("batch max bytes = %d", cfg.BatchMaxBytes)
 	}
 }
 

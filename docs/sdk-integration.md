@@ -154,8 +154,10 @@ async def application_shutdown() -> None:
 | `STELLARMESH_LOGGING_BATCH_FLUSH_INTERVAL` | `500ms` | 接收队列批量刷新间隔 |
 | `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT` | `5s` | 单次 Kafka 发布及后台可用性检查超时 |
 | `STELLARMESH_LOGGING_KAFKA_REPLAY_INTERVAL` | `5s` | spool 重放间隔 |
-| `STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS` | `4096` | 尚未开始发布的事件容量，不是请求批次数 |
+| `STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS` | `4096` | 尚未获得持久确认的事件容量，不是请求批次数 |
+| `STELLARMESH_LOGGING_QUEUE_CAPACITY_BYTES` | `16MiB` | 队列中规范化事件 JSON 的总字节容量 |
 | `STELLARMESH_LOGGING_MAX_BATCH_SIZE` | `512` | 发布 Kafka 的目标批量大小 |
+| `STELLARMESH_LOGGING_MAX_BATCH_BYTES` | `4MiB` | 单次发布批次的目标规范化 JSON 字节数；单个请求可以独立超过该目标 |
 | `STELLARMESH_LOGGING_MAX_REQUEST_EVENTS` | `512` | 单次 HTTP 请求最大事件数 |
 | `STELLARMESH_LOGGING_KAFKA_BROKERS` | `kafka:9092` | 逗号分隔的 broker 地址 |
 | `STELLARMESH_LOGGING_KAFKA_TOPIC` | `stellarmesh.logging.events.v1` | 已由基础设施创建的 Topic |
@@ -198,6 +200,7 @@ async def application_shutdown() -> None:
 | `STELLARMESH_LOGGING_CLICKHOUSE_USER` | 无 | 必填；低权限运行时用户 |
 | `STELLARMESH_LOGGING_CLICKHOUSE_PASSWORD` | 空 | 运行时用户密码 |
 | `STELLARMESH_LOGGING_WRITER_BATCH_SIZE` | `500` | ClickHouse 写入批量大小 |
+| `STELLARMESH_LOGGING_WRITER_BATCH_MAX_BYTES` | `16MiB` | 单批 Kafka key/value 总字节上限；单条消息可以独立超过该值 |
 | `STELLARMESH_LOGGING_WRITER_FLUSH_INTERVAL` | `1s` | 不满一批时从首条消息开始计算的最大等待时间 |
 | `STELLARMESH_LOGGING_WRITER_RETRY_INTERVAL` | `1s` | 下游或 Kafka 操作失败后的重试间隔 |
 | `STELLARMESH_LOGGING_WRITER_SHUTDOWN_TIMEOUT` | `10s` | 关闭时最后一批的独立排空超时 |
@@ -257,9 +260,9 @@ docker run --rm stellarmesh-logging-clickhouse-migrate:0.1.0 \
 
 - SDK `drop_handler` 或 `OnDrop` 计数；
 - logging-service 的 `400`、`401`、`413`、`503`、readiness 和队列排空失败；
-- `stellarmesh_logging_ingester_queue_events`、Kafka 发布失败计数、分级 spool 字节数与重放失败计数；
+- `stellarmesh_logging_ingester_queue_events`、`stellarmesh_logging_ingester_queue_bytes`、Kafka 发布失败计数、分级 spool 字节数与重放失败计数；
 - Kafka consumer lag；
-- `stellarmesh_logging_clickhouse_sink_pending_messages`、各阶段失败计数和 sink readiness；
+- `stellarmesh_logging_clickhouse_sink_pending_messages`、`stellarmesh_logging_clickhouse_sink_pending_bytes`、各阶段失败计数和 sink readiness；
 - ClickHouse 批量插入错误、DLQ 产生速率、DLQ lag、DLQ 保留容量和重复记录；
 - 应用关闭时 SDK drain 是否超时。
 

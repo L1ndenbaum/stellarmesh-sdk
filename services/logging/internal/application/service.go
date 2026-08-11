@@ -3,6 +3,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"sync"
@@ -37,6 +38,7 @@ type saturationReporter interface {
 type Observer interface {
 	ObserveIngest(result, reason string, count int)
 	SetQueueDepth(depth int)
+	SetQueueBytes(size int64)
 	ObserveKafkaPublish(result string, count int)
 	SetReady(ready bool)
 }
@@ -46,7 +48,9 @@ type Config struct {
 	FlushInterval       time.Duration
 	PublishTimeout      time.Duration
 	QueueCapacityEvents int
+	QueueCapacityBytes  int64
 	MaxBatchSize        int
+	MaxBatchBytes       int64
 	MaxRequestEvents    int
 	Observer            Observer
 }
@@ -60,6 +64,7 @@ type Service struct {
 	config       Config
 	mu           sync.Mutex
 	queuedEvents int
+	queuedBytes  int64
 	closed       bool
 	startOnce    sync.Once
 	done         chan struct{}
@@ -68,6 +73,7 @@ type Service struct {
 
 type queuedBatch struct {
 	events []sharedlogging.Event
+	bytes  int64
 	result chan error
 }
 
@@ -79,8 +85,14 @@ func New(config Config, sinks []BatchSink, fallback BatchSink, publisher Publish
 	if config.QueueCapacityEvents <= 0 {
 		config.QueueCapacityEvents = 1024
 	}
+	if config.QueueCapacityBytes <= 0 {
+		config.QueueCapacityBytes = 16 << 20
+	}
 	if config.MaxBatchSize <= 0 {
 		config.MaxBatchSize = 256
+	}
+	if config.MaxBatchBytes <= 0 {
+		config.MaxBatchBytes = 4 << 20
 	}
 	if config.MaxRequestEvents <= 0 {
 		config.MaxRequestEvents = 512
@@ -116,6 +128,7 @@ func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event
 		return ErrTooManyEvents
 	}
 	copied := make([]sharedlogging.Event, 0, len(events))
+	var requestBytes int64
 	for _, event := range events {
 		if err := event.Validate(); err != nil {
 			service.observeIngest("rejected", "invalid", len(events))
@@ -123,6 +136,12 @@ func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event
 		}
 		event.Timestamp = event.Timestamp.UTC()
 		event.Metadata = sharedlogging.SanitizeMetadata(event.Metadata)
+		payload, err := json.Marshal(event)
+		if err != nil {
+			service.observeIngest("rejected", "invalid", len(events))
+			return err
+		}
+		requestBytes += int64(len(payload))
 		copied = append(copied, event)
 	}
 
@@ -130,14 +149,15 @@ func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event
 		service.observeIngest("rejected", "context", len(events))
 		return err
 	}
-	request := queuedBatch{events: copied, result: make(chan error, 1)}
+	request := queuedBatch{events: copied, bytes: requestBytes, result: make(chan error, 1)}
 	service.mu.Lock()
 	if service.closed {
 		service.mu.Unlock()
 		service.observeIngest("rejected", "shutting_down", len(events))
 		return ErrShuttingDown
 	}
-	if service.queuedEvents+len(copied) > service.config.QueueCapacityEvents {
+	if service.queuedEvents+len(copied) > service.config.QueueCapacityEvents ||
+		service.queuedBytes+requestBytes > service.config.QueueCapacityBytes {
 		service.mu.Unlock()
 		service.observeIngest("rejected", "queue_full", len(events))
 		return ErrQueueFull
@@ -145,9 +165,10 @@ func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event
 	select {
 	case service.queue <- request:
 		service.queuedEvents += len(copied)
-		depth := service.queuedEvents
+		service.queuedBytes += requestBytes
+		service.setQueueDepth(service.queuedEvents)
+		service.setQueueBytes(service.queuedBytes)
 		service.mu.Unlock()
-		service.setQueueDepth(depth)
 		service.observeIngest("accepted", "", len(copied))
 	case <-ctx.Done():
 		service.mu.Unlock()
@@ -205,6 +226,7 @@ func (service *Service) run(ctx context.Context) {
 	defer ticker.Stop()
 	pending := make([]queuedBatch, 0, service.config.MaxBatchSize)
 	pendingEvents := make([]sharedlogging.Event, 0, service.config.MaxBatchSize)
+	var pendingBytes int64
 	flush := func() {
 		if len(pendingEvents) == 0 {
 			return
@@ -213,8 +235,10 @@ func (service *Service) run(ctx context.Context) {
 		requests := append([]queuedBatch(nil), pending...)
 		pending = pending[:0]
 		pendingEvents = pendingEvents[:0]
+		flushedBytes := pendingBytes
+		pendingBytes = 0
 		err := service.writeBatch(ctx, batch)
-		service.markFlushed(len(batch))
+		service.markFlushed(len(batch), flushedBytes)
 		for _, request := range requests {
 			request.result <- err
 		}
@@ -226,9 +250,15 @@ func (service *Service) run(ctx context.Context) {
 				flush()
 				return
 			}
+			if len(pendingEvents) > 0 &&
+				(len(pendingEvents)+len(request.events) > service.config.MaxBatchSize ||
+					pendingBytes+request.bytes > service.config.MaxBatchBytes) {
+				flush()
+			}
 			pending = append(pending, request)
 			pendingEvents = append(pendingEvents, request.events...)
-			if len(pendingEvents) >= service.config.MaxBatchSize {
+			pendingBytes += request.bytes
+			if len(pendingEvents) >= service.config.MaxBatchSize || pendingBytes >= service.config.MaxBatchBytes {
 				flush()
 			}
 		case <-ticker.C:
@@ -236,8 +266,14 @@ func (service *Service) run(ctx context.Context) {
 		case <-ctx.Done():
 			service.closeQueue()
 			for request := range service.queue {
+				if len(pendingEvents) > 0 &&
+					(len(pendingEvents)+len(request.events) > service.config.MaxBatchSize ||
+						pendingBytes+request.bytes > service.config.MaxBatchBytes) {
+					flush()
+				}
 				pending = append(pending, request)
 				pendingEvents = append(pendingEvents, request.events...)
+				pendingBytes += request.bytes
 			}
 			flush()
 			return
@@ -283,12 +319,13 @@ func (service *Service) writeBatch(ctx context.Context, events []sharedlogging.E
 	return nil
 }
 
-func (service *Service) markFlushed(count int) {
+func (service *Service) markFlushed(count int, size int64) {
 	service.mu.Lock()
 	service.queuedEvents -= count
-	depth := service.queuedEvents
+	service.queuedBytes -= size
+	service.setQueueDepth(service.queuedEvents)
+	service.setQueueBytes(service.queuedBytes)
 	service.mu.Unlock()
-	service.setQueueDepth(depth)
 }
 
 func (service *Service) observeIngest(result, reason string, count int) {
@@ -300,6 +337,12 @@ func (service *Service) observeIngest(result, reason string, count int) {
 func (service *Service) setQueueDepth(depth int) {
 	if service.config.Observer != nil {
 		service.config.Observer.SetQueueDepth(depth)
+	}
+}
+
+func (service *Service) setQueueBytes(size int64) {
+	if service.config.Observer != nil {
+		service.config.Observer.SetQueueBytes(size)
 	}
 }
 

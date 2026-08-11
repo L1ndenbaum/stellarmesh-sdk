@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"testing"
@@ -19,6 +20,7 @@ type recordingObserver struct {
 	mu         sync.Mutex
 	ready      bool
 	queueDepth int
+	queueBytes int64
 	results    map[string]int
 }
 
@@ -35,6 +37,12 @@ func (observer *recordingObserver) SetQueueDepth(depth int) {
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
 	observer.queueDepth = depth
+}
+
+func (observer *recordingObserver) SetQueueBytes(size int64) {
+	observer.mu.Lock()
+	defer observer.mu.Unlock()
+	observer.queueBytes = size
 }
 
 func (observer *recordingObserver) ObserveKafkaPublish(result string, count int) {
@@ -158,6 +166,38 @@ func TestServiceQueueCapacityCountsEventsAcrossRequests(t *testing.T) {
 	observer.mu.Lock()
 	if observer.results["rejected:queue_full"] != 2 {
 		t.Fatalf("queue depth=%d results=%v", observer.queueDepth, observer.results)
+	}
+	observer.mu.Unlock()
+	if err := service.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServiceQueueCapacityCountsSerializedBytes(t *testing.T) {
+	observer := &recordingObserver{}
+	publisher := &recordingPublisher{}
+	first := validApplicationEvent(t, "first")
+	payload, err := json.Marshal(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := New(Config{
+		QueueCapacityEvents: 2, QueueCapacityBytes: int64(len(payload) + 1),
+		MaxBatchSize: 1, MaxRequestEvents: 1, Observer: observer,
+	}, nil, nil, publisher)
+	firstResult := make(chan error, 1)
+	go func() { firstResult <- service.Ingest(context.Background(), []sharedlogging.Event{first}) }()
+	waitForQueueDepth(t, observer, 1)
+	if err := service.Ingest(context.Background(), []sharedlogging.Event{validApplicationEvent(t, "second")}); !errors.Is(err, ErrQueueFull) {
+		t.Fatalf("error = %v", err)
+	}
+	service.Start(context.Background())
+	if err := <-firstResult; err != nil {
+		t.Fatal(err)
+	}
+	observer.mu.Lock()
+	if observer.queueBytes != 0 {
+		t.Fatalf("queue bytes = %d", observer.queueBytes)
 	}
 	observer.mu.Unlock()
 	if err := service.Shutdown(context.Background()); err != nil {
