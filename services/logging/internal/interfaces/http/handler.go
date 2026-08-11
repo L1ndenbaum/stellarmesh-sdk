@@ -101,7 +101,7 @@ func (handler *Handler) authorizeEvents(w http.ResponseWriter, r *http.Request, 
 
 func (handler *Handler) decode(w http.ResponseWriter, r *http.Request, target any) bool {
 	err := sharedhttp.DecodeJSONWithOptions(w, r, target, sharedhttp.DecodeJSONOptions{
-		MaxBytes: sharedhttp.DefaultJSONBodyLimit, DisallowUnknownFields: true,
+		MaxBytes: sharedlogging.MaxHTTPBodyBytesV1, DisallowUnknownFields: true,
 	})
 	if err == nil {
 		return true
@@ -117,7 +117,7 @@ func (handler *Handler) decode(w http.ResponseWriter, r *http.Request, target an
 
 func (handler *Handler) writeIngestError(w http.ResponseWriter, err error) {
 	status := http.StatusBadRequest
-	if errors.Is(err, application.ErrTooManyEvents) {
+	if errors.Is(err, application.ErrTooManyEvents) || errors.Is(err, application.ErrEventTooLarge) {
 		status = http.StatusRequestEntityTooLarge
 	} else if errors.Is(err, application.ErrQueueFull) ||
 		errors.Is(err, application.ErrShuttingDown) ||

@@ -20,6 +20,28 @@ type recordingPublisher struct {
 	checkErr  error
 }
 
+type failFirstPublisher struct {
+	events []sharedlogging.Event
+	calls  int
+	err    error
+}
+
+func (publisher *failFirstPublisher) Publish(_ context.Context, events []sharedlogging.Event) error {
+	publisher.calls++
+	if publisher.calls == 1 {
+		return publisher.err
+	}
+	publisher.events = append(publisher.events, events...)
+	return nil
+}
+
+type contextPublisher struct{}
+
+func (contextPublisher) Publish(ctx context.Context, _ []sharedlogging.Event) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
 func (publisher *recordingPublisher) Check(context.Context) error { return publisher.checkErr }
 
 func (publisher *recordingPublisher) Publish(_ context.Context, events []sharedlogging.Event) error {
@@ -197,7 +219,7 @@ func TestFallbackStoreRetainsSegmentAfterPartialReplayFailure(t *testing.T) {
 	}
 }
 
-func TestFallbackStoreStopsBeforeRegularSegmentsWhenPriorityReplayFails(t *testing.T) {
+func TestFallbackStoreAttemptsRegularSegmentsWhenPriorityReplayFails(t *testing.T) {
 	store := newStore(t, Config{RootDir: filepath.Join(t.TempDir(), "spool"), ReplayBatchSize: 1})
 	if err := store.WriteBatch(context.Background(), []sharedlogging.Event{
 		validEvent(t, sharedlogging.LevelInfo, "regular"),
@@ -205,12 +227,98 @@ func TestFallbackStoreStopsBeforeRegularSegmentsWhenPriorityReplayFails(t *testi
 	}); err != nil {
 		t.Fatal(err)
 	}
-	publisher := &recordingPublisher{failAfter: 1}
+	publisher := &failFirstPublisher{err: errors.New("Kafka unavailable")}
 	if err := store.ReplayOnce(context.Background(), publisher); err == nil {
 		t.Fatal("ReplayOnce() succeeded unexpectedly")
 	}
-	if publisher.calls != 1 || len(publisher.events) != 0 {
+	if publisher.calls != 2 || len(publisher.events) != 1 || publisher.events[0].Level != sharedlogging.LevelInfo {
 		t.Fatalf("calls=%d events=%d", publisher.calls, len(publisher.events))
+	}
+}
+
+func TestFallbackStoreQuarantinesCorruptPriorityAndReplaysRegular(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "spool")
+	store := newStore(t, Config{RootDir: root, ReplayBatchSize: 1})
+	if err := store.WriteBatch(context.Background(), []sharedlogging.Event{
+		validEvent(t, sharedlogging.LevelInfo, "regular"),
+		validEvent(t, sharedlogging.LevelError, "priority"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	priorityPaths, err := store.committedSegmentPaths(highPriority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(priorityPaths) != 1 {
+		t.Fatalf("priority paths = %v", priorityPaths)
+	}
+	corrupt, err := os.ReadFile(priorityPaths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index := range corrupt {
+		corrupt[index] = 'x'
+	}
+	corrupt[len(corrupt)-1] = '\n'
+	if err := os.WriteFile(priorityPaths[0], corrupt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	publisher := &recordingPublisher{}
+	if err := store.ReplayOnce(context.Background(), publisher); err != nil {
+		t.Fatal(err)
+	}
+	if len(publisher.events) != 1 || publisher.events[0].Level != sharedlogging.LevelInfo {
+		t.Fatalf("events = %#v", publisher.events)
+	}
+	if store.QuarantineBytes() == 0 {
+		t.Fatal("quarantine bytes = 0")
+	}
+	entries, err := os.ReadDir(filepath.Join(root, quarantineDirectory))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("quarantine entries = %#v", entries)
+	}
+}
+
+func TestFallbackStoreQuarantinesPermanentPublishFailure(t *testing.T) {
+	permanentErr := errors.New("message too large")
+	store := newStore(t, Config{
+		RootDir: filepath.Join(t.TempDir(), "spool"), ReplayBatchSize: 1,
+		IsPermanentPublishError: func(err error) bool { return errors.Is(err, permanentErr) },
+	})
+	if err := store.WriteBatch(context.Background(), []sharedlogging.Event{
+		validEvent(t, sharedlogging.LevelError, "priority"),
+		validEvent(t, sharedlogging.LevelInfo, "regular"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	publisher := &failFirstPublisher{err: permanentErr}
+	if err := store.ReplayOnce(context.Background(), publisher); err != nil {
+		t.Fatal(err)
+	}
+	if publisher.calls != 2 || len(publisher.events) != 1 || store.QuarantineBytes() == 0 {
+		t.Fatalf("calls=%d events=%d quarantine=%d", publisher.calls, len(publisher.events), store.QuarantineBytes())
+	}
+}
+
+func TestFallbackReplayPublishUsesConfiguredTimeout(t *testing.T) {
+	store := newStore(t, Config{
+		RootDir: filepath.Join(t.TempDir(), "spool"), PublishTimeout: 10 * time.Millisecond,
+	})
+	if err := store.WriteBatch(context.Background(), []sharedlogging.Event{
+		validEvent(t, sharedlogging.LevelInfo, "regular"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	err := store.ReplayOnce(context.Background(), contextPublisher{})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ReplayOnce() error = %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("ReplayOnce() elapsed = %s", elapsed)
 	}
 }
 

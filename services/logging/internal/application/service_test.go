@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -138,6 +139,10 @@ func TestServiceRejectsInvalidAndOversizedRequests(t *testing.T) {
 	}
 	if err := service.Ingest(context.Background(), make([]sharedlogging.Event, 2)); err != ErrTooManyEvents {
 		t.Fatalf("error = %v", err)
+	}
+	oversized := validApplicationEvent(t, strings.Repeat("x", sharedlogging.MaxEventJSONBytesV1))
+	if err := service.Ingest(context.Background(), []sharedlogging.Event{oversized}); !errors.Is(err, ErrEventTooLarge) {
+		t.Fatalf("oversized error = %v", err)
 	}
 }
 

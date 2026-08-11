@@ -164,8 +164,8 @@ async def application_shutdown() -> None:
 | `STELLARMESH_LOGGING_KAFKA_BROKERS` | `kafka:9092` | 逗号分隔的 broker 地址 |
 | `STELLARMESH_LOGGING_KAFKA_TOPIC` | `stellarmesh.logging.events.v1` | 已由基础设施创建的 Topic |
 | `STELLARMESH_LOGGING_SPOOL_DIR` | `<data-dir>/spool` | Kafka 失败分段缓冲根目录 |
-| `STELLARMESH_LOGGING_SPOOL_MAX_BYTES` | `1GiB` | `regular` 与 `priority` 共用的磁盘容量上限 |
-| `STELLARMESH_LOGGING_SPOOL_SEGMENT_BYTES` | `16MiB` | 目标分段大小；单个大事件可以形成更大的独立段 |
+| `STELLARMESH_LOGGING_SPOOL_MAX_BYTES` | `1GiB` | `regular`、`priority` 与 `quarantine` 共用的数据容量上限 |
+| `STELLARMESH_LOGGING_SPOOL_SEGMENT_BYTES` | `16MiB` | 目标分段大小；单条事件另受 `900KiB` 契约上限约束 |
 | `STELLARMESH_LOGGING_SPOOL_REPLAY_BATCH_SIZE` | `128` | 回放每次 Kafka 发布的事件数 |
 
 认证文件由业务部署以只读 Secret 挂载，不提交到本仓库。格式如下：
@@ -183,9 +183,11 @@ async def application_shutdown() -> None:
 
 同一个 service 可以同时配置两个 token，用于滚动轮换；同一 token 不得绑定到不同 service。请求中的每个事件都必须使用与 token 绑定一致的 `service`，否则返回 `403`。轮换顺序是先同时配置新旧 token 并滚动重启 ingester，再切换客户端，最后移除旧 token 并再次滚动重启。
 
-容器必须能写入 `STELLARMESH_LOGGING_DATA_DIR`，且该目录应使用业务项目管理的持久卷。spool 在权限为 `0700` 的 `.staging/` 中准备完整批次，再原子提交到 `batches/`；`ERROR` 和 `AUDIT` 的分段优先回放。升级后的服务仍会回放旧版本 `regular/` 与 `priority/` 中的 `.ready.jsonl`，但不会识别业务项目自行实现的其他 JSONL spool。分段只有全部发布成功才删除，失败重试可能重复发送已经发布的段内事件；ClickHouse 表的事件标识用于降低重复的最终影响，但消费侧仍应按 at-least-once 设计。服务启动时会检查 Topic；Topic 不存在或 ACL 不允许访问时启动失败，不会自行创建资源。
+容器必须能写入 `STELLARMESH_LOGGING_DATA_DIR`，且该目录应使用业务项目管理的持久卷。spool 在权限为 `0700` 的 `.staging/` 中准备完整批次，再原子提交到 `batches/`；`ERROR` 和 `AUDIT` 的分段优先回放，但 priority 临时失败不会阻止本轮继续尝试 regular。升级后的服务仍会回放旧版本 `regular/` 与 `priority/` 中的 `.ready.jsonl`，但不会识别业务项目自行实现的其他 JSONL spool。损坏、不兼容或被 publisher 判定为永久失败的 segment 会原子移动到 `quarantine/`，同时写入来源和错误元数据；隔离数据计入容量但不会自动删除，运维确认后才能清理。分段只有全部发布成功才删除，失败重试可能重复发送已经发布的段内事件；ClickHouse 表的事件标识用于降低重复的最终影响，但消费侧仍应按 at-least-once 设计。
 
-存活检查使用 `GET /health/live`，就绪检查使用 `GET /health/ready`，原有 `GET /health` 仍作为存活检查兼容入口。就绪状态在 Kafka 发布失败且 spool 写入失败或达到容量上限时变为 `503`，后台 Kafka 检查与回放可以在没有新请求时恢复就绪状态。Prometheus 抓取地址为 `GET /metrics`。SDK 写入使用 `POST /v1/log-events/batch` 和 `X-Logging-Service-Token`；请求会等待批次获得 Kafka 全同步副本确认或 spool 原子提交，正式成功状态才是 `202`，两条持久路径均失败时返回 `503`。客户端请求提前取消后，服务仍会处理已经入队的事件，因此重试必须按 at-least-once 接受重复；迁移期客户端也接受状态与 envelope 同为 `200` 的旧服务响应。
+服务启动时仍会检查 Topic，但 Kafka 不可用、Topic 暂时不存在或 ACL 检查失败时，只要本地 spool 可以初始化且尚有容量，ingester 会以降级模式启动并通过 spool 持久接收；它不会自行创建 Kafka 资源。后台检查成功后自动恢复 Kafka 发布和重放。单次重放发布与可用性检查都受 `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT` 限制。关闭超过 `STELLARMESH_LOGGING_SHUTDOWN_TIMEOUT` 时进程停止等待后台 I/O 并返回失败，由编排器完成进程级回收；此路径不会并发关闭仍被 worker 使用的 publisher。
+
+存活检查使用 `GET /health/live`，就绪检查使用 `GET /health/ready`，原有 `GET /health` 仍作为存活检查兼容入口。就绪状态在 Kafka 发布失败且 spool 写入失败或达到容量上限时变为 `503`，后台 Kafka 检查与回放可以在没有新请求时恢复就绪状态。Prometheus 抓取地址为 `GET /metrics`。SDK 写入使用 `POST /v1/log-events/batch` 和 `X-Logging-Service-Token`；请求体上限为 `1MiB`，其中每条规范化事件不得超过 `900KiB`。请求会等待批次获得 Kafka 全同步副本确认或 spool 原子提交，正式成功状态才是 `202`，两条持久路径均失败时返回 `503`。客户端请求提前取消后，服务仍会处理已经入队的事件，因此重试必须按 at-least-once 接受重复；迁移期客户端也接受状态与 envelope 同为 `200` 的旧服务响应。
 
 ## 部署 ClickHouse sink
 
@@ -262,7 +264,7 @@ docker run --rm stellarmesh-logging-clickhouse-migrate:0.1.0 \
 
 - SDK `drop_handler` 或 `OnDrop` 计数；
 - logging-service 的 `400`、`401`、`413`、`503`、readiness 和队列排空失败；
-- `stellarmesh_logging_ingester_queue_events`、`stellarmesh_logging_ingester_queue_bytes`、Kafka 发布失败计数、分级 spool 字节数与重放失败计数；
+- `stellarmesh_logging_ingester_queue_events`、`stellarmesh_logging_ingester_queue_bytes`、Kafka 发布失败计数、regular/priority/quarantine spool 字节数与重放结果计数；
 - Kafka consumer lag；
 - `stellarmesh_logging_clickhouse_sink_pending_messages`、`stellarmesh_logging_clickhouse_sink_pending_bytes`、各阶段失败计数和 sink readiness；
 - ClickHouse 批量插入错误、DLQ 产生速率、DLQ lag、DLQ 保留容量和重复记录；

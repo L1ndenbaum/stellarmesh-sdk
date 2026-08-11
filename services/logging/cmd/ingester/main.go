@@ -45,31 +45,38 @@ func run() (result error) {
 		return err
 	}
 
-	publisher, err := kafkapub.NewPublisher(cfg.KafkaBrokers, cfg.KafkaTopic, cfg.KafkaConnection)
-	if err != nil {
-		return err
-	}
-	defer func() { result = errors.Join(result, publisher.Close()) }()
-	checkCtx, cancelCheck := context.WithTimeout(signalCtx, kafkaStartupCheckTimeout)
-	if err := publisher.Check(checkCtx); err != nil {
-		cancelCheck()
-		return fmt.Errorf("kafka startup check failed for topic=%q: %w", cfg.KafkaTopic, err)
-	}
-	cancelCheck()
-
 	fallback, err := filesink.NewKafkaFallbackStore(filesink.Config{
 		RootDir: cfg.SpoolDir, MaxBytes: cfg.SpoolMaxBytes, SegmentBytes: cfg.SpoolSegmentBytes,
-		ReplayBatchSize: cfg.SpoolReplayBatchSize, Observer: metrics,
+		ReplayBatchSize: cfg.SpoolReplayBatchSize, PublishTimeout: cfg.PublishTimeout,
+		IsPermanentPublishError: func(err error) bool { return errors.Is(err, kafkapub.ErrMessageTooLarge) },
+		Observer:                metrics,
 	})
 	if err != nil {
 		return err
 	}
+	publisher, err := kafkapub.NewPublisher(cfg.KafkaBrokers, cfg.KafkaTopic, cfg.KafkaConnection)
+	if err != nil {
+		return err
+	}
+	closePublisher := true
+	defer func() {
+		if closePublisher {
+			result = errors.Join(result, publisher.Close())
+		}
+	}()
+	checkCtx, cancelCheck := context.WithTimeout(signalCtx, kafkaStartupCheckTimeout)
+	kafkaCheckErr := publisher.Check(checkCtx)
+	cancelCheck()
+	if kafkaCheckErr != nil {
+		log.Printf("starting logging ingester with Kafka unavailable; durable spool is active: topic=%q error=%v", cfg.KafkaTopic, kafkaCheckErr)
+	}
 	replayDone := fallback.StartReplay(runtimeCtx, publisher, cfg.ReplayInterval, cfg.PublishTimeout, func(err error) {
 		if err != nil {
 			log.Printf("logging fallback replay failed: %v", err)
-			return
+			metrics.SetReady(!fallback.Saturated())
+		} else {
+			metrics.SetReady(true)
 		}
-		metrics.SetReady(true)
 	})
 	service := application.New(application.Config{
 		FlushInterval: cfg.FlushInterval, PublishTimeout: cfg.PublishTimeout,
@@ -78,7 +85,7 @@ func run() (result error) {
 		MaxRequestEvents: cfg.MaxRequestEvents, Observer: metrics,
 	}, []application.BatchSink{&console.Sink{Writer: os.Stdout, Color: cfg.ConsoleColor}}, fallback, publisher)
 	service.Start(runtimeCtx)
-	metrics.SetReady(true)
+	metrics.SetReady(kafkaCheckErr == nil || !fallback.Saturated())
 
 	handler := httpapi.NewHandler(service, authenticator, metrics)
 	server := httpserver.New(cfg.HTTPServerConfig(), httpapi.NewRouter(handler, metrics))
@@ -100,8 +107,18 @@ func run() (result error) {
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancelShutdown()
 	result = errors.Join(result, server.Shutdown(shutdownCtx))
-	result = errors.Join(result, service.Shutdown(shutdownCtx))
+	serviceShutdownErr := service.Shutdown(shutdownCtx)
+	result = errors.Join(result, serviceShutdownErr)
 	cancelRuntime()
-	<-replayDone
+	if serviceShutdownErr != nil {
+		closePublisher = false
+		return result
+	}
+	select {
+	case <-replayDone:
+	case <-shutdownCtx.Done():
+		closePublisher = false
+		result = errors.Join(result, shutdownCtx.Err())
+	}
 	return result
 }

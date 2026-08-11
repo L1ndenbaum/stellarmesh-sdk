@@ -117,6 +117,18 @@ func TestHandlerMapsTooManyEventsToPayloadTooLarge(t *testing.T) {
 	}
 }
 
+func TestHandlerMapsOversizedEventToPayloadTooLarge(t *testing.T) {
+	router := testRouter(&fakeIngestor{err: application.ErrEventTooLarge})
+	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: validEvent(t)})
+	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
+	request.Header.Set(serviceTokenHeader, "token")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
 func TestRouterExposesLivenessReadinessAndMetrics(t *testing.T) {
 	monitoring := &fakeMonitoring{ready: false}
 	router := NewRouter(NewHandler(&fakeIngestor{}, fakeAuthenticator{}, monitoring), monitoring)

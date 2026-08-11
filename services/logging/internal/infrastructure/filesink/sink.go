@@ -25,10 +25,11 @@ const (
 	defaultMaxBytes       = int64(1 << 30)
 	defaultSegmentBytes   = int64(16 << 20)
 	defaultReplayBatch    = 128
-	defaultMaxRecordBytes = 1 << 20
+	defaultMaxRecordBytes = sharedlogging.MaxEventJSONBytesV1 + 1
 	segmentSuffix         = ".ready.jsonl"
 	stagingDirectory      = ".staging"
 	batchesDirectory      = "batches"
+	quarantineDirectory   = "quarantine"
 )
 
 var (
@@ -36,6 +37,8 @@ var (
 	ErrSpoolFull = errors.New("logging fallback spool is full")
 	// ErrRecordTooLarge indicates a corrupt or unsupported spool record.
 	ErrRecordTooLarge = errors.New("logging fallback spool record is too large")
+	// ErrCorruptSegment identifies a segment that cannot be decoded safely.
+	ErrCorruptSegment = errors.New("logging fallback spool segment is corrupt")
 )
 
 // Publisher replays recovered events to the event bus.
@@ -58,11 +61,13 @@ type Observer interface {
 
 // Config controls segmented fallback storage.
 type Config struct {
-	RootDir         string
-	MaxBytes        int64
-	SegmentBytes    int64
-	ReplayBatchSize int
-	Observer        Observer
+	RootDir                 string
+	MaxBytes                int64
+	SegmentBytes            int64
+	ReplayBatchSize         int
+	PublishTimeout          time.Duration
+	IsPermanentPublishError func(error) bool
+	Observer                Observer
 }
 
 type segment struct {
@@ -70,19 +75,29 @@ type segment struct {
 	events  int
 }
 
+type quarantineMetadata struct {
+	OriginalPath  string    `json:"original_path"`
+	Priority      string    `json:"priority"`
+	Reason        string    `json:"reason"`
+	QuarantinedAt time.Time `json:"quarantined_at"`
+}
+
 // KafkaFallbackStore separates regular and error/audit events into atomic segments.
 type KafkaFallbackStore struct {
-	rootDir         string
-	maxBytes        int64
-	segmentBytes    int64
-	replayBatchSize int
-	observer        Observer
-	mu              sync.Mutex
-	replayMu        sync.Mutex
-	sequence        uint64
-	regularBytes    int64
-	priorityBytes   int64
-	rename          func(string, string) error
+	rootDir                 string
+	maxBytes                int64
+	segmentBytes            int64
+	replayBatchSize         int
+	publishTimeout          time.Duration
+	isPermanentPublishError func(error) bool
+	observer                Observer
+	mu                      sync.Mutex
+	replayMu                sync.Mutex
+	sequence                uint64
+	regularBytes            int64
+	priorityBytes           int64
+	quarantineBytes         int64
+	rename                  func(string, string) error
 }
 
 // NewKafkaFallbackStore validates directories and recovers existing segment sizes.
@@ -99,9 +114,14 @@ func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
 	if config.ReplayBatchSize <= 0 {
 		config.ReplayBatchSize = defaultReplayBatch
 	}
+	if config.PublishTimeout <= 0 {
+		config.PublishTimeout = 5 * time.Second
+	}
 	store := &KafkaFallbackStore{
 		rootDir: config.RootDir, maxBytes: config.MaxBytes, segmentBytes: config.SegmentBytes,
-		replayBatchSize: config.ReplayBatchSize, observer: config.Observer, rename: os.Rename,
+		replayBatchSize: config.ReplayBatchSize, publishTimeout: config.PublishTimeout,
+		isPermanentPublishError: config.IsPermanentPublishError,
+		observer:                config.Observer, rename: os.Rename,
 	}
 	regularBytes, err := prepareDirectory(store.directory(regularPriority))
 	if err != nil {
@@ -115,9 +135,14 @@ func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
 	if err != nil {
 		return nil, err
 	}
+	quarantineBytes, err := prepareQuarantineDirectory(filepath.Join(store.rootDir, quarantineDirectory))
+	if err != nil {
+		return nil, err
+	}
 	store.regularBytes = regularBytes
 	store.regularBytes += batchRegularBytes
 	store.priorityBytes = priorityBytes + batchPriorityBytes
+	store.quarantineBytes = quarantineBytes
 	store.observeBytes()
 	return store, nil
 }
@@ -142,7 +167,7 @@ func (store *KafkaFallbackStore) WriteBatch(ctx context.Context, events []shared
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if store.regularBytes+store.priorityBytes+regularSize+prioritySize > store.maxBytes {
+	if regularSize+prioritySize > store.maxBytes-store.totalBytesLocked() {
 		store.observeWrite(regularPriority, "rejected", len(regular))
 		store.observeWrite(highPriority, "rejected", len(priority))
 		return ErrSpoolFull
@@ -168,10 +193,9 @@ func (store *KafkaFallbackStore) ReplayOnce(ctx context.Context, publisher Publi
 	}
 	store.replayMu.Lock()
 	defer store.replayMu.Unlock()
-	if err := store.replayPriority(ctx, highPriority, publisher); err != nil {
-		return err
-	}
-	return store.replayPriority(ctx, regularPriority, publisher)
+	priorityErr := store.replayPriority(ctx, highPriority, publisher)
+	regularErr := store.replayPriority(ctx, regularPriority, publisher)
+	return errors.Join(priorityErr, regularErr)
 }
 
 // StartReplay periodically retries fallback delivery and reports failures or released space.
@@ -217,7 +241,7 @@ func (store *KafkaFallbackStore) StartReplay(
 func (store *KafkaFallbackStore) Saturated() bool {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	return store.regularBytes+store.priorityBytes >= store.maxBytes
+	return store.totalBytesLocked() >= store.maxBytes
 }
 
 // Bytes reports retained regular and priority bytes.
@@ -225,6 +249,17 @@ func (store *KafkaFallbackStore) Bytes() (int64, int64) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return store.regularBytes, store.priorityBytes
+}
+
+// QuarantineBytes reports bytes retained for operator inspection.
+func (store *KafkaFallbackStore) QuarantineBytes() int64 {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.quarantineBytes
+}
+
+func (store *KafkaFallbackStore) totalBytesLocked() int64 {
+	return store.regularBytes + store.priorityBytes + store.quarantineBytes
 }
 
 func (store *KafkaFallbackStore) encodeSegments(events []sharedlogging.Event) ([]segment, int64, error) {
@@ -337,6 +372,14 @@ func (store *KafkaFallbackStore) replayPriority(ctx context.Context, priority st
 	for _, path := range paths {
 		published, failed, err := store.replaySegment(ctx, path, publisher)
 		if err != nil {
+			if errors.Is(err, ErrCorruptSegment) || store.isPermanentPublishFailure(err) {
+				if quarantineErr := store.quarantineSegment(path, priority, err); quarantineErr != nil {
+					store.observeReplay(priority, "quarantine_failed", max(failed, 1))
+					return fmt.Errorf("quarantine logging spool segment %s: %w", filepath.Base(path), quarantineErr)
+				}
+				store.observeReplay(priority, "quarantined", max(failed, 1))
+				continue
+			}
 			store.observeReplay(priority, "failed", max(failed, 1))
 			return fmt.Errorf("replay logging spool segment %s: %w", filepath.Base(path), err)
 		}
@@ -363,6 +406,77 @@ func (store *KafkaFallbackStore) replayPriority(ctx context.Context, priority st
 	return store.removeEmptyBatches()
 }
 
+func (store *KafkaFallbackStore) isPermanentPublishFailure(err error) bool {
+	return store.isPermanentPublishError != nil && store.isPermanentPublishError(err)
+}
+
+func (store *KafkaFallbackStore) quarantineSegment(path, priority string, cause error) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	relativePath, err := filepath.Rel(store.rootDir, path)
+	if err != nil {
+		return err
+	}
+	store.mu.Lock()
+	store.sequence++
+	name := fmt.Sprintf("%020d-%06d", time.Now().UTC().UnixNano(), store.sequence)
+	store.mu.Unlock()
+
+	directory := filepath.Join(store.rootDir, quarantineDirectory)
+	target := filepath.Join(directory, name+segmentSuffix)
+	metadataPath := filepath.Join(directory, name+".json")
+	temporaryMetadata := metadataPath + ".tmp"
+	metadata, err := json.Marshal(quarantineMetadata{
+		OriginalPath: relativePath, Priority: priority,
+		Reason: truncateError(cause.Error(), 2048), QuarantinedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return err
+	}
+	metadata = append(metadata, '\n')
+	file, err := os.OpenFile(temporaryMetadata, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	writeErr := writeAndSync(file, metadata)
+	closeErr := file.Close()
+	if writeErr != nil || closeErr != nil {
+		_ = os.Remove(temporaryMetadata)
+		return errors.Join(writeErr, closeErr)
+	}
+	if err := store.rename(path, target); err != nil {
+		_ = os.Remove(temporaryMetadata)
+		return err
+	}
+	metadataErr := store.rename(temporaryMetadata, metadataPath)
+	if metadataErr != nil {
+		_ = os.Remove(temporaryMetadata)
+	}
+
+	store.mu.Lock()
+	if priority == highPriority {
+		store.priorityBytes -= info.Size()
+	} else {
+		store.regularBytes -= info.Size()
+	}
+	store.quarantineBytes += info.Size()
+	if metadataErr == nil {
+		store.quarantineBytes += int64(len(metadata))
+	}
+	store.observeBytes()
+	store.mu.Unlock()
+	return errors.Join(metadataErr, syncDirectory(directory), syncDirectory(filepath.Dir(path)))
+}
+
+func truncateError(value string, limit int) string {
+	if len([]rune(value)) <= limit {
+		return value
+	}
+	return string([]rune(value)[:limit])
+}
+
 func (store *KafkaFallbackStore) replaySegment(ctx context.Context, path string, publisher Publisher) (int, int, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -376,7 +490,10 @@ func (store *KafkaFallbackStore) replaySegment(ctx context.Context, path string,
 		if len(batch) == 0 {
 			return nil
 		}
-		if err := publisher.Publish(ctx, batch); err != nil {
+		publishCtx, cancel := context.WithTimeout(ctx, store.publishTimeout)
+		err := publisher.Publish(publishCtx, batch)
+		cancel()
+		if err != nil {
 			return err
 		}
 		published += len(batch)
@@ -389,14 +506,14 @@ func (store *KafkaFallbackStore) replaySegment(ctx context.Context, path string,
 			break
 		}
 		if err != nil {
-			return published, len(batch), err
+			return published, len(batch), fmt.Errorf("%w: %v", ErrCorruptSegment, err)
 		}
 		if len(bytes.TrimSpace(record)) == 0 {
 			continue
 		}
 		event, err := sharedlogging.DecodeEvent(record)
 		if err != nil {
-			return published, len(batch), err
+			return published, len(batch), fmt.Errorf("%w: %v", ErrCorruptSegment, err)
 		}
 		batch = append(batch, event)
 		if len(batch) >= store.replayBatchSize {
@@ -521,6 +638,38 @@ func prepareBatchDirectories(root string) (int64, int64, error) {
 	return regularBytes, priorityBytes, nil
 }
 
+func prepareQuarantineDirectory(path string) (int64, error) {
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return 0, err
+	}
+	if err := os.Chmod(path, 0o700); err != nil {
+		return 0, err
+	}
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return 0, err
+	}
+	var size int64
+	for _, entry := range entries {
+		fullPath := filepath.Join(path, entry.Name())
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			if err := os.Remove(fullPath); err != nil {
+				return 0, err
+			}
+			continue
+		}
+		if entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return 0, err
+		}
+		size += info.Size()
+	}
+	return size, nil
+}
+
 func (store *KafkaFallbackStore) committedSegmentPaths(priority string) ([]string, error) {
 	paths, err := segmentPaths(store.directory(priority))
 	if err != nil {
@@ -640,6 +789,7 @@ func (store *KafkaFallbackStore) observeBytes() {
 	if store.observer != nil {
 		store.observer.SetSpoolBytes(regularPriority, store.regularBytes)
 		store.observer.SetSpoolBytes(highPriority, store.priorityBytes)
+		store.observer.SetSpoolBytes(quarantineDirectory, store.quarantineBytes)
 	}
 }
 

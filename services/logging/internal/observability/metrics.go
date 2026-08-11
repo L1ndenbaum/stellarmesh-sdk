@@ -50,7 +50,7 @@ func NewMetrics() *Metrics {
 		}, []string{"result"}),
 		spoolBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "stellarmesh", Subsystem: "logging_ingester", Name: "spool_bytes",
-			Help: "Bytes retained in regular and priority spool segments.",
+			Help: "Bytes retained in regular, priority, and quarantine spool storage.",
 		}, []string{"priority"}),
 		spoolEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "stellarmesh", Subsystem: "logging_ingester", Name: "spool_write_events_total",
@@ -67,6 +67,7 @@ func NewMetrics() *Metrics {
 	)
 	metrics.spoolBytes.WithLabelValues("regular").Set(0)
 	metrics.spoolBytes.WithLabelValues("priority").Set(0)
+	metrics.spoolBytes.WithLabelValues("quarantine").Set(0)
 	return metrics
 }
 

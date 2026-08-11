@@ -15,6 +15,7 @@ import (
 var (
 	ErrEmptyBatch            = errors.New("at least one event is required")
 	ErrTooManyEvents         = errors.New("request contains too many events")
+	ErrEventTooLarge         = errors.New("logging event exceeds the contract size limit")
 	ErrQueueFull             = errors.New("logging queue is full")
 	ErrShuttingDown          = errors.New("logging service is shutting down")
 	ErrDurabilityUnavailable = errors.New("logging durability is unavailable")
@@ -141,7 +142,16 @@ func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event
 			service.observeIngest("rejected", "invalid", len(events))
 			return err
 		}
-		requestBytes += int64(len(payload))
+		if len(payload) > sharedlogging.MaxEventJSONBytesV1 {
+			service.observeIngest("rejected", "event_too_large", len(events))
+			return ErrEventTooLarge
+		}
+		payloadBytes := int64(len(payload))
+		if payloadBytes > service.config.QueueCapacityBytes-requestBytes {
+			service.observeIngest("rejected", "queue_full", len(events))
+			return ErrQueueFull
+		}
+		requestBytes += payloadBytes
 		copied = append(copied, event)
 	}
 
@@ -156,8 +166,8 @@ func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event
 		service.observeIngest("rejected", "shutting_down", len(events))
 		return ErrShuttingDown
 	}
-	if service.queuedEvents+len(copied) > service.config.QueueCapacityEvents ||
-		service.queuedBytes+requestBytes > service.config.QueueCapacityBytes {
+	if len(copied) > service.config.QueueCapacityEvents-service.queuedEvents ||
+		requestBytes > service.config.QueueCapacityBytes-service.queuedBytes {
 		service.mu.Unlock()
 		service.observeIngest("rejected", "queue_full", len(events))
 		return ErrQueueFull
@@ -197,7 +207,6 @@ func (service *Service) Shutdown(ctx context.Context) error {
 		return nil
 	case <-ctx.Done():
 		service.cancel()
-		<-service.done
 		return ctx.Err()
 	}
 }
