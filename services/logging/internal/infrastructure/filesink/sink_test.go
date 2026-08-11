@@ -1,6 +1,7 @@
 package filesink
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,6 +37,23 @@ func (publisher *failFirstPublisher) Publish(_ context.Context, events []sharedl
 }
 
 type contextPublisher struct{}
+
+type selectivePermanentPublisher struct {
+	err    error
+	events []sharedlogging.Event
+	calls  int
+}
+
+func (publisher *selectivePermanentPublisher) Publish(_ context.Context, events []sharedlogging.Event) error {
+	publisher.calls++
+	for _, event := range events {
+		if event.Metadata["payload"] == "reject" {
+			return publisher.err
+		}
+	}
+	publisher.events = append(publisher.events, events...)
+	return nil
+}
 
 func (contextPublisher) Publish(ctx context.Context, _ []sharedlogging.Event) error {
 	<-ctx.Done()
@@ -330,6 +348,52 @@ func TestFallbackStoreQuarantinesPermanentPublishFailure(t *testing.T) {
 	}
 	if publisher.calls != 2 || len(publisher.events) != 1 || store.QuarantineBytes() == 0 {
 		t.Fatalf("calls=%d events=%d quarantine=%d", publisher.calls, len(publisher.events), store.QuarantineBytes())
+	}
+}
+
+func TestFallbackStoreQuarantinesOnlyPermanentlyRejectedRecord(t *testing.T) {
+	permanentErr := errors.New("message too large")
+	root := filepath.Join(t.TempDir(), "spool")
+	store := newStore(t, Config{
+		RootDir: root, ReplayBatchSize: 3,
+		IsPermanentPublishError: func(err error) bool { return errors.Is(err, permanentErr) },
+	})
+	if err := store.WriteBatch(context.Background(), []sharedlogging.Event{
+		validEvent(t, sharedlogging.LevelInfo, "first"),
+		validEvent(t, sharedlogging.LevelInfo, "reject"),
+		validEvent(t, sharedlogging.LevelInfo, "last"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	publisher := &selectivePermanentPublisher{err: permanentErr}
+	if err := store.ReplayOnce(context.Background(), publisher); err != nil {
+		t.Fatal(err)
+	}
+	if len(publisher.events) != 2 || publisher.events[0].Metadata["payload"] != "first" ||
+		publisher.events[1].Metadata["payload"] != "last" {
+		t.Fatalf("published events = %#v", publisher.events)
+	}
+	regular, _ := store.Bytes()
+	if regular != 0 || store.QuarantineBytes() == 0 {
+		t.Fatalf("regular=%d quarantine=%d", regular, store.QuarantineBytes())
+	}
+	paths, err := segmentPaths(filepath.Join(root, quarantineDirectory))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 1 {
+		t.Fatalf("quarantine paths = %v", paths)
+	}
+	payload, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	event, err := sharedlogging.DecodeEvent(bytes.TrimSpace(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if event.Metadata["payload"] != "reject" {
+		t.Fatalf("quarantined event = %#v", event)
 	}
 }
 

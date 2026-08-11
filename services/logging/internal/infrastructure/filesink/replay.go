@@ -73,9 +73,9 @@ func (store *KafkaFallbackStore) replayPriority(ctx context.Context, priority st
 		return err
 	}
 	for _, path := range paths {
-		published, failed, err := store.replaySegment(ctx, path, publisher)
+		published, rejected, failed, err := store.replaySegment(ctx, path, publisher)
 		if err != nil {
-			if errors.Is(err, ErrCorruptSegment) || store.isPermanentPublishFailure(err) {
+			if errors.Is(err, ErrCorruptSegment) {
 				if quarantineErr := store.quarantineSegment(path, priority, err); quarantineErr != nil {
 					store.observeReplay(priority, "quarantine_failed", max(failed, 1))
 					return fmt.Errorf("quarantine logging spool segment %s: %w", filepath.Base(path), quarantineErr)
@@ -86,25 +86,18 @@ func (store *KafkaFallbackStore) replayPriority(ctx context.Context, priority st
 			store.observeReplay(priority, "failed", max(failed, 1))
 			return fmt.Errorf("replay logging spool segment %s: %w", filepath.Base(path), err)
 		}
-		info, err := os.Stat(path)
-		if err != nil {
-			return err
-		}
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-		store.mu.Lock()
-		if priority == highPriority {
-			store.priorityBytes -= info.Size()
+		if len(rejected) > 0 {
+			if err := store.quarantineRecords(path, priority, rejected); err != nil {
+				store.observeReplay(priority, "quarantine_failed", len(rejected))
+				return fmt.Errorf("quarantine rejected logging records from %s: %w", filepath.Base(path), err)
+			}
+			store.observeReplay(priority, "quarantined", len(rejected))
 		} else {
-			store.regularBytes -= info.Size()
+			if err := store.removePublishedSegment(path, priority); err != nil {
+				return err
+			}
 		}
-		store.observeBytes()
-		store.mu.Unlock()
 		store.observeReplay(priority, "published", published)
-		if err := store.syncDir(filepath.Dir(path)); err != nil {
-			return err
-		}
 	}
 	return store.removeEmptyBatches()
 }
@@ -113,26 +106,35 @@ func (store *KafkaFallbackStore) isPermanentPublishFailure(err error) bool {
 	return store.isPermanentPublishError != nil && store.isPermanentPublishError(err)
 }
 
-func (store *KafkaFallbackStore) replaySegment(ctx context.Context, path string, publisher Publisher) (int, int, error) {
+type rejectedRecord struct {
+	event sharedlogging.Event
+	cause error
+}
+
+func (store *KafkaFallbackStore) replaySegment(
+	ctx context.Context,
+	path string,
+	publisher Publisher,
+) (int, []rejectedRecord, int, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return 0, 0, err
+		return 0, nil, 0, err
 	}
 	defer file.Close()
 	reader := bufio.NewReader(file)
 	batch := make([]sharedlogging.Event, 0, store.replayBatchSize)
 	published := 0
+	rejected := make([]rejectedRecord, 0)
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
 		}
-		publishCtx, cancel := context.WithTimeout(ctx, store.publishTimeout)
-		err := publisher.Publish(publishCtx, batch)
-		cancel()
+		accepted, failedRecords, err := store.publishReplayBatch(ctx, publisher, batch)
 		if err != nil {
 			return err
 		}
-		published += len(batch)
+		published += accepted
+		rejected = append(rejected, failedRecords...)
 		batch = batch[:0]
 		return nil
 	}
@@ -142,26 +144,71 @@ func (store *KafkaFallbackStore) replaySegment(ctx context.Context, path string,
 			break
 		}
 		if err != nil {
-			return published, len(batch), fmt.Errorf("%w: %v", ErrCorruptSegment, err)
+			return published, rejected, len(batch), fmt.Errorf("%w: %v", ErrCorruptSegment, err)
 		}
 		if len(bytes.TrimSpace(record)) == 0 {
 			continue
 		}
 		event, err := sharedlogging.DecodeEvent(record)
 		if err != nil {
-			return published, len(batch), fmt.Errorf("%w: %v", ErrCorruptSegment, err)
+			return published, rejected, len(batch), fmt.Errorf("%w: %v", ErrCorruptSegment, err)
 		}
 		batch = append(batch, event)
 		if len(batch) >= store.replayBatchSize {
 			if err := flush(); err != nil {
-				return published, len(batch), err
+				return published, rejected, len(batch), err
 			}
 		}
 	}
 	if err := flush(); err != nil {
-		return published, len(batch), err
+		return published, rejected, len(batch), err
 	}
-	return published, 0, nil
+	return published, rejected, 0, nil
+}
+
+func (store *KafkaFallbackStore) publishReplayBatch(
+	ctx context.Context,
+	publisher Publisher,
+	events []sharedlogging.Event,
+) (int, []rejectedRecord, error) {
+	publishCtx, cancel := context.WithTimeout(ctx, store.publishTimeout)
+	err := publisher.Publish(publishCtx, events)
+	cancel()
+	if err == nil {
+		return len(events), nil, nil
+	}
+	if !store.isPermanentPublishFailure(err) {
+		return 0, nil, err
+	}
+	if len(events) == 1 {
+		return 0, []rejectedRecord{{event: events[0], cause: err}}, nil
+	}
+	middle := len(events) / 2
+	leftPublished, leftRejected, err := store.publishReplayBatch(ctx, publisher, events[:middle])
+	if err != nil {
+		return leftPublished, leftRejected, err
+	}
+	rightPublished, rightRejected, err := store.publishReplayBatch(ctx, publisher, events[middle:])
+	return leftPublished + rightPublished, append(leftRejected, rightRejected...), err
+}
+
+func (store *KafkaFallbackStore) removePublishedSegment(path, priority string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+	store.mu.Lock()
+	if priority == highPriority {
+		store.priorityBytes -= info.Size()
+	} else {
+		store.regularBytes -= info.Size()
+	}
+	store.observeBytes()
+	store.mu.Unlock()
+	return store.syncDir(filepath.Dir(path))
 }
 
 func readRecord(reader *bufio.Reader, limit int) ([]byte, error) {

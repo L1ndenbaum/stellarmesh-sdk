@@ -185,7 +185,7 @@ async def application_shutdown() -> None:
 
 同一个 service 可以同时配置两个 token，用于滚动轮换；同一 token 不得绑定到不同 service。请求中的每个事件都必须使用与 token 绑定一致的 `service`，否则返回 `403`。轮换顺序是先同时配置新旧 token 并滚动重启 ingester，再切换客户端，最后移除旧 token 并再次滚动重启。
 
-容器必须能写入 `STELLARMESH_LOGGING_DATA_DIR`，且该目录应使用业务项目管理的持久卷。spool 在权限为 `0700` 的 `.staging/` 中准备完整批次，再原子提交到 `batches/`；`ERROR` 和 `AUDIT` 的分段优先回放，但 priority 临时失败不会阻止本轮继续尝试 regular。升级后的服务仍会回放旧版本 `regular/` 与 `priority/` 中的 `.ready.jsonl`，但不会识别业务项目自行实现的其他 JSONL spool。损坏、不兼容或被 publisher 判定为永久失败的 segment 会原子移动到 `quarantine/`，同时写入来源和错误元数据；隔离数据计入容量但不会自动删除，运维确认后才能清理。分段只有全部发布成功才删除，失败重试可能重复发送已经发布的段内事件；ClickHouse 表的事件标识用于降低重复的最终影响，但消费侧仍应按 at-least-once 设计。
+容器必须能写入 `STELLARMESH_LOGGING_DATA_DIR`，且该目录应使用业务项目管理的持久卷。spool 在权限为 `0700` 的 `.staging/` 中准备完整批次，再原子提交到 `batches/`；`ERROR` 和 `AUDIT` 的分段优先回放，但 priority 临时失败不会阻止本轮继续尝试 regular。升级后的服务仍会回放旧版本 `regular/` 与 `priority/` 中的 `.ready.jsonl`，但不会识别业务项目自行实现的其他 JSONL spool。损坏或不兼容的 segment 会整体移入 `quarantine/`；publisher 判定为永久失败时，回放会递归缩小失败批次，只把具体失败记录与来源、错误元数据写入 `quarantine/`，同段正常记录继续发布。隔离数据计入容量但不会自动删除，运维确认后才能清理。暂时失败时保留原分段，重试可能重复发送已经发布的段内事件；ClickHouse 表的事件标识用于降低重复的最终影响，但消费侧仍应按 at-least-once 设计。
 
 服务启动时仍会检查 Topic，但 Kafka 不可用、Topic 暂时不存在或 ACL 检查失败时，只要本地 spool 可以初始化且尚有容量，ingester 会以降级模式启动并通过 spool 持久接收；它不会自行创建 Kafka 资源。后台检查成功后自动恢复 Kafka 发布和重放。单次重放发布与可用性检查都受 `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT` 限制。关闭超过 `STELLARMESH_LOGGING_SHUTDOWN_TIMEOUT` 时进程停止等待后台 I/O 并返回失败，由编排器完成进程级回收；此路径不会并发关闭仍被 worker 使用的 publisher。
 
