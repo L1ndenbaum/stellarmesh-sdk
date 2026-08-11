@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	segmentio "github.com/segmentio/kafka-go"
 )
 
 func TestCheckRejectsMissingConfiguration(t *testing.T) {
@@ -25,6 +27,9 @@ func TestNewPublisherConfiguresMaximumBatchBytes(t *testing.T) {
 	defer publisher.Close()
 	if publisher.writer.BatchBytes != 2<<20 {
 		t.Fatalf("batch bytes = %d", publisher.writer.BatchBytes)
+	}
+	if publisher.writer.RequiredAcks != segmentio.RequireAll {
+		t.Fatalf("required acks = %d", publisher.writer.RequiredAcks)
 	}
 	if _, err := NewPublisher(Config{BatchBytes: -1}); err == nil {
 		t.Fatal("NewPublisher() accepted negative batch bytes")

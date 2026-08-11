@@ -36,7 +36,7 @@ type Publisher struct {
 	transport *segmentio.Transport
 }
 
-// NewPublisher creates a publisher using hash partitioning and leader acknowledgement.
+// NewPublisher creates a publisher using hash partitioning and all in-sync replica acknowledgement.
 func NewPublisher(cfg Config) (*Publisher, error) {
 	if cfg.BatchBytes < 0 {
 		return nil, errors.New("Kafka publisher batch bytes must not be negative")
@@ -58,7 +58,7 @@ func NewPublisher(cfg Config) (*Publisher, error) {
 		writer: &segmentio.Writer{
 			Addr:         segmentio.TCP(cfg.Brokers...),
 			Topic:        cfg.Topic,
-			RequiredAcks: segmentio.RequireOne,
+			RequiredAcks: segmentio.RequireAll,
 			Balancer:     &segmentio.Hash{},
 			BatchTimeout: batchTimeout,
 			BatchBytes:   cfg.BatchBytes,
