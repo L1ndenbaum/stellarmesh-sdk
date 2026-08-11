@@ -43,6 +43,12 @@ type Publisher interface {
 	Publish(context.Context, []sharedlogging.Event) error
 }
 
+// CheckedPublisher verifies Kafka availability before replaying committed segments.
+type CheckedPublisher interface {
+	Publisher
+	Check(context.Context) error
+}
+
 // Observer receives bounded spool metrics.
 type Observer interface {
 	SetSpoolBytes(priority string, size int64)
@@ -171,32 +177,40 @@ func (store *KafkaFallbackStore) ReplayOnce(ctx context.Context, publisher Publi
 // StartReplay periodically retries fallback delivery and reports failures or released space.
 func (store *KafkaFallbackStore) StartReplay(
 	ctx context.Context,
-	publisher Publisher,
+	publisher CheckedPublisher,
 	interval time.Duration,
+	checkTimeout time.Duration,
 	onResult func(error),
-) {
+) <-chan struct{} {
 	if interval <= 0 {
 		interval = 5 * time.Second
 	}
+	if checkTimeout <= 0 {
+		checkTimeout = 5 * time.Second
+	}
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				beforeRegular, beforePriority := store.Bytes()
-				err := store.ReplayOnce(ctx, publisher)
+				checkCtx, cancel := context.WithTimeout(ctx, checkTimeout)
+				err := publisher.Check(checkCtx)
+				cancel()
+				if err == nil {
+					err = store.ReplayOnce(ctx, publisher)
+				}
 				if onResult != nil {
-					afterRegular, afterPriority := store.Bytes()
-					if err != nil || afterRegular+afterPriority < beforeRegular+beforePriority {
-						onResult(err)
-					}
+					onResult(err)
 				}
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
+	return done
 }
 
 // Saturated reports whether retained segments have exhausted the configured budget.

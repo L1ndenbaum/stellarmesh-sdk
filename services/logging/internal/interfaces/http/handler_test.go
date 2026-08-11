@@ -93,6 +93,18 @@ func TestHandlerMapsQueueFullToUnavailable(t *testing.T) {
 	}
 }
 
+func TestHandlerMapsDurabilityFailureToUnavailable(t *testing.T) {
+	router := testRouter(&fakeIngestor{err: application.ErrDurabilityUnavailable})
+	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: validEvent(t)})
+	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
+	request.Header.Set(serviceTokenHeader, "token")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
 func TestHandlerMapsTooManyEventsToPayloadTooLarge(t *testing.T) {
 	router := testRouter(&fakeIngestor{err: application.ErrTooManyEvents})
 	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: validEvent(t)})

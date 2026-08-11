@@ -152,6 +152,7 @@ async def application_shutdown() -> None:
 | `STELLARMESH_LOGGING_IDLE_TIMEOUT` | `60s` | HTTP 空闲连接超时 |
 | `STELLARMESH_LOGGING_SHUTDOWN_TIMEOUT` | `10s` | 服务关闭排空超时 |
 | `STELLARMESH_LOGGING_BATCH_FLUSH_INTERVAL` | `500ms` | 接收队列批量刷新间隔 |
+| `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT` | `5s` | 单次 Kafka 发布及后台可用性检查超时 |
 | `STELLARMESH_LOGGING_KAFKA_REPLAY_INTERVAL` | `5s` | spool 重放间隔 |
 | `STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS` | `4096` | 尚未开始发布的事件容量，不是请求批次数 |
 | `STELLARMESH_LOGGING_MAX_BATCH_SIZE` | `512` | 发布 Kafka 的目标批量大小 |
@@ -180,7 +181,7 @@ async def application_shutdown() -> None:
 
 容器必须能写入 `STELLARMESH_LOGGING_DATA_DIR`，且该目录应使用业务项目管理的持久卷。spool 在权限为 `0700` 的 `.staging/` 中准备完整批次，再原子提交到 `batches/`；`ERROR` 和 `AUDIT` 的分段优先回放。升级后的服务仍会回放旧版本 `regular/` 与 `priority/` 中的 `.ready.jsonl`，但不会识别业务项目自行实现的其他 JSONL spool。分段只有全部发布成功才删除，失败重试可能重复发送已经发布的段内事件；ClickHouse 表的事件标识用于降低重复的最终影响，但消费侧仍应按 at-least-once 设计。服务启动时会检查 Topic；Topic 不存在或 ACL 不允许访问时启动失败，不会自行创建资源。
 
-存活检查使用 `GET /health/live`，就绪检查使用 `GET /health/ready`，原有 `GET /health` 仍作为存活检查兼容入口。就绪状态在 Kafka 发布失败且 spool 写入失败或达到容量上限时变为 `503`，后台回放释放空间或 Kafka 发布恢复后重新变为 `200`。Prometheus 抓取地址为 `GET /metrics`。SDK 写入使用 `POST /v1/log-events/batch` 和 `X-Logging-Service-Token`，正式成功状态是 `202`；客户端在迁移期也接受状态与 envelope 同为 `200` 的旧服务响应。
+存活检查使用 `GET /health/live`，就绪检查使用 `GET /health/ready`，原有 `GET /health` 仍作为存活检查兼容入口。就绪状态在 Kafka 发布失败且 spool 写入失败或达到容量上限时变为 `503`，后台 Kafka 检查与回放可以在没有新请求时恢复就绪状态。Prometheus 抓取地址为 `GET /metrics`。SDK 写入使用 `POST /v1/log-events/batch` 和 `X-Logging-Service-Token`；请求会等待批次获得 Kafka 全同步副本确认或 spool 原子提交，正式成功状态才是 `202`，两条持久路径均失败时返回 `503`。客户端请求提前取消后，服务仍会处理已经入队的事件，因此重试必须按 at-least-once 接受重复；迁移期客户端也接受状态与 envelope 同为 `200` 的旧服务响应。
 
 ## 部署 ClickHouse sink
 
@@ -262,4 +263,4 @@ docker run --rm stellarmesh-logging-clickhouse-migrate:0.1.0 \
 - ClickHouse 批量插入错误、DLQ 产生速率、DLQ lag、DLQ 保留容量和重复记录；
 - 应用关闭时 SDK drain 是否超时。
 
-收到 `202` 后仍可能在后续链路失败，所以不能只用 HTTP 成功率判断日志是否完整。审计类业务若需要强于当前异步链路的持久化保证，应单独设计同步确认或事务性审计存储，不能把 `202` 解释为落盘承诺。
+收到 `202` 表示事件已由 Kafka 全同步副本确认，或已经原子提交到 logging-service 的持久 spool；它不表示 ClickHouse 已经写入。后续 Kafka 消费、ClickHouse 写入和 offset 提交仍按 at-least-once 重试，所以不能只用 HTTP 成功率判断最终查询链路是否完整。审计类业务如果要求业务事务与审计记录原子提交，仍应设计事务性审计存储，不能把独立日志链路当作业务事务的一部分。

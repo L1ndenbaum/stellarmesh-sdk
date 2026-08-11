@@ -17,7 +17,10 @@ type recordingPublisher struct {
 	events    []sharedlogging.Event
 	failAfter int
 	calls     int
+	checkErr  error
 }
+
+func (publisher *recordingPublisher) Check(context.Context) error { return publisher.checkErr }
 
 func (publisher *recordingPublisher) Publish(_ context.Context, events []sharedlogging.Event) error {
 	publisher.calls++
@@ -141,6 +144,28 @@ func TestFallbackStoreReplaysLegacySegments(t *testing.T) {
 	}
 	if len(publisher.events) != 1 || publisher.events[0].EventID != event.EventID {
 		t.Fatalf("events = %#v", publisher.events)
+	}
+}
+
+func TestFallbackReplayChecksKafkaAndCanRecoverWhenEmpty(t *testing.T) {
+	store := newStore(t, Config{RootDir: filepath.Join(t.TempDir(), "spool")})
+	publisher := &recordingPublisher{}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	done := store.StartReplay(ctx, publisher, time.Millisecond, time.Second, func(err error) {
+		select {
+		case result <- err:
+		default:
+		}
+	})
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("replay worker did not stop")
 	}
 }
 

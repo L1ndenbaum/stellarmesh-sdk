@@ -12,10 +12,11 @@ import (
 )
 
 var (
-	ErrEmptyBatch    = errors.New("at least one event is required")
-	ErrTooManyEvents = errors.New("request contains too many events")
-	ErrQueueFull     = errors.New("logging queue is full")
-	ErrShuttingDown  = errors.New("logging service is shutting down")
+	ErrEmptyBatch            = errors.New("at least one event is required")
+	ErrTooManyEvents         = errors.New("request contains too many events")
+	ErrQueueFull             = errors.New("logging queue is full")
+	ErrShuttingDown          = errors.New("logging service is shutting down")
+	ErrDurabilityUnavailable = errors.New("logging durability is unavailable")
 )
 
 // BatchSink writes a flushed batch to a local sink.
@@ -43,6 +44,7 @@ type Observer interface {
 // Config controls queue and batch behavior.
 type Config struct {
 	FlushInterval       time.Duration
+	PublishTimeout      time.Duration
 	QueueCapacityEvents int
 	MaxBatchSize        int
 	MaxRequestEvents    int
@@ -51,7 +53,7 @@ type Config struct {
 
 // Service validates, queues, and flushes log events.
 type Service struct {
-	queue        chan []sharedlogging.Event
+	queue        chan queuedBatch
 	sinks        []BatchSink
 	fallback     BatchSink
 	publisher    Publisher
@@ -61,6 +63,12 @@ type Service struct {
 	closed       bool
 	startOnce    sync.Once
 	done         chan struct{}
+	cancelWorker context.CancelFunc
+}
+
+type queuedBatch struct {
+	events []sharedlogging.Event
+	result chan error
 }
 
 // New creates an ingestion service.
@@ -77,18 +85,27 @@ func New(config Config, sinks []BatchSink, fallback BatchSink, publisher Publish
 	if config.MaxRequestEvents <= 0 {
 		config.MaxRequestEvents = 512
 	}
+	if config.PublishTimeout <= 0 {
+		config.PublishTimeout = 5 * time.Second
+	}
 	return &Service{
-		queue: make(chan []sharedlogging.Event, config.QueueCapacityEvents), sinks: sinks, fallback: fallback,
+		queue: make(chan queuedBatch, config.QueueCapacityEvents), sinks: sinks, fallback: fallback,
 		publisher: publisher, config: config, done: make(chan struct{}),
 	}
 }
 
 // Start launches the queue worker once.
 func (service *Service) Start(ctx context.Context) {
-	service.startOnce.Do(func() { go service.run(ctx) })
+	service.startOnce.Do(func() {
+		workerCtx, cancel := context.WithCancel(ctx)
+		service.mu.Lock()
+		service.cancelWorker = cancel
+		service.mu.Unlock()
+		go service.run(workerCtx)
+	})
 }
 
-// Ingest validates and enqueues events without remote I/O.
+// Ingest validates and queues events, then waits for Kafka or fallback spool durability.
 func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event) error {
 	if len(events) == 0 {
 		service.observeIngest("rejected", "empty", 1)
@@ -113,40 +130,63 @@ func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event
 		service.observeIngest("rejected", "context", len(events))
 		return err
 	}
+	request := queuedBatch{events: copied, result: make(chan error, 1)}
 	service.mu.Lock()
-	defer service.mu.Unlock()
 	if service.closed {
+		service.mu.Unlock()
 		service.observeIngest("rejected", "shutting_down", len(events))
 		return ErrShuttingDown
 	}
 	if service.queuedEvents+len(copied) > service.config.QueueCapacityEvents {
+		service.mu.Unlock()
 		service.observeIngest("rejected", "queue_full", len(events))
 		return ErrQueueFull
 	}
 	select {
-	case service.queue <- copied:
+	case service.queue <- request:
 		service.queuedEvents += len(copied)
-		service.setQueueDepth(service.queuedEvents)
+		depth := service.queuedEvents
+		service.mu.Unlock()
+		service.setQueueDepth(depth)
 		service.observeIngest("accepted", "", len(copied))
-		return nil
 	case <-ctx.Done():
+		service.mu.Unlock()
 		service.observeIngest("rejected", "context", len(events))
 		return ctx.Err()
 	default:
+		service.mu.Unlock()
 		service.observeIngest("rejected", "queue_full", len(events))
 		return ErrQueueFull
+	}
+	select {
+	case err := <-request.result:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
 // Shutdown stops intake and drains queued batches.
 func (service *Service) Shutdown(ctx context.Context) error {
 	defer service.setReady(false)
+	service.Start(context.Background())
 	service.closeQueue()
 	select {
 	case <-service.done:
 		return nil
 	case <-ctx.Done():
+		service.cancel()
+		<-service.done
 		return ctx.Err()
+	}
+}
+
+func (service *Service) cancel() {
+	service.mu.Lock()
+	cancel := service.cancelWorker
+	service.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 }
 
@@ -163,33 +203,41 @@ func (service *Service) run(ctx context.Context) {
 	defer close(service.done)
 	ticker := time.NewTicker(service.config.FlushInterval)
 	defer ticker.Stop()
-	pending := make([]sharedlogging.Event, 0, service.config.MaxBatchSize)
+	pending := make([]queuedBatch, 0, service.config.MaxBatchSize)
+	pendingEvents := make([]sharedlogging.Event, 0, service.config.MaxBatchSize)
 	flush := func() {
-		if len(pending) == 0 {
+		if len(pendingEvents) == 0 {
 			return
 		}
-		batch := append([]sharedlogging.Event(nil), pending...)
+		batch := append([]sharedlogging.Event(nil), pendingEvents...)
+		requests := append([]queuedBatch(nil), pending...)
 		pending = pending[:0]
-		service.markFlushing(len(batch))
-		service.writeBatch(ctx, batch)
+		pendingEvents = pendingEvents[:0]
+		err := service.writeBatch(ctx, batch)
+		service.markFlushed(len(batch))
+		for _, request := range requests {
+			request.result <- err
+		}
 	}
 	for {
 		select {
-		case events, ok := <-service.queue:
+		case request, ok := <-service.queue:
 			if !ok {
 				flush()
 				return
 			}
-			pending = append(pending, events...)
-			if len(pending) >= service.config.MaxBatchSize {
+			pending = append(pending, request)
+			pendingEvents = append(pendingEvents, request.events...)
+			if len(pendingEvents) >= service.config.MaxBatchSize {
 				flush()
 			}
 		case <-ticker.C:
 			flush()
 		case <-ctx.Done():
 			service.closeQueue()
-			for events := range service.queue {
-				pending = append(pending, events...)
+			for request := range service.queue {
+				pending = append(pending, request)
+				pendingEvents = append(pendingEvents, request.events...)
 			}
 			flush()
 			return
@@ -197,22 +245,28 @@ func (service *Service) run(ctx context.Context) {
 	}
 }
 
-func (service *Service) writeBatch(ctx context.Context, events []sharedlogging.Event) {
+func (service *Service) writeBatch(ctx context.Context, events []sharedlogging.Event) error {
 	for _, sink := range service.sinks {
 		if err := sink.WriteBatch(ctx, events); err != nil {
 			log.Printf("logging sink write failed: %v", err)
 		}
 	}
+	var publishErr error
 	if service.publisher == nil {
-		return
+		publishErr = errors.New("Kafka publisher is unavailable")
+	} else {
+		publishCtx, cancel := context.WithTimeout(ctx, service.config.PublishTimeout)
+		publishErr = service.publisher.Publish(publishCtx, events)
+		cancel()
 	}
-	if err := service.publisher.Publish(ctx, events); err != nil {
+	if publishErr != nil {
 		service.observeKafkaPublish("failed", len(events))
-		log.Printf("kafka publish failed: %v", err)
+		log.Printf("kafka publish failed: %v", publishErr)
 		if service.fallback != nil {
 			if fallbackErr := service.fallback.WriteBatch(ctx, events); fallbackErr != nil {
 				service.setReady(false)
 				log.Printf("logging fallback write failed: %v", fallbackErr)
+				return ErrDurabilityUnavailable
 			} else if reporter, ok := service.fallback.(saturationReporter); ok {
 				service.setReady(!reporter.Saturated())
 			} else {
@@ -220,14 +274,16 @@ func (service *Service) writeBatch(ctx context.Context, events []sharedlogging.E
 			}
 		} else {
 			service.setReady(false)
+			return ErrDurabilityUnavailable
 		}
-		return
+		return nil
 	}
 	service.observeKafkaPublish("success", len(events))
 	service.setReady(true)
+	return nil
 }
 
-func (service *Service) markFlushing(count int) {
+func (service *Service) markFlushed(count int) {
 	service.mu.Lock()
 	service.queuedEvents -= count
 	depth := service.queuedEvents

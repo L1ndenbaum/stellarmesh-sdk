@@ -24,6 +24,7 @@ type Config struct {
 	IdleTimeout          time.Duration
 	ShutdownTimeout      time.Duration
 	FlushInterval        time.Duration
+	PublishTimeout       time.Duration
 	ReplayInterval       time.Duration
 	QueueCapacityEvents  int
 	MaxBatchSize         int
@@ -51,6 +52,7 @@ func Load() (Config, error) {
 		IdleTimeout:          envconfig.Duration("STELLARMESH_LOGGING_IDLE_TIMEOUT", 60*time.Second),
 		ShutdownTimeout:      envconfig.Duration("STELLARMESH_LOGGING_SHUTDOWN_TIMEOUT", 10*time.Second),
 		FlushInterval:        envconfig.Duration("STELLARMESH_LOGGING_BATCH_FLUSH_INTERVAL", 500*time.Millisecond),
+		PublishTimeout:       envconfig.Duration("STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT", 5*time.Second),
 		ReplayInterval:       envconfig.Duration("STELLARMESH_LOGGING_KAFKA_REPLAY_INTERVAL", 5*time.Second),
 		QueueCapacityEvents:  envconfig.Int("STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS", 4096),
 		MaxBatchSize:         envconfig.Int("STELLARMESH_LOGGING_MAX_BATCH_SIZE", 512),
@@ -74,6 +76,9 @@ func Load() (Config, error) {
 	}
 	if cfg.QueueCapacityEvents <= 0 || cfg.MaxBatchSize <= 0 || cfg.MaxRequestEvents <= 0 {
 		return Config{}, errors.New("logging queue and batch limits must be positive")
+	}
+	if cfg.PublishTimeout <= 0 {
+		return Config{}, errors.New("STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT must be positive")
 	}
 	if strings.TrimSpace(cfg.SpoolDir) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_SPOOL_DIR is required")

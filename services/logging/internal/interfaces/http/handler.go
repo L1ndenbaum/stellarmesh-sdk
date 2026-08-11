@@ -121,6 +121,7 @@ func (handler *Handler) writeIngestError(w http.ResponseWriter, err error) {
 		status = http.StatusRequestEntityTooLarge
 	} else if errors.Is(err, application.ErrQueueFull) ||
 		errors.Is(err, application.ErrShuttingDown) ||
+		errors.Is(err, application.ErrDurabilityUnavailable) ||
 		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		status = http.StatusServiceUnavailable
 	}

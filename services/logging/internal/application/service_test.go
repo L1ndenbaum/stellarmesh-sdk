@@ -59,6 +59,34 @@ func (failingSink) WriteBatch(context.Context, []sharedlogging.Event) error {
 	return errors.New("spool unavailable")
 }
 
+type successfulSink struct {
+	mu     sync.Mutex
+	events []sharedlogging.Event
+}
+
+func (sink *successfulSink) WriteBatch(_ context.Context, events []sharedlogging.Event) error {
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	sink.events = append(sink.events, events...)
+	return nil
+}
+
+type blockingPublisher struct {
+	started chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (publisher *blockingPublisher) Publish(ctx context.Context, _ []sharedlogging.Event) error {
+	publisher.once.Do(func() { close(publisher.started) })
+	select {
+	case <-publisher.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (publisher *recordingPublisher) Publish(_ context.Context, events []sharedlogging.Event) error {
 	publisher.mu.Lock()
 	defer publisher.mu.Unlock()
@@ -68,7 +96,7 @@ func (publisher *recordingPublisher) Publish(_ context.Context, events []sharedl
 
 func TestServiceFlushesAndDrains(t *testing.T) {
 	publisher := &recordingPublisher{}
-	service := New(Config{FlushInterval: time.Hour, MaxBatchSize: 2}, nil, nil, publisher)
+	service := New(Config{FlushInterval: time.Hour, MaxBatchSize: 1}, nil, nil, publisher)
 	service.Start(context.Background())
 	for _, message := range []string{"first", "second"} {
 		id, err := sharedlogging.NewEventID()
@@ -107,30 +135,43 @@ func TestServiceRejectsInvalidAndOversizedRequests(t *testing.T) {
 
 func TestServiceQueueCapacityCountsEventsAcrossRequests(t *testing.T) {
 	observer := &recordingObserver{}
+	publisher := &recordingPublisher{}
 	service := New(Config{
-		QueueCapacityEvents: 3, MaxRequestEvents: 3, Observer: observer,
-	}, nil, nil, nil)
-	if err := service.Ingest(context.Background(), []sharedlogging.Event{
-		validApplicationEvent(t, "first"), validApplicationEvent(t, "second"),
-	}); err != nil {
-		t.Fatal(err)
-	}
+		QueueCapacityEvents: 3, MaxBatchSize: 2, MaxRequestEvents: 3, Observer: observer,
+	}, nil, nil, publisher)
+	firstResult := make(chan error, 1)
+	go func() {
+		firstResult <- service.Ingest(context.Background(), []sharedlogging.Event{
+			validApplicationEvent(t, "first"), validApplicationEvent(t, "second"),
+		})
+	}()
+	waitForQueueDepth(t, observer, 2)
 	if err := service.Ingest(context.Background(), []sharedlogging.Event{
 		validApplicationEvent(t, "third"), validApplicationEvent(t, "fourth"),
 	}); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("error = %v", err)
 	}
+	service.Start(context.Background())
+	if err := <-firstResult; err != nil {
+		t.Fatal(err)
+	}
 	observer.mu.Lock()
-	defer observer.mu.Unlock()
-	if observer.queueDepth != 2 || observer.results["rejected:queue_full"] != 2 {
+	if observer.results["rejected:queue_full"] != 2 {
 		t.Fatalf("queue depth=%d results=%v", observer.queueDepth, observer.results)
+	}
+	observer.mu.Unlock()
+	if err := service.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 
 func TestServiceMarksNotReadyWhenKafkaAndFallbackFail(t *testing.T) {
 	observer := &recordingObserver{ready: true}
 	service := New(Config{Observer: observer}, nil, failingSink{}, failingPublisher{})
-	service.writeBatch(context.Background(), []sharedlogging.Event{validApplicationEvent(t, "event")})
+	err := service.writeBatch(context.Background(), []sharedlogging.Event{validApplicationEvent(t, "event")})
+	if !errors.Is(err, ErrDurabilityUnavailable) {
+		t.Fatalf("error = %v", err)
+	}
 	observer.mu.Lock()
 	defer observer.mu.Unlock()
 	if observer.ready {
@@ -139,6 +180,80 @@ func TestServiceMarksNotReadyWhenKafkaAndFallbackFail(t *testing.T) {
 	if observer.results["kafka:failed"] != 1 {
 		t.Fatalf("results = %v", observer.results)
 	}
+}
+
+func TestServiceWaitsForDurablePublish(t *testing.T) {
+	publisher := &blockingPublisher{started: make(chan struct{}), release: make(chan struct{})}
+	service := New(Config{MaxBatchSize: 1}, nil, nil, publisher)
+	service.Start(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		result <- service.Ingest(context.Background(), []sharedlogging.Event{validApplicationEvent(t, "event")})
+	}()
+	<-publisher.started
+	select {
+	case err := <-result:
+		t.Fatalf("Ingest() returned before durable publish: %v", err)
+	default:
+	}
+	close(publisher.release)
+	if err := <-result; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServiceAcceptsDurableFallback(t *testing.T) {
+	fallback := &successfulSink{}
+	service := New(Config{MaxBatchSize: 1}, nil, fallback, failingPublisher{})
+	service.Start(context.Background())
+	if err := service.Ingest(context.Background(), []sharedlogging.Event{validApplicationEvent(t, "event")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fallback.mu.Lock()
+	defer fallback.mu.Unlock()
+	if len(fallback.events) != 1 {
+		t.Fatalf("fallback events = %#v", fallback.events)
+	}
+}
+
+func TestServiceShutdownCancelsAndJoinsBlockedPublish(t *testing.T) {
+	publisher := &blockingPublisher{started: make(chan struct{}), release: make(chan struct{})}
+	service := New(Config{MaxBatchSize: 1, PublishTimeout: time.Hour}, nil, nil, publisher)
+	service.Start(context.Background())
+	ingestResult := make(chan error, 1)
+	go func() {
+		ingestResult <- service.Ingest(context.Background(), []sharedlogging.Event{validApplicationEvent(t, "event")})
+	}()
+	<-publisher.started
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	if err := service.Shutdown(shutdownCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+	if err := <-ingestResult; !errors.Is(err, ErrDurabilityUnavailable) {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+}
+
+func waitForQueueDepth(t *testing.T, observer *recordingObserver, expected int) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		observer.mu.Lock()
+		depth := observer.queueDepth
+		observer.mu.Unlock()
+		if depth == expected {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("queue depth did not reach %d", expected)
 }
 
 func validApplicationEvent(t *testing.T, message string) sharedlogging.Event {
