@@ -42,7 +42,19 @@ func IsMessageTooLarge(err error) bool {
 		return false
 	}
 	var messageTooLarge segmentio.MessageTooLargeError
-	return errors.As(err, &messageTooLarge) || errors.Is(err, segmentio.MessageSizeTooLarge)
+	if errors.As(err, &messageTooLarge) || errors.Is(err, segmentio.MessageSizeTooLarge) {
+		return true
+	}
+	var writeErrors segmentio.WriteErrors
+	if !errors.As(err, &writeErrors) {
+		return false
+	}
+	for _, writeErr := range writeErrors {
+		if IsMessageTooLarge(writeErr) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewPublisher creates a publisher using hash partitioning and all in-sync replica acknowledgement.

@@ -23,6 +23,7 @@ func TestCheckRejectsMissingConfiguration(t *testing.T) {
 func TestIsMessageTooLargeRecognizesKafkaErrors(t *testing.T) {
 	if !IsMessageTooLarge(segmentio.MessageTooLargeError{}) ||
 		!IsMessageTooLarge(errors.Join(errors.New("publish"), segmentio.MessageSizeTooLarge)) ||
+		!IsMessageTooLarge(segmentio.WriteErrors{errors.New("unavailable"), segmentio.MessageSizeTooLarge}) ||
 		IsMessageTooLarge(errors.New("unavailable")) {
 		t.Fatal("IsMessageTooLarge() classification mismatch")
 	}
