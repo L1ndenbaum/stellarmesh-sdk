@@ -212,6 +212,124 @@ func TestClientReportsQueueFailure(t *testing.T) {
 	}
 }
 
+func TestClientRetriesTransientStatusWithStableEventID(t *testing.T) {
+	attempts := 0
+	var eventIDs []string
+	client, err := NewClient(ClientConfig{
+		BaseURL: "http://logging-service", Token: "token", BatchSize: 1,
+		MaxAttempts: 3, InitialBackoff: time.Nanosecond, MaxBackoff: time.Nanosecond,
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			attempts++
+			var batch BatchIngestRequest
+			if decodeErr := json.NewDecoder(request.Body).Decode(&batch); decodeErr != nil {
+				return nil, decodeErr
+			}
+			eventIDs = append(eventIDs, batch.Events[0].EventID)
+			if attempts < 3 {
+				return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader("unavailable"))}, nil
+			}
+			payload := `{"code":202,"message":"ok","data":{"accepted":1},"timestamp":"2026-08-01T12:00:00Z"}`
+			return &http.Response{StatusCode: http.StatusAccepted, Body: io.NopCloser(strings.NewReader(payload))}, nil
+		})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !client.Emit(context.Background(), Event{Level: LevelInfo, Service: "test", Message: "event"}) {
+		t.Fatal("Emit() = false")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := client.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 3 || len(eventIDs) != 3 || eventIDs[0] != eventIDs[1] || eventIDs[1] != eventIDs[2] {
+		t.Fatalf("attempts=%d event_ids=%v", attempts, eventIDs)
+	}
+}
+
+func TestClientDoesNotRetryPermanentStatus(t *testing.T) {
+	attempts := 0
+	dropped := make(chan error, 1)
+	client, err := NewClient(ClientConfig{
+		BaseURL: "http://logging-service", Token: "token", BatchSize: 1, MaxAttempts: 3,
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			attempts++
+			return &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader("bad request"))}, nil
+		})},
+		OnDrop: func(_ Event, err error) { dropped <- err },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !client.Emit(context.Background(), Event{Level: LevelInfo, Service: "test", Message: "event"}) {
+		t.Fatal("Emit() = false")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := client.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d", attempts)
+	}
+	select {
+	case <-dropped:
+	default:
+		t.Fatal("drop handler was not called")
+	}
+}
+
+func TestClientQueueBytesIncludeInFlightBatch(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	event := Event{
+		EventID:   "018f16b6-3f9f-7d98-a328-3eac70bd0542",
+		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+		Level:     LevelInfo, Service: "test", Message: "event", Metadata: map[string]any{},
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dropped := make(chan error, 1)
+	client, err := NewClient(ClientConfig{
+		BaseURL: "http://logging-service", Token: "token", QueueSize: 2, QueueBytes: int64(len(payload)), BatchSize: 1,
+		MaxAttempts: 1,
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			close(started)
+			<-release
+			body := `{"code":202,"message":"ok","data":{"accepted":1},"timestamp":"2026-08-01T12:00:00Z"}`
+			return &http.Response{StatusCode: http.StatusAccepted, Body: io.NopCloser(strings.NewReader(body))}, nil
+		})},
+		OnDrop: func(_ Event, err error) { dropped <- err },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !client.Emit(context.Background(), event) {
+		t.Fatal("first Emit() = false")
+	}
+	<-started
+	if client.Emit(context.Background(), event) {
+		t.Fatal("second Emit() = true")
+	}
+	close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := client.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-dropped:
+		if !errors.Is(err, ErrQueueFull) {
+			t.Fatalf("drop error = %v", err)
+		}
+	default:
+		t.Fatal("drop handler was not called")
+	}
+}
+
 func TestClientAcceptsLegacyOKResponse(t *testing.T) {
 	httpClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		payload := `{"code":200,"message":"ok","data":{"accepted":1},"timestamp":"2026-08-01T12:00:00Z"}`

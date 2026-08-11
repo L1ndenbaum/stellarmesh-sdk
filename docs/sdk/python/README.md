@@ -163,13 +163,17 @@ drained = shutdown_logging_sync(timeout=3.0)
 | `minimum_level` | `INFO` | SDK 本地最低级别 |
 | `timeout_seconds` | `2.0` | 单次 HTTP 请求超时 |
 | `queue_size` | `4096` | 本地事件队列容量 |
+| `queue_bytes` | `16MiB` | 尚未完成发送的规范化事件累计字节上限 |
 | `batch_size` | `128` | 单次发送目标事件数 |
 | `flush_interval_ms` | `100` | 未达到批量大小时的刷新周期 |
 | `max_body_bytes` | `900KiB` | 单次 HTTP body 上限，超限批次会继续拆分 |
+| `max_attempts` | `3` | 单批总尝试次数，包含首次请求 |
+| `initial_backoff_seconds` | `0.1` | 首次重试的最大抖动退避 |
+| `max_backoff_seconds` | `1.0` | 指数退避上限 |
 | `trace_id_provider` | 空 | 从业务上下文读取 trace ID |
 | `drop_handler` | 空 | 无法入队或发送时的 callback |
 
-构造 `Client` 时会立即校验 URL、token、service、日志级别和所有正数限制。配置错误应让应用启动失败，而不是延迟到后台线程。
+构造 `Client` 时会立即校验 URL、token、service、日志级别和所有正数限制。配置错误应让应用启动失败，而不是延迟到后台线程。SDK 只重试网络异常和 `408`、`425`、`429`、`500`、`502`、`503`、`504`；其他 4xx 与格式异常的成功响应不会重试。请求结果不确定时可能已经被服务端接受，重试复用相同 `event_id`，下游仍须允许重复。
 
 ## 8. 不使用默认客户端
 
@@ -206,4 +210,3 @@ SDK 调用成功、本地队列排空、`logging-service` 持久确认和 ClickH
 - `service` 改名必须同步更新 token 绑定、告警和查询口径；
 - 调整队列和批量大小时，应同时观察 drop 计数、进程内存和关闭排空时间；
 - Python SDK、Go SDK 与服务镜像应尽量来自同一发布 commit，避免契约漂移。
-

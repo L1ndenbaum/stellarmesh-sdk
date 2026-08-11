@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import queue
+import random
 import sys
 import threading
 import time
@@ -16,7 +17,15 @@ from typing import Any, TypeAlias, cast
 
 import httpx
 
-from .contracts import Level, LogEvent, normalize_level, should_emit_level
+from .codec import encode_event
+from .contracts import (
+    MAX_EVENT_JSON_BYTES,
+    MAX_HTTP_BODY_BYTES,
+    Level,
+    LogEvent,
+    normalize_level,
+    should_emit_level,
+)
 from .transport import BatchTransport
 
 TraceIDProvider: TypeAlias = Callable[[], str]
@@ -43,11 +52,21 @@ class ClientConfig:
     minimum_level: Level | str = Level.INFO
     timeout_seconds: float = 2.0
     queue_size: int = 4096
+    queue_bytes: int = 16 << 20
     batch_size: int = 128
     flush_interval_ms: int = 100
     max_body_bytes: int = 900 * 1024
+    max_attempts: int = 3
+    initial_backoff_seconds: float = 0.1
+    max_backoff_seconds: float = 1.0
     trace_id_provider: TraceIDProvider | None = None
     drop_handler: DropHandler | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _QueuedEvent:
+    event: LogEvent
+    bytes: int
 
 
 class Client:
@@ -65,13 +84,16 @@ class Client:
         self._batch_size = config.batch_size
         self._flush_interval = config.flush_interval_ms / 1000
         self._max_body_bytes = config.max_body_bytes
+        self._max_attempts = config.max_attempts
+        self._initial_backoff = config.initial_backoff_seconds
+        self._max_backoff = config.max_backoff_seconds
         self._transport = BatchTransport(
             base_url=config.base_url,
             token=config.token,
             timeout_seconds=config.timeout_seconds,
             transport=transport,
         )
-        self._queue: queue.Queue[LogEvent | object] = queue.Queue(
+        self._queue: queue.Queue[_QueuedEvent | object] = queue.Queue(
             maxsize=config.queue_size
         )
         self._state_lock = threading.Lock()
@@ -82,6 +104,8 @@ class Client:
         self._state = _ClientState.NEW
         self._failure: Exception | None = None
         self._last_fallback_warning = 0.0
+        self._queued_events = 0
+        self._queued_bytes = 0
 
     def emit_event(
         self,
@@ -119,6 +143,15 @@ class Client:
             event.level, self._minimum_level
         ):
             return False
+        try:
+            event_bytes = len(encode_event(event))
+        except Exception as exc:  # noqa: BLE001 - serialization is isolated.
+            self._drop(event, exc)
+            return False
+        if event_bytes > MAX_EVENT_JSON_BYTES:
+            self._drop(event, ValueError("logging event exceeds the contract limit"))
+            return False
+
         failure: Exception | None = None
         with self._state_lock:
             if self._state in {
@@ -129,12 +162,19 @@ class Client:
                 failure = self._failure or RuntimeError(
                     f"logging client is {self._state.value}"
                 )
+            elif (
+                self._queued_events >= self.config.queue_size
+                or event_bytes > self.config.queue_bytes - self._queued_bytes
+            ):
+                failure = RuntimeError("logging client queue is full")
             else:
                 try:
-                    self._queue.put_nowait(event)
+                    self._queue.put_nowait(_QueuedEvent(event, event_bytes))
                 except queue.Full:
                     failure = RuntimeError("logging client queue is full")
                 else:
+                    self._queued_events += 1
+                    self._queued_bytes += event_bytes
                     self._ensure_worker_locked()
         if failure is not None:
             self._drop(event, failure)
@@ -149,7 +189,7 @@ class Client:
         worker.join(timeout=max(timeout, 0.0))
         if worker.is_alive():
             self._fallback_warning(
-                f"logging client drain timed out; remaining={self._queue.qsize()}"
+                f"logging client drain timed out; remaining={self._pending_count()}"
             )
             return False
         return self._state_snapshot() is _ClientState.CLOSED
@@ -165,7 +205,7 @@ class Client:
             remaining = deadline - loop.time()
             if remaining <= 0:
                 self._fallback_warning(
-                    f"logging client drain timed out; remaining={self._queue.qsize()}"
+                    f"logging client drain timed out; remaining={self._pending_count()}"
                 )
                 return False
             await asyncio.sleep(min(0.05, remaining))
@@ -227,7 +267,7 @@ class Client:
                 self._queue.task_done()
                 continue
 
-            batch = [cast(LogEvent, first)]
+            batch = [cast(_QueuedEvent, first)]
             deadline = time.monotonic() + self._flush_interval
             while len(batch) < self._batch_size:
                 try:
@@ -243,13 +283,14 @@ class Client:
                 if queued is _STOP_WORKER:
                     self._queue.task_done()
                     break
-                batch.append(cast(LogEvent, queued))
+                batch.append(cast(_QueuedEvent, queued))
 
             try:
-                self._send_batch(batch)
+                self._send_batch([item.event for item in batch])
             finally:
-                for _ in batch:
+                for item in batch:
                     self._queue.task_done()
+                    self._release(item)
 
     def _send_batch(self, events: list[LogEvent]) -> bool:
         try:
@@ -270,13 +311,21 @@ class Client:
             right_sent = self._send_batch(events[midpoint:])
             return left_sent and right_sent
 
-        try:
-            self._transport.send(events, payload)
-        except Exception as exc:  # noqa: BLE001 - logging must not break callers.
-            for event in events:
-                self._drop(event, exc)
-            return False
-        return True
+        last_error: Exception | None = None
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                self._transport.send(events, payload)
+            except Exception as exc:  # noqa: BLE001 - logging must not break callers.
+                last_error = exc
+                if not _retryable_error(exc) or attempt == self._max_attempts:
+                    break
+                time.sleep(self._retry_delay(attempt))
+            else:
+                return True
+        assert last_error is not None
+        for event in events:
+            self._drop(event, last_error)
+        return False
 
     def _drain_failed_queue(self, failure: Exception) -> None:
         while True:
@@ -286,7 +335,9 @@ class Client:
                 return
             try:
                 if queued is not _STOP_WORKER:
-                    self._drop(cast(LogEvent, queued), failure)
+                    item = cast(_QueuedEvent, queued)
+                    self._drop(item.event, failure)
+                    self._release(item)
             finally:
                 self._queue.task_done()
 
@@ -315,6 +366,22 @@ class Client:
         with self._state_lock:
             return self._state
 
+    def _pending_count(self) -> int:
+        with self._state_lock:
+            return self._queued_events
+
+    def _release(self, item: _QueuedEvent) -> None:
+        with self._state_lock:
+            self._queued_events -= 1
+            self._queued_bytes -= item.bytes
+
+    def _retry_delay(self, failed_attempt: int) -> float:
+        delay = min(
+            self._initial_backoff * (2 ** (failed_attempt - 1)),
+            self._max_backoff,
+        )
+        return random.uniform(0.0, delay)
+
 
 def _validate_config(config: ClientConfig) -> None:
     try:
@@ -331,10 +398,34 @@ def _validate_config(config: ClientConfig) -> None:
         raise ValueError("logging timeout_seconds must be positive")
     if config.queue_size <= 0:
         raise ValueError("logging queue_size must be positive")
+    if config.queue_bytes <= 0:
+        raise ValueError("logging queue_bytes must be positive")
     if config.batch_size <= 0:
         raise ValueError("logging batch_size must be positive")
     if config.flush_interval_ms <= 0:
         raise ValueError("logging flush_interval_ms must be positive")
     if config.max_body_bytes <= 0:
         raise ValueError("logging max_body_bytes must be positive")
+    if config.max_body_bytes > MAX_HTTP_BODY_BYTES:
+        raise ValueError(
+            f"logging max_body_bytes must not exceed {MAX_HTTP_BODY_BYTES}"
+        )
+    if config.max_attempts <= 0:
+        raise ValueError("logging max_attempts must be positive")
+    if config.initial_backoff_seconds <= 0:
+        raise ValueError("logging initial_backoff_seconds must be positive")
+    if config.max_backoff_seconds <= 0:
+        raise ValueError("logging max_backoff_seconds must be positive")
+    if config.initial_backoff_seconds > config.max_backoff_seconds:
+        raise ValueError(
+            "logging initial_backoff_seconds must not exceed max_backoff_seconds"
+        )
     normalize_level(config.minimum_level)
+
+
+def _retryable_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code in {408, 425, 429, 500, 502, 503, 504}
+    return False

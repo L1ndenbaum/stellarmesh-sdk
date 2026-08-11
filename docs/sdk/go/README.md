@@ -160,14 +160,18 @@ func Shutdown(runtime *Runtime) {
 | --- | --- | --- |
 | `Timeout` | `2s` | 单次 HTTP 请求超时 |
 | `QueueSize` | `4096` | 本地事件队列容量 |
+| `QueueBytes` | `16MiB` | 尚未完成发送的规范化事件累计字节上限 |
 | `BatchSize` | `128` | 单次发送目标事件数 |
 | `FlushInterval` | `100ms` | 未达到批量大小时的刷新周期 |
 | `MaxBodyBytes` | `900KiB` | 单次 HTTP body 上限，超限批次会继续拆分 |
+| `MaxAttempts` | `3` | 单批总尝试次数，包含首次请求 |
+| `InitialBackoff` | `100ms` | 首次重试的最大抖动退避 |
+| `MaxBackoff` | `1s` | 指数退避上限 |
 | `HTTPClient` | SDK 创建 | 注入自定义 `http.Client`，通常用于测试或统一 transport |
 | `OnDrop` | 空 | 事件无法入队或发送时的 callback |
 | `FallbackWriter` | `os.Stderr` | callback 缺失或 panic 时的限频降级输出 |
 
-构造函数会立即拒绝非法 URL、空 token 和负数限制。容量类字段填 `0` 表示使用默认值。
+构造函数会立即拒绝非法 URL、空 token、冲突退避和负数限制。容量类字段填 `0` 表示使用默认值。SDK 只重试网络异常和 `408`、`425`、`429`、`500`、`502`、`503`、`504`；其他 4xx 与格式异常的成功响应不会重试。请求结果不确定时可能已经被服务端接受，重试复用相同 `event_id`，下游仍须允许重复。
 
 ## 7. 接入验证
 

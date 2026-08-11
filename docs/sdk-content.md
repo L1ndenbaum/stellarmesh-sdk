@@ -49,7 +49,7 @@
 
 HTTP 接口为 `/v1/log-events` 和 `/v1/log-events/batch`，鉴权头为 `X-Logging-Service-Token`。Kafka 协议的默认 Topic 是 `stellarmesh.logging.events.v1`。这是规范默认值，不表示运行时可以自动创建 Topic。
 
-HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不表示已写入 Kafka 或 ClickHouse。队列已满返回 `503`，批量事件过多返回 `413`，请求或事件无效返回 `400`，令牌无效返回 `401`，token 与事件 `service` 不匹配返回 `403`。
+HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已经原子提交到接收服务的持久 spool；它不表示 ClickHouse 已写入。队列已满返回 `503`，请求体、单条事件或批量事件数超限返回 `413`，请求或事件无效返回 `400`，令牌无效返回 `401`，token 与事件 `service` 不匹配返回 `403`。
 
 ## Go SDK
 
@@ -62,7 +62,7 @@ HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不
 - `mq/kafka`：具有显式 topic、可复用 Topic 启动检查、TLS、mTLS、SASL/PLAIN 和 SCRAM 配置的 Kafka publisher；
 - `envconfig`：不依赖业务 settings 的基础环境变量解析。
 
-日志客户端使用有界内存队列，调用 `Emit` 或日志级别方法时不会等待网络。构造函数会立即校验 URL、token、service 和容量限制。队列满、事件无效、客户端关闭、请求失败或响应不符合契约时，客户端返回 `false` 或调用 `OnDrop`；callback 的 panic 会被隔离并限频写到 stderr。客户端不会在业务请求线程中无限重试；进程退出前应调用 `Close` 并给出明确超时。
+日志客户端使用同时受事件数和规范化 JSON 字节数限制的内存队列，调用 `Emit` 或日志级别方法时不会等待网络。构造函数会立即校验 URL、token、service、容量和重试限制。客户端后台对网络异常及明确的临时 HTTP 状态执行最多三次带抖动指数退避，并复用原 `event_id`；队列满、事件无效、客户端关闭、重试耗尽或响应不符合契约时调用 `OnDrop`，callback 的 panic 会被隔离并限频写到 stderr。SDK 没有落盘队列，因此在收到合法 `202` 以前只提供 best-effort 投递；进程退出前应调用 `Close` 并给出明确超时。
 
 ## Python SDK
 
@@ -76,7 +76,7 @@ HTTP `202 Accepted` 只表示事件已经进入接收服务的内存队列，不
 - trace provider、drop handler、日志级别过滤和元数据清洗；
 - 协议编码与解码函数及 `py.typed` 类型声明。
 
-Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业务项目的配置模块、Web 框架或请求上下文。业务项目通过构造参数或 provider 注入服务名、令牌和 trace id。provider 与 drop handler 的异常不会传播到业务调用方；worker 具有明确的失败状态，并提供 best-effort 进程退出排空兜底。
+Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业务项目的配置模块、Web 框架或请求上下文。业务项目通过构造参数或 provider 注入服务名、令牌和 trace id。provider 与 drop handler 的异常不会传播到业务调用方；worker 具有明确的失败状态，队列的事件数和累计字节均有上限，并提供 best-effort 进程退出排空兜底。
 
 ## 日志数据链路
 

@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
 import pytest
 
-from stellarmesh_logging import Client, ClientConfig, Level, LogEvent, get_logger
+from stellarmesh_logging import (
+    Client,
+    ClientConfig,
+    Level,
+    LogEvent,
+    encode_event,
+    get_logger,
+)
 
 
 def _response(accepted: int) -> httpx.Response:
@@ -140,6 +148,96 @@ def test_client_accepts_legacy_ok_response() -> None:
     assert client.close(timeout=1)
 
 
+def test_client_retries_transient_status_with_stable_event_id() -> None:
+    event_ids: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        event_ids.append(json.loads(request.content)["events"][0]["event_id"])
+        if len(event_ids) < 3:
+            return httpx.Response(503, text="unavailable")
+        return _response(1)
+
+    client = Client(
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            batch_size=1,
+            max_attempts=3,
+            initial_backoff_seconds=0.0001,
+            max_backoff_seconds=0.0001,
+        ),
+        transport=httpx.MockTransport(handle),
+    )
+    assert client.emit_event(Level.INFO, message="event")
+    assert client.close(timeout=1)
+    assert len(event_ids) == 3
+    assert len(set(event_ids)) == 1
+
+
+def test_client_does_not_retry_permanent_status() -> None:
+    attempts = 0
+    dropped: list[Exception] = []
+
+    def handle(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(400, text="bad request")
+
+    client = Client(
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            batch_size=1,
+            max_attempts=3,
+            drop_handler=lambda _event, error: dropped.append(error),
+        ),
+        transport=httpx.MockTransport(handle),
+    )
+    assert client.emit_event(Level.INFO, message="event")
+    assert client.close(timeout=1)
+    assert attempts == 1
+    assert len(dropped) == 1
+
+
+def test_client_queue_bytes_include_in_flight_batch() -> None:
+    started = threading.Event()
+    release = threading.Event()
+    dropped: list[Exception] = []
+    event = LogEvent(
+        event_id="018f16b6-3f9f-7d98-a328-3eac70bd0542",
+        service="backend",
+        message="event",
+    )
+
+    def handle(_: httpx.Request) -> httpx.Response:
+        started.set()
+        assert release.wait(timeout=1)
+        return _response(1)
+
+    client = Client(
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            queue_size=2,
+            queue_bytes=len(encode_event(event)),
+            batch_size=1,
+            max_attempts=1,
+            drop_handler=lambda _event, error: dropped.append(error),
+        ),
+        transport=httpx.MockTransport(handle),
+    )
+    assert client.enqueue(event)
+    assert started.wait(timeout=1)
+    assert not client.enqueue(event)
+    release.set()
+    assert client.close(timeout=1)
+    assert len(dropped) == 1
+    assert "queue is full" in str(dropped[0])
+
+
 def test_client_isolates_provider_and_drop_handler_errors(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -173,6 +271,18 @@ def test_client_rejects_invalid_configuration() -> None:
             token="token",
             service="backend",
             queue_size=0,
+        ),
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            queue_bytes=0,
+        ),
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            max_attempts=0,
         ),
     ]
     for config in invalid:
