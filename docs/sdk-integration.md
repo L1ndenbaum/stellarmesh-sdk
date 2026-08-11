@@ -1,5 +1,7 @@
 # 接入 SDK
 
+本文件说明业务项目接入 SDK、日志接收服务、ClickHouse sink 和迁移制品的完整流程。只接入语言客户端时，可直接阅读 [Go SDK 接入教程](sdk/go/README.md) 或 [Python SDK 接入教程](sdk/python/README.md)。
+
 ## 接入前准备
 
 业务项目需要自行管理开发环境和项目级部署配置。本仓库不提供 Compose 或 `.env` 模板。接入前应明确以下值：

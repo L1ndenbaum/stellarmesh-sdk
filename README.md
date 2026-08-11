@@ -10,7 +10,7 @@
 - `services/logging/`：接收 HTTP 日志并发布到 Kafka 的常驻服务。
 - `sinks/clickhouse/`：消费 Kafka 并写入 ClickHouse 的常驻服务，以及独立迁移镜像。
 
-详细说明见[SDK 内容](docs/sdk-content.md)，项目接入步骤见[接入 SDK](docs/sdk-integration.md)，版本与不可变制品规则见[发布与版本引用](docs/release.md)。
+详细说明见[SDK 内容](docs/sdk-content.md)，语言 SDK 的使用方法见[SDK 接入教程](docs/sdk/README.md)，平台服务与业务项目的整体接入步骤见[接入 SDK 与日志平台](docs/sdk-integration.md)，版本与不可变制品规则见[发布与版本引用](docs/release.md)。
 
 ## 本地验证
 
