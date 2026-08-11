@@ -2,6 +2,7 @@ package filesink
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -56,6 +57,90 @@ func TestFallbackStoreEnforcesDiskBudget(t *testing.T) {
 	})
 	if !errors.Is(err, ErrSpoolFull) {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestFallbackStoreCommitsMixedPrioritiesAsOneBatch(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "spool")
+	store := newStore(t, Config{RootDir: root, SegmentBytes: 64})
+	if err := store.WriteBatch(context.Background(), []sharedlogging.Event{
+		validEvent(t, sharedlogging.LevelInfo, strings.Repeat("r", 128)),
+		validEvent(t, sharedlogging.LevelError, strings.Repeat("p", 128)),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	batches, err := os.ReadDir(filepath.Join(root, batchesDirectory))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batches) != 1 || !batches[0].IsDir() {
+		t.Fatalf("committed batches = %#v", batches)
+	}
+	for _, priority := range []string{regularPriority, highPriority} {
+		paths, err := segmentPaths(filepath.Join(root, batchesDirectory, batches[0].Name(), priority))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(paths) == 0 {
+			t.Fatalf("%s segments = %v", priority, paths)
+		}
+		legacy, err := segmentPaths(filepath.Join(root, priority))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(legacy) != 0 {
+			t.Fatalf("legacy %s segments = %v", priority, legacy)
+		}
+	}
+}
+
+func TestFallbackStoreDoesNotExposeFailedBatchCommit(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "spool")
+	store := newStore(t, Config{RootDir: root})
+	store.rename = func(string, string) error { return errors.New("rename failed") }
+	err := store.WriteBatch(context.Background(), []sharedlogging.Event{
+		validEvent(t, sharedlogging.LevelInfo, "regular"),
+		validEvent(t, sharedlogging.LevelError, "priority"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "rename failed") {
+		t.Fatalf("error = %v", err)
+	}
+	regular, priority := store.Bytes()
+	if regular != 0 || priority != 0 {
+		t.Fatalf("spool bytes = %d, %d", regular, priority)
+	}
+	for _, directory := range []string{stagingDirectory, batchesDirectory} {
+		entries, err := os.ReadDir(filepath.Join(root, directory))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Fatalf("%s entries = %#v", directory, entries)
+		}
+	}
+}
+
+func TestFallbackStoreReplaysLegacySegments(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "spool")
+	legacy := filepath.Join(root, regularPriority)
+	if err := os.MkdirAll(legacy, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	event := validEvent(t, sharedlogging.LevelInfo, "legacy")
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(legacy, "legacy"+segmentSuffix), append(payload, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store := newStore(t, Config{RootDir: root})
+	publisher := &recordingPublisher{}
+	if err := store.ReplayOnce(context.Background(), publisher); err != nil {
+		t.Fatal(err)
+	}
+	if len(publisher.events) != 1 || publisher.events[0].EventID != event.EventID {
+		t.Fatalf("events = %#v", publisher.events)
 	}
 }
 
@@ -117,6 +202,21 @@ func TestFallbackStoreRemovesInterruptedTemporaryFiles(t *testing.T) {
 	newStore(t, Config{RootDir: root})
 	if _, err := os.Stat(temporary); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("temporary file still exists: %v", err)
+	}
+	staged := filepath.Join(root, stagingDirectory, "interrupted", regularPriority)
+	if err := os.MkdirAll(staged, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(staged, "partial"+segmentSuffix), []byte("partial"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newStore(t, Config{RootDir: root})
+	entries, err := os.ReadDir(filepath.Join(root, stagingDirectory))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("staging entries = %#v", entries)
 	}
 }
 

@@ -27,6 +27,8 @@ const (
 	defaultReplayBatch    = 128
 	defaultMaxRecordBytes = 1 << 20
 	segmentSuffix         = ".ready.jsonl"
+	stagingDirectory      = ".staging"
+	batchesDirectory      = "batches"
 )
 
 var (
@@ -74,6 +76,7 @@ type KafkaFallbackStore struct {
 	sequence        uint64
 	regularBytes    int64
 	priorityBytes   int64
+	rename          func(string, string) error
 }
 
 // NewKafkaFallbackStore validates directories and recovers existing segment sizes.
@@ -92,7 +95,7 @@ func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
 	}
 	store := &KafkaFallbackStore{
 		rootDir: config.RootDir, maxBytes: config.MaxBytes, segmentBytes: config.SegmentBytes,
-		replayBatchSize: config.ReplayBatchSize, observer: config.Observer,
+		replayBatchSize: config.ReplayBatchSize, observer: config.Observer, rename: os.Rename,
 	}
 	regularBytes, err := prepareDirectory(store.directory(regularPriority))
 	if err != nil {
@@ -102,8 +105,13 @@ func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
 	if err != nil {
 		return nil, err
 	}
+	batchRegularBytes, batchPriorityBytes, err := prepareBatchDirectories(store.rootDir)
+	if err != nil {
+		return nil, err
+	}
 	store.regularBytes = regularBytes
-	store.priorityBytes = priorityBytes
+	store.regularBytes += batchRegularBytes
+	store.priorityBytes = priorityBytes + batchPriorityBytes
 	store.observeBytes()
 	return store, nil
 }
@@ -133,21 +141,17 @@ func (store *KafkaFallbackStore) WriteBatch(ctx context.Context, events []shared
 		store.observeWrite(highPriority, "rejected", len(priority))
 		return ErrSpoolFull
 	}
-	regularWritten, err := store.writeSegmentsLocked(regularPriority, regularSegments)
-	store.regularBytes += regularWritten
-	if err != nil {
+	committed, err := store.commitBatchLocked(ctx, regularSegments, prioritySegments)
+	if committed {
+		store.regularBytes += regularSize
+		store.priorityBytes += prioritySize
 		store.observeBytes()
-		return err
 	}
-	priorityWritten, err := store.writeSegmentsLocked(highPriority, prioritySegments)
-	store.priorityBytes += priorityWritten
 	if err != nil {
-		store.observeBytes()
 		return err
 	}
 	store.observeWrite(regularPriority, "stored", len(regular))
 	store.observeWrite(highPriority, "stored", len(priority))
-	store.observeBytes()
 	return nil
 }
 
@@ -239,37 +243,80 @@ func (store *KafkaFallbackStore) encodeSegments(events []sharedlogging.Event) ([
 	return segments, total, nil
 }
 
-func (store *KafkaFallbackStore) writeSegmentsLocked(priority string, segments []segment) (int64, error) {
-	var written int64
-	for _, item := range segments {
-		store.sequence++
-		name := fmt.Sprintf("%020d-%06d%s", time.Now().UTC().UnixNano(), store.sequence, segmentSuffix)
-		path := filepath.Join(store.directory(priority), name)
-		temporary := path + ".tmp"
-		file, err := os.OpenFile(temporary, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+func (store *KafkaFallbackStore) commitBatchLocked(
+	ctx context.Context,
+	regular []segment,
+	priority []segment,
+) (committedBatch bool, result error) {
+	store.sequence++
+	name := fmt.Sprintf("%020d-%06d", time.Now().UTC().UnixNano(), store.sequence)
+	stagingRoot := filepath.Join(store.rootDir, stagingDirectory)
+	batchRoot := filepath.Join(store.rootDir, batchesDirectory)
+	staged := filepath.Join(stagingRoot, name)
+	committed := filepath.Join(batchRoot, name)
+	if err := os.Mkdir(staged, 0o700); err != nil {
+		return false, err
+	}
+	defer func() {
+		if result != nil {
+			_ = os.RemoveAll(staged)
+		}
+	}()
+	for _, group := range []struct {
+		priority string
+		segments []segment
+	}{
+		{priority: regularPriority, segments: regular},
+		{priority: highPriority, segments: priority},
+	} {
+		if len(group.segments) == 0 {
+			continue
+		}
+		directory := filepath.Join(staged, group.priority)
+		if err := os.Mkdir(directory, 0o700); err != nil {
+			return false, err
+		}
+		if err := writeStagedSegments(directory, group.segments); err != nil {
+			return false, err
+		}
+		if err := syncDirectory(directory); err != nil {
+			return false, err
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := syncDirectory(staged); err != nil {
+		return false, err
+	}
+	if err := store.rename(staged, committed); err != nil {
+		return false, err
+	}
+	committedBatch = true
+	if err := syncDirectory(batchRoot); err != nil {
+		return true, err
+	}
+	return true, syncDirectory(stagingRoot)
+}
+
+func writeStagedSegments(directory string, segments []segment) error {
+	for index, item := range segments {
+		path := filepath.Join(directory, fmt.Sprintf("%06d%s", index+1, segmentSuffix))
+		file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err != nil {
-			return written, err
+			return err
 		}
 		writeErr := writeAndSync(file, item.payload)
 		closeErr := file.Close()
 		if writeErr != nil || closeErr != nil {
-			_ = os.Remove(temporary)
-			return written, errors.Join(writeErr, closeErr)
-		}
-		if err := os.Rename(temporary, path); err != nil {
-			_ = os.Remove(temporary)
-			return written, err
-		}
-		written += int64(len(item.payload))
-		if err := syncDirectory(store.directory(priority)); err != nil {
-			return written, err
+			return errors.Join(writeErr, closeErr)
 		}
 	}
-	return written, nil
+	return nil
 }
 
 func (store *KafkaFallbackStore) replayPriority(ctx context.Context, priority string, publisher Publisher) error {
-	paths, err := segmentPaths(store.directory(priority))
+	paths, err := store.committedSegmentPaths(priority)
 	if err != nil {
 		return err
 	}
@@ -295,11 +342,11 @@ func (store *KafkaFallbackStore) replayPriority(ctx context.Context, priority st
 		store.observeBytes()
 		store.mu.Unlock()
 		store.observeReplay(priority, "published", published)
-		if err := syncDirectory(store.directory(priority)); err != nil {
+		if err := syncDirectory(filepath.Dir(path)); err != nil {
 			return err
 		}
 	}
-	return nil
+	return store.removeEmptyBatches()
 }
 
 func (store *KafkaFallbackStore) replaySegment(ctx context.Context, path string, publisher Publisher) (int, int, error) {
@@ -413,6 +460,127 @@ func prepareDirectory(path string) (int64, error) {
 		size += info.Size()
 	}
 	return size, nil
+}
+
+func prepareBatchDirectories(root string) (int64, int64, error) {
+	staging := filepath.Join(root, stagingDirectory)
+	batches := filepath.Join(root, batchesDirectory)
+	for _, directory := range []string{staging, batches} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			return 0, 0, err
+		}
+		if err := os.Chmod(directory, 0o700); err != nil {
+			return 0, 0, err
+		}
+	}
+	staged, err := os.ReadDir(staging)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, entry := range staged {
+		if err := os.RemoveAll(filepath.Join(staging, entry.Name())); err != nil {
+			return 0, 0, err
+		}
+	}
+	entries, err := os.ReadDir(batches)
+	if err != nil {
+		return 0, 0, err
+	}
+	var regularBytes int64
+	var priorityBytes int64
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		batch := filepath.Join(batches, entry.Name())
+		regular, err := prepareDirectory(filepath.Join(batch, regularPriority))
+		if err != nil {
+			return 0, 0, err
+		}
+		priority, err := prepareDirectory(filepath.Join(batch, highPriority))
+		if err != nil {
+			return 0, 0, err
+		}
+		regularBytes += regular
+		priorityBytes += priority
+	}
+	return regularBytes, priorityBytes, nil
+}
+
+func (store *KafkaFallbackStore) committedSegmentPaths(priority string) ([]string, error) {
+	paths, err := segmentPaths(store.directory(priority))
+	if err != nil {
+		return nil, err
+	}
+	batches := filepath.Join(store.rootDir, batchesDirectory)
+	entries, err := os.ReadDir(batches)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		batchPaths, err := segmentPaths(filepath.Join(batches, entry.Name(), priority))
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		paths = append(paths, batchPaths...)
+	}
+	return paths, nil
+}
+
+func (store *KafkaFallbackStore) removeEmptyBatches() error {
+	batches := filepath.Join(store.rootDir, batchesDirectory)
+	entries, err := os.ReadDir(batches)
+	if err != nil {
+		return err
+	}
+	removed := false
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		batch := filepath.Join(batches, entry.Name())
+		empty, err := emptyCommittedBatch(batch)
+		if err != nil {
+			return err
+		}
+		if !empty {
+			continue
+		}
+		if err := os.RemoveAll(batch); err != nil {
+			return err
+		}
+		removed = true
+	}
+	if removed {
+		return syncDirectory(batches)
+	}
+	return nil
+}
+
+func emptyCommittedBatch(batch string) (bool, error) {
+	entries, err := os.ReadDir(batch)
+	if err != nil {
+		return false, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || (entry.Name() != regularPriority && entry.Name() != highPriority) {
+			return false, nil
+		}
+		children, err := os.ReadDir(filepath.Join(batch, entry.Name()))
+		if err != nil {
+			return false, err
+		}
+		if len(children) > 0 {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func segmentPaths(directory string) ([]string, error) {

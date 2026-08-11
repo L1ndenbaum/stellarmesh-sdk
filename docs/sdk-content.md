@@ -92,7 +92,7 @@ Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业�
 
 `logging-service` 从挂载的受保护 JSON 文件加载 service-token 绑定关系；token 只以 SHA-256 digest 留在进程内，比较使用常量时间操作。同一 service 可以同时配置新旧 token 完成滚动轮换，事件不能伪造其他 service 身份。服务启动时还会使用与运行期相同的 Kafka TLS/SASL transport 检查 Topic 可访问性。
 
-正常批次写到控制台并发布 Kafka；Kafka 发布失败时，批次写入有总容量上限的本地分段 spool，后台按段定期重放。`ERROR` 和 `AUDIT` 进入 `priority/`，其他级别进入 `regular/`，重放时始终先处理优先级段。每段通过临时文件、`fsync` 和原子重命名提交；只有整段发布成功才删除，因此 Kafka 在中途恢复时允许出现重复事件，不能把这条链路理解为 exactly-once。数据目录必须由业务部署持久化，但目录挂载方式由业务项目管理。
+正常批次写到控制台并发布 Kafka；Kafka 发布失败时，批次写入有总容量上限的本地分段 spool，后台按段定期重放。`ERROR` 和 `AUDIT` 进入高优先级分段，其他级别进入普通分段，重放时始终先处理高优先级。一个接收批次先完整写入 `.staging/` 并执行 `fsync`，再通过目录重命名一次提交到 `batches/`，因此不会暴露只包含部分优先级或部分分段的批次。升级时仍会读取旧版本 `regular/` 和 `priority/` 中的 `.ready.jsonl`；这项兼容不包括业务项目自行实现的其他 JSONL 格式。只有整段发布成功才删除，因此 Kafka 在中途恢复时允许出现重复事件，不能把这条链路理解为 exactly-once。数据目录必须由业务部署持久化，但目录挂载方式由业务项目管理。
 
 接收队列按尚未开始发布的事件数限制，不按 HTTP 请求数限制。队列已满、服务关闭或 Kafka 失败且 spool 无法继续持久化时，服务会通过 `503` 或 readiness 暴露背压。`/health/live` 只判断进程存活，`/health/ready` 表示服务仍能可靠转交或缓冲新事件，`/metrics` 暴露有界标签的 Prometheus 指标。`/health` 保留为存活检查兼容入口。
 
