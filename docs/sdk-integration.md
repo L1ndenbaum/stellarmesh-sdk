@@ -189,7 +189,7 @@ async def application_shutdown() -> None:
 
 服务启动时仍会检查 Topic，但 Kafka 不可用、Topic 暂时不存在或 ACL 检查失败时，只要本地 spool 可以初始化且尚有容量，ingester 会以降级模式启动并通过 spool 持久接收；它不会自行创建 Kafka 资源。后台检查成功后自动恢复 Kafka 发布和重放。单次重放发布与可用性检查都受 `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT` 限制。关闭超过 `STELLARMESH_LOGGING_SHUTDOWN_TIMEOUT` 时进程停止等待后台 I/O 并返回失败，由编排器完成进程级回收；此路径不会并发关闭仍被 worker 使用的 publisher。
 
-存活检查使用 `GET /health/live`，就绪检查使用 `GET /health/ready`，原有 `GET /health` 仍作为存活检查兼容入口。就绪状态在 Kafka 发布失败且 spool 写入失败或达到容量上限时变为 `503`，后台 Kafka 检查与回放可以在没有新请求时恢复就绪状态。Prometheus 抓取地址为 `GET /metrics`。SDK 写入使用 `POST /v1/log-events/batch` 和 `X-Logging-Service-Token`；请求体上限为 `1MiB`，其中每条规范化事件不得超过 `900KiB`。请求会等待批次获得 Kafka 全同步副本确认或 spool 原子提交，正式成功状态才是 `202`，两条持久路径均失败时返回 `503`。客户端请求提前取消后，服务仍会处理已经入队的事件，因此重试必须按 at-least-once 接受重复；迁移期客户端也接受状态与 envelope 同为 `200` 的旧服务响应。
+存活检查使用 `GET /health/live`，就绪检查使用 `GET /health/ready`，原有 `GET /health` 仍作为存活检查兼容入口。就绪状态在 Kafka 发布失败且 spool 写入失败或达到容量上限时变为 `503`，后台 Kafka 检查与回放可以在没有新请求时恢复就绪状态。Prometheus 抓取地址为 `GET /metrics`。SDK 写入使用 `POST /v1/log-events/batch` 和 `X-Logging-Service-Token`；请求体上限为 `1MiB`，其中每条规范化事件不得超过 `900KiB`。Kafka key/value 另受 `960KiB` 预算约束，分区键使用 `trace_id` 的 SHA-256 摘要或 `event_id`，并为 Kafka 协议开销保留余量。请求会等待批次获得 Kafka 全同步副本确认或 spool 原子提交，正式成功状态才是 `202`，两条持久路径均失败时返回 `503`。客户端请求提前取消后，服务仍会处理已经入队的事件，因此重试必须按 at-least-once 接受重复；迁移期客户端也接受状态与 envelope 同为 `200` 的旧服务响应。
 
 ## 部署 ClickHouse sink
 

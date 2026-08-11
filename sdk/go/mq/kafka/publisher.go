@@ -36,6 +36,15 @@ type Publisher struct {
 	transport *segmentio.Transport
 }
 
+// IsMessageTooLarge reports whether kafka-go or a broker rejected a serialized record by size.
+func IsMessageTooLarge(err error) bool {
+	if err == nil {
+		return false
+	}
+	var messageTooLarge segmentio.MessageTooLargeError
+	return errors.As(err, &messageTooLarge) || errors.Is(err, segmentio.MessageSizeTooLarge)
+}
+
 // NewPublisher creates a publisher using hash partitioning and all in-sync replica acknowledgement.
 func NewPublisher(cfg Config) (*Publisher, error) {
 	if cfg.BatchBytes < 0 {

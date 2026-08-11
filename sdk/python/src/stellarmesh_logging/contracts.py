@@ -17,6 +17,7 @@ LOG_EVENT_TOPIC = "stellarmesh.logging.events.v1"
 LOG_DEAD_LETTER_TOPIC = "stellarmesh.logging.events.v1.dlq"
 MAX_EVENT_JSON_BYTES = 900 * 1024
 MAX_HTTP_BODY_BYTES = 1 << 20
+MAX_KAFKA_KEY_VALUE_BYTES = 960 * 1024
 MAX_KAFKA_MESSAGE_BYTES = 1 << 20
 
 

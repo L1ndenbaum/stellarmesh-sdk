@@ -2,5 +2,6 @@
   "schema_version": "v1",
   "max_event_json_bytes": 921600,
   "max_http_body_bytes": 1048576,
+  "max_kafka_key_value_bytes": 983040,
   "max_kafka_message_bytes": 1048576
 }

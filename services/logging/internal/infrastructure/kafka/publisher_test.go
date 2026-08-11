@@ -22,3 +22,13 @@ func TestPublisherRejectsOversizedMessageBeforeKafkaWrite(t *testing.T) {
 		t.Fatalf("Publish() error = %v", err)
 	}
 }
+
+func TestPublisherUsesBoundedTracePartitionKey(t *testing.T) {
+	event := sharedlogging.Event{
+		EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", TraceID: strings.Repeat("trace", 1000),
+	}
+	key := sharedlogging.KafkaPartitionKeyV1(event)
+	if len(key) != 32 || !sharedlogging.FitsKafkaKeyValueBudgetV1(event, sharedlogging.MaxEventJSONBytesV1) {
+		t.Fatalf("key length=%d", len(key))
+	}
+}

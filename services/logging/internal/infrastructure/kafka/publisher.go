@@ -41,16 +41,17 @@ func (publisher *Publisher) Publish(ctx context.Context, events []sharedlogging.
 		if err != nil {
 			return err
 		}
-		key := []byte(event.TraceID)
-		if len(key) == 0 {
-			key = []byte(event.EventID)
-		}
-		if int64(len(key))+int64(len(payload)) > sharedlogging.MaxKafkaMessageBytesV1 {
+		key := sharedlogging.KafkaPartitionKeyV1(event)
+		if !sharedlogging.FitsKafkaKeyValueBudgetV1(event, len(payload)) {
 			return ErrMessageTooLarge
 		}
 		messages = append(messages, sharedkafka.Message{Key: key, Value: payload, Time: event.Timestamp})
 	}
-	return publisher.base.Publish(ctx, messages)
+	err := publisher.base.Publish(ctx, messages)
+	if sharedkafka.IsMessageTooLarge(err) {
+		return errors.Join(ErrMessageTooLarge, err)
+	}
+	return err
 }
 
 // Close releases the Kafka writer.

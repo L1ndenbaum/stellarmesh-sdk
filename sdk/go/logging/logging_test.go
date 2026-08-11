@@ -80,17 +80,36 @@ func TestContractLimitsMatchGoConstants(t *testing.T) {
 		t.Fatal(err)
 	}
 	var limits struct {
-		SchemaVersion        string `json:"schema_version"`
-		MaxEventJSONBytes    int    `json:"max_event_json_bytes"`
-		MaxHTTPBodyBytes     int    `json:"max_http_body_bytes"`
-		MaxKafkaMessageBytes int    `json:"max_kafka_message_bytes"`
+		SchemaVersion         string `json:"schema_version"`
+		MaxEventJSONBytes     int    `json:"max_event_json_bytes"`
+		MaxHTTPBodyBytes      int    `json:"max_http_body_bytes"`
+		MaxKafkaKeyValueBytes int    `json:"max_kafka_key_value_bytes"`
+		MaxKafkaMessageBytes  int    `json:"max_kafka_message_bytes"`
 	}
 	if err := json.Unmarshal(payload, &limits); err != nil {
 		t.Fatal(err)
 	}
 	if limits.SchemaVersion != "v1" || limits.MaxEventJSONBytes != MaxEventJSONBytesV1 ||
-		limits.MaxHTTPBodyBytes != MaxHTTPBodyBytesV1 || limits.MaxKafkaMessageBytes != MaxKafkaMessageBytesV1 {
+		limits.MaxHTTPBodyBytes != MaxHTTPBodyBytesV1 ||
+		limits.MaxKafkaKeyValueBytes != MaxKafkaKeyValueBytesV1 ||
+		limits.MaxKafkaMessageBytes != MaxKafkaMessageBytesV1 {
 		t.Fatalf("contract limits do not match Go constants: %#v", limits)
+	}
+}
+
+func TestKafkaPartitionKeyIsBoundedAndStable(t *testing.T) {
+	event := Event{EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", TraceID: strings.Repeat("trace", 1000)}
+	first := KafkaPartitionKeyV1(event)
+	second := KafkaPartitionKeyV1(event)
+	if len(first) != 32 || !bytes.Equal(first, second) {
+		t.Fatalf("trace key length=%d stable=%v", len(first), bytes.Equal(first, second))
+	}
+	event.TraceID = ""
+	if got := string(KafkaPartitionKeyV1(event)); got != event.EventID {
+		t.Fatalf("fallback key = %q", got)
+	}
+	if !FitsKafkaKeyValueBudgetV1(event, MaxEventJSONBytesV1) {
+		t.Fatal("maximum canonical event does not fit the Kafka key/value budget")
 	}
 }
 

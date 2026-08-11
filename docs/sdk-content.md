@@ -47,7 +47,7 @@
 | `trace_id` | 字符串 | 可由业务显式提供或通过 provider 注入 |
 | `metadata` | JSON 对象 | 扩展字段；SDK 会转换不安全或不可序列化的值 |
 
-HTTP 接口为 `/v1/log-events` 和 `/v1/log-events/batch`，鉴权头为 `X-Logging-Service-Token`。Kafka 协议的默认 Topic 是 `stellarmesh.logging.events.v1`。这是规范默认值，不表示运行时可以自动创建 Topic。
+HTTP 接口为 `/v1/log-events` 和 `/v1/log-events/batch`，鉴权头为 `X-Logging-Service-Token`。Kafka 协议的默认 Topic 是 `stellarmesh.logging.events.v1`。这是规范默认值，不表示运行时可以自动创建 Topic。单条规范事件的紧凑 JSON 最大为 `900KiB`，HTTP body 与 Kafka 完整消息最大为 `1MiB`，应用层 Kafka key/value 预算为 `960KiB`，剩余空间保留给协议封装。Kafka 分区键在存在 `trace_id` 时使用其 SHA-256 摘要，否则使用 `event_id`；这样既保留同一 trace 的稳定分区，也不会因超长 trace 重复占用 key 而让已确认事件无法发布。
 
 HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已经原子提交到接收服务的持久 spool；它不表示 ClickHouse 已写入。队列已满返回 `503`，请求体、单条事件或批量事件数超限返回 `413`，请求或事件无效返回 `400`，令牌无效返回 `401`，token 与事件 `service` 不匹配返回 `403`。
 

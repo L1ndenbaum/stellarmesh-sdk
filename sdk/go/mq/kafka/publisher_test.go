@@ -2,6 +2,7 @@ package kafka
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -16,6 +17,14 @@ func TestCheckRejectsMissingConfiguration(t *testing.T) {
 	err := publisher.Check(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "brokers") {
 		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestIsMessageTooLargeRecognizesKafkaErrors(t *testing.T) {
+	if !IsMessageTooLarge(segmentio.MessageTooLargeError{}) ||
+		!IsMessageTooLarge(errors.Join(errors.New("publish"), segmentio.MessageSizeTooLarge)) ||
+		IsMessageTooLarge(errors.New("unavailable")) {
+		t.Fatal("IsMessageTooLarge() classification mismatch")
 	}
 }
 

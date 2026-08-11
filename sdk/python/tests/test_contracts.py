@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from stellarmesh_logging import (
     MAX_EVENT_JSON_BYTES,
     MAX_HTTP_BODY_BYTES,
+    MAX_KAFKA_KEY_VALUE_BYTES,
     MAX_KAFKA_MESSAGE_BYTES,
     DeadLetter,
     Level,
@@ -136,6 +137,7 @@ def test_contract_limits_match_python_constants() -> None:
         "schema_version": "v1",
         "max_event_json_bytes": MAX_EVENT_JSON_BYTES,
         "max_http_body_bytes": MAX_HTTP_BODY_BYTES,
+        "max_kafka_key_value_bytes": MAX_KAFKA_KEY_VALUE_BYTES,
         "max_kafka_message_bytes": MAX_KAFKA_MESSAGE_BYTES,
     }
 

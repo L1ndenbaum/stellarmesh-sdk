@@ -4,6 +4,7 @@ package logging
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -27,7 +28,9 @@ const (
 	MaxEventJSONBytesV1 = 900 * 1024
 	// MaxHTTPBodyBytesV1 is the maximum accepted ingestion request body size.
 	MaxHTTPBodyBytesV1 = 1 << 20
-	// MaxKafkaMessageBytesV1 is the maximum Kafka key/value payload budget.
+	// MaxKafkaKeyValueBytesV1 reserves protocol overhead below the Kafka message limit.
+	MaxKafkaKeyValueBytesV1 = 960 * 1024
+	// MaxKafkaMessageBytesV1 is the maximum serialized Kafka record size.
 	MaxKafkaMessageBytesV1 = 1 << 20
 )
 
@@ -103,6 +106,20 @@ type OversizeDeadLetter struct {
 	PayloadSHA256   string     `json:"payload_sha256"`
 	ContentOmitted  bool       `json:"content_omitted"`
 	FailedAt        time.Time  `json:"failed_at"`
+}
+
+// KafkaPartitionKeyV1 returns a bounded stable key while preserving trace co-partitioning.
+func KafkaPartitionKeyV1(event Event) []byte {
+	if event.TraceID == "" {
+		return []byte(event.EventID)
+	}
+	digest := sha256.Sum256([]byte(event.TraceID))
+	return digest[:]
+}
+
+// FitsKafkaKeyValueBudgetV1 reports whether a compact event can be safely wrapped as a Kafka record.
+func FitsKafkaKeyValueBudgetV1(event Event, payloadBytes int) bool {
+	return payloadBytes >= 0 && payloadBytes+len(KafkaPartitionKeyV1(event)) <= MaxKafkaKeyValueBytesV1
 }
 
 // Validate verifies a severity value.
