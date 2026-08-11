@@ -110,6 +110,24 @@ def test_event_preserves_nonempty_surrounding_whitespace() -> None:
     assert event.message == " message "
 
 
+def test_wire_decoder_rejects_nonstandard_json_and_timestamp() -> None:
+    fixture = {
+        "event_id": "b6dd42df-660d-4aca-a712-6ce1c85ceafd",
+        "timestamp": "2026-08-01T12:00:00Z",
+        "level": "INFO",
+        "service": "contract-test",
+        "message": "valid message",
+        "trace_id": "trace-123",
+        "metadata": {},
+    }
+    lowercase_timestamp = fixture | {"timestamp": "2026-08-01T12:00:00z"}
+    with pytest.raises(ValueError):
+        decode_event(json.dumps(lowercase_timestamp))
+    nonstandard_number = fixture | {"metadata": {"value": float("nan")}}
+    with pytest.raises(ValueError):
+        decode_event(json.dumps(nonstandard_number))
+
+
 def test_service_auth_schema_accepts_rotating_tokens() -> None:
     contract_dir = _REPOSITORY_ROOT / "contracts" / "logging" / "v1"
     schema = json.loads((contract_dir / "service-auth.schema.json").read_text())

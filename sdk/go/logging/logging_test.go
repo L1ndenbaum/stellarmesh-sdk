@@ -74,6 +74,43 @@ func TestOversizeDeadLetterContractFixture(t *testing.T) {
 	}
 }
 
+func TestDeadLetterDecodersRequireExplicitZeroValuedFields(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		fixture string
+		field   string
+		decode  func([]byte) error
+	}{
+		{
+			name: "v1", fixture: "valid-dead-letter.json", field: "source_offset",
+			decode: func(payload []byte) error { _, err := DecodeDeadLetter(payload); return err },
+		},
+		{
+			name: "v2", fixture: "valid-dead-letter-v2.json", field: "payload_bytes",
+			decode: func(payload []byte) error { _, err := DecodeOversizeDeadLetter(payload); return err },
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			payload, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "logging", "v1", "testdata", test.fixture))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var object map[string]any
+			if err := json.Unmarshal(payload, &object); err != nil {
+				t.Fatal(err)
+			}
+			delete(object, test.field)
+			payload, err = json.Marshal(object)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := test.decode(payload); err == nil {
+				t.Fatalf("decoder accepted missing %s", test.field)
+			}
+		})
+	}
+}
+
 func TestContractLimitsMatchGoConstants(t *testing.T) {
 	payload, err := os.ReadFile(filepath.Join("..", "..", "..", "contracts", "logging", "v1", "limits.json"))
 	if err != nil {

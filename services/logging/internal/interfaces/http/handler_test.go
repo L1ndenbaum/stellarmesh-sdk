@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -155,6 +158,46 @@ func TestHandlerRejectsUnknownFields(t *testing.T) {
 	router.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+func TestHandlerRejectsSharedInvalidEventFixtures(t *testing.T) {
+	payload, err := os.ReadFile(filepath.Join(
+		"..", "..", "..", "..", "..", "contracts", "logging", "v1", "testdata", "invalid-events.json",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixtures []struct {
+		Name    string          `json:"name"`
+		Payload json.RawMessage `json:"payload"`
+	}
+	if err := json.Unmarshal(payload, &fixtures); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range fixtures {
+		for _, endpoint := range []struct {
+			name string
+			path string
+			body any
+		}{
+			{name: "single", path: "/v1/log-events", body: map[string]any{"event": fixture.Payload}},
+			{name: "batch", path: "/v1/log-events/batch", body: map[string]any{"events": []json.RawMessage{fixture.Payload}}},
+		} {
+			t.Run(fixture.Name+"/"+endpoint.name, func(t *testing.T) {
+				body, err := json.Marshal(endpoint.body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				request := httptest.NewRequest(http.MethodPost, endpoint.path, bytes.NewReader(body))
+				request.Header.Set(serviceTokenHeader, "token")
+				recorder := httptest.NewRecorder()
+				testRouter(&fakeIngestor{}).ServeHTTP(recorder, request)
+				if recorder.Code != http.StatusBadRequest {
+					t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+				}
+			})
+		}
 	}
 }
 

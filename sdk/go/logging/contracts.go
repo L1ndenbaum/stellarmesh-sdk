@@ -234,14 +234,8 @@ func NewEventID() (string, error) {
 
 // DecodeEvent strictly decodes one canonical event and rejects unknown fields.
 func DecodeEvent(payload []byte) (Event, error) {
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(payload, &fields); err != nil {
+	if err := requireJSONFields(payload, "event", "event_id", "timestamp", "level", "service", "message", "trace_id", "metadata"); err != nil {
 		return Event{}, err
-	}
-	for _, field := range []string{"event_id", "timestamp", "level", "service", "message", "trace_id", "metadata"} {
-		if _, ok := fields[field]; !ok {
-			return Event{}, fmt.Errorf("event field %q is required", field)
-		}
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
@@ -263,6 +257,12 @@ func DecodeEvent(payload []byte) (Event, error) {
 
 // DecodeDeadLetter strictly decodes one v1 dead-letter record.
 func DecodeDeadLetter(payload []byte) (DeadLetter, error) {
+	if err := requireJSONFields(
+		payload, "dead-letter", "schema_version", "source_topic", "source_partition", "source_offset",
+		"source_key_base64", "reason", "error", "payload_base64", "failed_at",
+	); err != nil {
+		return DeadLetter{}, err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	var deadLetter DeadLetter
@@ -283,6 +283,13 @@ func DecodeDeadLetter(payload []byte) (DeadLetter, error) {
 
 // DecodeOversizeDeadLetter strictly decodes one v2 oversized-message dead-letter record.
 func DecodeOversizeDeadLetter(payload []byte) (OversizeDeadLetter, error) {
+	if err := requireJSONFields(
+		payload, "oversize dead-letter", "schema_version", "source_topic", "source_partition", "source_offset",
+		"reason", "error", "source_key_bytes", "source_key_sha256", "payload_bytes", "payload_sha256",
+		"content_omitted", "failed_at",
+	); err != nil {
+		return OversizeDeadLetter{}, err
+	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	var deadLetter OversizeDeadLetter
@@ -299,6 +306,19 @@ func DecodeOversizeDeadLetter(payload []byte) (OversizeDeadLetter, error) {
 		return OversizeDeadLetter{}, err
 	}
 	return deadLetter, nil
+}
+
+func requireJSONFields(payload []byte, kind string, required ...string) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		return err
+	}
+	for _, field := range required {
+		if _, ok := fields[field]; !ok {
+			return fmt.Errorf("%s field %q is required", kind, field)
+		}
+	}
+	return nil
 }
 
 func decodeBase64(value string) ([]byte, error) {
