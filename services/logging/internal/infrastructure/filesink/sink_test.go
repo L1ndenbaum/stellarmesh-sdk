@@ -145,6 +145,36 @@ func TestFallbackStoreDoesNotExposeFailedBatchCommit(t *testing.T) {
 	}
 }
 
+func TestFallbackStoreAccountsCommittedBatchWhenParentSyncFails(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "spool")
+	store := newStore(t, Config{RootDir: root})
+	store.syncDir = func(path string) error {
+		if path == filepath.Join(root, batchesDirectory) {
+			return errors.New("parent sync failed")
+		}
+		return syncDirectory(path)
+	}
+	err := store.WriteBatch(context.Background(), []sharedlogging.Event{
+		validEvent(t, sharedlogging.LevelInfo, "regular"),
+	})
+	if err == nil || !strings.Contains(err.Error(), "parent sync failed") {
+		t.Fatalf("error = %v", err)
+	}
+	regular, priority := store.Bytes()
+	if regular == 0 || priority != 0 {
+		t.Fatalf("spool bytes = %d, %d", regular, priority)
+	}
+
+	recovered := newStore(t, Config{RootDir: root})
+	publisher := &recordingPublisher{}
+	if err := recovered.ReplayOnce(context.Background(), publisher); err != nil {
+		t.Fatal(err)
+	}
+	if len(publisher.events) != 1 {
+		t.Fatalf("events = %#v", publisher.events)
+	}
+}
+
 func TestFallbackStoreReplaysLegacySegments(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "spool")
 	legacy := filepath.Join(root, regularPriority)
