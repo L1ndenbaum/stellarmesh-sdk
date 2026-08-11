@@ -74,6 +74,7 @@ func TestLoadRejectsInvalidAndOutOfBoundsValues(t *testing.T) {
 		{name: "queue event upper bound", key: "STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS", value: "1000001"},
 		{name: "queue byte upper bound", key: "STELLARMESH_LOGGING_QUEUE_CAPACITY_BYTES", value: "2GiB"},
 		{name: "spool byte upper bound", key: "STELLARMESH_LOGGING_SPOOL_MAX_BYTES", value: "2TiB"},
+		{name: "spool byte lower bound", key: "STELLARMESH_LOGGING_SPOOL_MAX_BYTES", value: "1MiB"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

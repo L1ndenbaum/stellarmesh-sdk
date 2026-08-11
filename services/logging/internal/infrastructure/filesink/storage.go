@@ -19,6 +19,11 @@ type segment struct {
 	events  int
 }
 
+type segmentStats struct {
+	bytes int64
+	count int64
+}
+
 func (store *KafkaFallbackStore) encodeSegments(events []sharedlogging.Event) ([]segment, int64, error) {
 	if len(events) == 0 {
 		return nil, 0, nil
@@ -134,23 +139,23 @@ func partitionEvents(events []sharedlogging.Event) ([]sharedlogging.Event, []sha
 	return regular, priority
 }
 
-func prepareDirectory(path string) (int64, error) {
+func prepareDirectory(path string) (segmentStats, error) {
 	if err := os.MkdirAll(path, 0o700); err != nil {
-		return 0, err
+		return segmentStats{}, err
 	}
 	if err := os.Chmod(path, 0o700); err != nil {
-		return 0, err
+		return segmentStats{}, err
 	}
 	entries, err := os.ReadDir(path)
 	if err != nil {
-		return 0, err
+		return segmentStats{}, err
 	}
-	var size int64
+	var stats segmentStats
 	for _, entry := range entries {
 		fullPath := filepath.Join(path, entry.Name())
 		if strings.HasSuffix(entry.Name(), ".tmp") {
 			if err := os.Remove(fullPath); err != nil {
-				return 0, err
+				return segmentStats{}, err
 			}
 			continue
 		}
@@ -159,39 +164,40 @@ func prepareDirectory(path string) (int64, error) {
 		}
 		info, err := entry.Info()
 		if err != nil {
-			return 0, err
+			return segmentStats{}, err
 		}
-		size += info.Size()
+		stats.bytes += info.Size()
+		stats.count++
 	}
-	return size, nil
+	return stats, nil
 }
 
-func prepareBatchDirectories(root string) (int64, int64, error) {
+func prepareBatchDirectories(root string) (segmentStats, segmentStats, error) {
 	staging := filepath.Join(root, stagingDirectory)
 	batches := filepath.Join(root, batchesDirectory)
 	for _, directory := range []string{staging, batches} {
 		if err := os.MkdirAll(directory, 0o700); err != nil {
-			return 0, 0, err
+			return segmentStats{}, segmentStats{}, err
 		}
 		if err := os.Chmod(directory, 0o700); err != nil {
-			return 0, 0, err
+			return segmentStats{}, segmentStats{}, err
 		}
 	}
 	staged, err := os.ReadDir(staging)
 	if err != nil {
-		return 0, 0, err
+		return segmentStats{}, segmentStats{}, err
 	}
 	for _, entry := range staged {
 		if err := os.RemoveAll(filepath.Join(staging, entry.Name())); err != nil {
-			return 0, 0, err
+			return segmentStats{}, segmentStats{}, err
 		}
 	}
 	entries, err := os.ReadDir(batches)
 	if err != nil {
-		return 0, 0, err
+		return segmentStats{}, segmentStats{}, err
 	}
-	var regularBytes int64
-	var priorityBytes int64
+	var regularStats segmentStats
+	var priorityStats segmentStats
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -199,16 +205,18 @@ func prepareBatchDirectories(root string) (int64, int64, error) {
 		batch := filepath.Join(batches, entry.Name())
 		regular, err := prepareDirectory(filepath.Join(batch, regularPriority))
 		if err != nil {
-			return 0, 0, err
+			return segmentStats{}, segmentStats{}, err
 		}
 		priority, err := prepareDirectory(filepath.Join(batch, highPriority))
 		if err != nil {
-			return 0, 0, err
+			return segmentStats{}, segmentStats{}, err
 		}
-		regularBytes += regular
-		priorityBytes += priority
+		regularStats.bytes += regular.bytes
+		regularStats.count += regular.count
+		priorityStats.bytes += priority.bytes
+		priorityStats.count += priority.count
 	}
-	return regularBytes, priorityBytes, nil
+	return regularStats, priorityStats, nil
 }
 
 func writeAndSync(file *os.File, payload []byte) error {

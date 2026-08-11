@@ -19,6 +19,7 @@ const (
 	maxBatchEvents         = 10_000
 	maxBatchBytes          = int64(64 << 20)
 	maxSpoolBytes          = int64(1 << 40)
+	minimumSpoolBytes      = int64(2*(sharedlogging.MaxEventJSONBytesV1+1) + (64 << 10))
 	maxRuntimeDuration     = 24 * time.Hour
 )
 
@@ -121,7 +122,7 @@ func Load() (Config, error) {
 	if strings.TrimSpace(cfg.SpoolDir) == "" {
 		return Config{}, errors.New("STELLARMESH_LOGGING_SPOOL_DIR is required")
 	}
-	if cfg.SpoolMaxBytes < sharedlogging.MaxEventJSONBytesV1+1 || cfg.SpoolMaxBytes > maxSpoolBytes ||
+	if cfg.SpoolMaxBytes < minimumSpoolBytes || cfg.SpoolMaxBytes > maxSpoolBytes ||
 		cfg.SpoolSegmentBytes <= 0 || cfg.SpoolSegmentBytes > maxBatchBytes || cfg.SpoolSegmentBytes > cfg.SpoolMaxBytes ||
 		cfg.SpoolReplayBatchSize <= 0 || cfg.SpoolReplayBatchSize > maxBatchEvents {
 		return Config{}, errors.New("logging spool limits are outside supported bounds")

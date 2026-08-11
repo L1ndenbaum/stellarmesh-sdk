@@ -20,10 +20,12 @@ const (
 	defaultSegmentBytes   = int64(16 << 20)
 	defaultReplayBatch    = 128
 	defaultMaxRecordBytes = sharedlogging.MaxEventJSONBytesV1 + 1
-	segmentSuffix         = ".ready.jsonl"
-	stagingDirectory      = ".staging"
-	batchesDirectory      = "batches"
-	quarantineDirectory   = "quarantine"
+	// Covers the bounded reason, source path, timestamp and JSON envelope written beside one quarantined artifact.
+	quarantineMetadataReserveBytes = int64(64 << 10)
+	segmentSuffix                  = ".ready.jsonl"
+	stagingDirectory               = ".staging"
+	batchesDirectory               = "batches"
+	quarantineDirectory            = "quarantine"
 )
 
 var (
@@ -79,6 +81,7 @@ type KafkaFallbackStore struct {
 	regularBytes            int64
 	priorityBytes           int64
 	quarantineBytes         int64
+	quarantineReserveBytes  int64
 	rename                  func(string, string) error
 	syncDir                 func(string) error
 }
@@ -106,15 +109,15 @@ func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
 		isPermanentPublishError: config.IsPermanentPublishError,
 		observer:                config.Observer, rename: os.Rename, syncDir: syncDirectory,
 	}
-	regularBytes, err := prepareDirectory(store.directory(regularPriority))
+	regular, err := prepareDirectory(store.directory(regularPriority))
 	if err != nil {
 		return nil, err
 	}
-	priorityBytes, err := prepareDirectory(store.directory(highPriority))
+	priority, err := prepareDirectory(store.directory(highPriority))
 	if err != nil {
 		return nil, err
 	}
-	batchRegularBytes, batchPriorityBytes, err := prepareBatchDirectories(store.rootDir)
+	batchRegular, batchPriority, err := prepareBatchDirectories(store.rootDir)
 	if err != nil {
 		return nil, err
 	}
@@ -122,9 +125,12 @@ func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
 	if err != nil {
 		return nil, err
 	}
-	store.regularBytes = regularBytes + batchRegularBytes
-	store.priorityBytes = priorityBytes + batchPriorityBytes
+	store.regularBytes = regular.bytes + batchRegular.bytes
+	store.priorityBytes = priority.bytes + batchPriority.bytes
 	store.quarantineBytes = quarantineBytes
+	liveBytes := store.regularBytes + store.priorityBytes
+	liveSegments := regular.count + priority.count + batchRegular.count + batchPriority.count
+	store.quarantineReserveBytes = liveBytes + liveSegments*quarantineMetadataReserveBytes
 	store.observeBytes()
 	return store, nil
 }
@@ -149,7 +155,10 @@ func (store *KafkaFallbackStore) WriteBatch(ctx context.Context, events []shared
 
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if regularSize+prioritySize > store.maxBytes-store.totalBytesLocked() {
+	incomingBytes := regularSize + prioritySize
+	incomingReserve := incomingBytes +
+		int64(len(regularSegments)+len(prioritySegments))*quarantineMetadataReserveBytes
+	if exceedsBudget(store.maxBytes, store.budgetedBytesLocked(), incomingBytes, incomingReserve) {
 		store.observeWrite(regularPriority, "rejected", len(regular))
 		store.observeWrite(highPriority, "rejected", len(priority))
 		return ErrSpoolFull
@@ -158,6 +167,7 @@ func (store *KafkaFallbackStore) WriteBatch(ctx context.Context, events []shared
 	if committed {
 		store.regularBytes += regularSize
 		store.priorityBytes += prioritySize
+		store.quarantineReserveBytes += incomingReserve
 		store.observeBytes()
 	}
 	if err != nil {
@@ -172,7 +182,7 @@ func (store *KafkaFallbackStore) WriteBatch(ctx context.Context, events []shared
 func (store *KafkaFallbackStore) Saturated() bool {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	return store.totalBytesLocked() >= store.maxBytes
+	return store.budgetedBytesLocked() >= store.maxBytes
 }
 
 // Bytes reports retained regular and priority bytes.
@@ -191,6 +201,33 @@ func (store *KafkaFallbackStore) QuarantineBytes() int64 {
 
 func (store *KafkaFallbackStore) totalBytesLocked() int64 {
 	return store.regularBytes + store.priorityBytes + store.quarantineBytes
+}
+
+func (store *KafkaFallbackStore) budgetedBytesLocked() int64 {
+	return store.totalBytesLocked() + store.quarantineReserveBytes
+}
+
+func (store *KafkaFallbackStore) releaseQuarantineReserveLocked(segmentBytes int64) {
+	release := segmentBytes + quarantineMetadataReserveBytes
+	if release >= store.quarantineReserveBytes {
+		store.quarantineReserveBytes = 0
+		return
+	}
+	store.quarantineReserveBytes -= release
+}
+
+func exceedsBudget(limit int64, current int64, additions ...int64) bool {
+	if current > limit {
+		return true
+	}
+	available := limit - current
+	for _, addition := range additions {
+		if addition < 0 || addition > available {
+			return true
+		}
+		available -= addition
+	}
+	return false
 }
 
 func (store *KafkaFallbackStore) directory(priority string) string {

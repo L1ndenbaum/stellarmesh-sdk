@@ -60,6 +60,26 @@ func (store *KafkaFallbackStore) quarantineRecords(
 		return err
 	}
 	metadata = append(metadata, '\n')
+	if int64(payload.Len()) > info.Size() {
+		return errors.New("quarantine record set exceeds its source segment reservation")
+	}
+	if int64(len(metadata)) > quarantineMetadataReserveBytes {
+		return errors.New("quarantine metadata exceeds its reserved capacity")
+	}
+	additionalBytes, err := missingFileBytes(target, int64(payload.Len()))
+	if err != nil {
+		return err
+	}
+	metadataBytes, err := missingFileBytes(metadataPath, int64(len(metadata)))
+	if err != nil {
+		return err
+	}
+	store.mu.Lock()
+	full := exceedsBudget(store.maxBytes, store.totalBytesLocked(), additionalBytes, metadataBytes)
+	store.mu.Unlock()
+	if full {
+		return ErrSpoolFull
+	}
 	payloadCreated, err := store.ensureQuarantineFile(target, payload.Bytes())
 	if err != nil {
 		return err
@@ -89,6 +109,7 @@ func (store *KafkaFallbackStore) quarantineRecords(
 	} else {
 		store.regularBytes -= info.Size()
 	}
+	store.releaseQuarantineReserveLocked(info.Size())
 	store.observeBytes()
 	store.mu.Unlock()
 	return store.syncDir(filepath.Dir(path))
@@ -118,6 +139,15 @@ func (store *KafkaFallbackStore) ensureQuarantineFile(path string, payload []byt
 	return true, nil
 }
 
+func missingFileBytes(path string, size int64) (int64, error) {
+	if _, err := os.Stat(path); err == nil {
+		return 0, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return 0, err
+	}
+	return size, nil
+}
+
 func (store *KafkaFallbackStore) quarantineSegment(path, priority string, cause error) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -144,6 +174,15 @@ func (store *KafkaFallbackStore) quarantineSegment(path, priority string, cause 
 		return err
 	}
 	metadata = append(metadata, '\n')
+	if int64(len(metadata)) > quarantineMetadataReserveBytes {
+		return errors.New("quarantine metadata exceeds its reserved capacity")
+	}
+	store.mu.Lock()
+	full := exceedsBudget(store.maxBytes, store.totalBytesLocked(), int64(len(metadata)))
+	store.mu.Unlock()
+	if full {
+		return ErrSpoolFull
+	}
 	file, err := os.OpenFile(temporaryMetadata, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
@@ -169,6 +208,7 @@ func (store *KafkaFallbackStore) quarantineSegment(path, priority string, cause 
 	} else {
 		store.regularBytes -= info.Size()
 	}
+	store.releaseQuarantineReserveLocked(info.Size())
 	store.quarantineBytes += info.Size()
 	if metadataErr == nil {
 		store.quarantineBytes += int64(len(metadata))

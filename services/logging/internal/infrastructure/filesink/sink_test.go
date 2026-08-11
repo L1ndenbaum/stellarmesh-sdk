@@ -103,6 +103,43 @@ func TestFallbackStoreEnforcesDiskBudget(t *testing.T) {
 	}
 }
 
+func TestFallbackStoreReservesAtomicQuarantineCapacity(t *testing.T) {
+	event := validEvent(t, sharedlogging.LevelInfo, "reject")
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	required := int64(2*(len(payload)+1)) + quarantineMetadataReserveBytes
+	rejectedStore := newStore(t, Config{RootDir: filepath.Join(t.TempDir(), "spool"), MaxBytes: required - 1})
+	if err := rejectedStore.WriteBatch(context.Background(), []sharedlogging.Event{event}); !errors.Is(err, ErrSpoolFull) {
+		t.Fatalf("WriteBatch() error = %v", err)
+	}
+
+	root := filepath.Join(t.TempDir(), "spool")
+	store := newStore(t, Config{RootDir: root, MaxBytes: required})
+	if err := store.WriteBatch(context.Background(), []sharedlogging.Event{event}); err != nil {
+		t.Fatal(err)
+	}
+	if !store.Saturated() {
+		t.Fatal("store did not account for quarantine replacement reserve")
+	}
+	recovered := newStore(t, Config{RootDir: root, MaxBytes: required})
+	if !recovered.Saturated() {
+		t.Fatal("recovered store lost quarantine replacement reserve")
+	}
+	permanentErr := errors.New("message too large")
+	recovered.isPermanentPublishError = func(err error) bool { return errors.Is(err, permanentErr) }
+	if err := recovered.ReplayOnce(context.Background(), &selectivePermanentPublisher{err: permanentErr}); err != nil {
+		t.Fatal(err)
+	}
+	recovered.mu.Lock()
+	actualBytes := recovered.totalBytesLocked()
+	recovered.mu.Unlock()
+	if actualBytes > required || recovered.QuarantineBytes() == 0 {
+		t.Fatalf("actual=%d limit=%d quarantine=%d", actualBytes, required, recovered.QuarantineBytes())
+	}
+}
+
 func TestFallbackStoreCommitsMixedPrioritiesAsOneBatch(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "spool")
 	store := newStore(t, Config{RootDir: root, SegmentBytes: 64})

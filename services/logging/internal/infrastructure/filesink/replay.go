@@ -206,6 +206,7 @@ func (store *KafkaFallbackStore) removePublishedSegment(path, priority string) e
 	} else {
 		store.regularBytes -= info.Size()
 	}
+	store.releaseQuarantineReserveLocked(info.Size())
 	store.observeBytes()
 	store.mu.Unlock()
 	return store.syncDir(filepath.Dir(path))
