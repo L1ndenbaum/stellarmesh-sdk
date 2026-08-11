@@ -186,7 +186,7 @@ components:
           schema:
             $ref: "#/components/schemas/ApiEnvelope"
     Unavailable:
-      description: 服务队列无法继续接收事件
+      description: 队列已满、服务正在关闭、请求已取消，或 Kafka 与本地 spool 均无法持久接收事件
       content:
         application/json:
           schema:

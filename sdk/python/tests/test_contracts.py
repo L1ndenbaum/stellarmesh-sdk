@@ -68,8 +68,8 @@ def test_shared_invalid_fixtures_are_rejected() -> None:
         / "invalid-events.json"
     )
     for fixture in json.loads(fixture_path.read_text()):
-        with pytest.raises(ValidationError):
-            LogEvent.model_validate(fixture["payload"])
+        with pytest.raises((ValidationError, ValueError)):
+            decode_event(json.dumps(fixture["payload"]))
 
 
 def test_level_filtering() -> None:
@@ -87,6 +87,27 @@ def test_json_schema_accepts_shared_fixture() -> None:
         format_checker=jsonschema.FormatChecker(),
     )
     validator.validate(fixture)
+
+
+def test_json_schema_rejects_all_shared_invalid_fixtures() -> None:
+    contract_dir = _REPOSITORY_ROOT / "contracts" / "logging" / "v1"
+    schema = json.loads((contract_dir / "log-event.schema.json").read_text())
+    fixtures = json.loads(
+        (contract_dir / "testdata" / "invalid-events.json").read_text()
+    )
+    validator = jsonschema.Draft202012Validator(
+        schema,
+        format_checker=jsonschema.FormatChecker(),
+    )
+    for fixture in fixtures:
+        with pytest.raises(jsonschema.ValidationError):
+            validator.validate(fixture["payload"])
+
+
+def test_event_preserves_nonempty_surrounding_whitespace() -> None:
+    event = LogEvent(service=" backend ", message=" message ")
+    assert event.service == " backend "
+    assert event.message == " message "
 
 
 def test_service_auth_schema_accepts_rotating_tokens() -> None:

@@ -63,8 +63,8 @@ class LogEvent(ContractModel):
     @field_validator("service", "message")
     @classmethod
     def _require_text(cls, value: str) -> str:
-        text = str(value).strip()
-        if not text:
+        text = str(value)
+        if not text.strip():
             raise ValueError("value must not be empty")
         return text
 
@@ -83,7 +83,7 @@ class LogEvent(ContractModel):
     @field_validator("metadata", mode="before")
     @classmethod
     def _sanitize_metadata(cls, value: Any) -> dict[str, Any]:
-        sanitized = sanitize_metadata(value or {})
+        sanitized = sanitize_metadata({} if value is None else value)
         if not isinstance(sanitized, dict):
             raise ValueError("metadata must be a mapping")
         return sanitized

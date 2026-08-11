@@ -234,6 +234,15 @@ func NewEventID() (string, error) {
 
 // DecodeEvent strictly decodes one canonical event and rejects unknown fields.
 func DecodeEvent(payload []byte) (Event, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		return Event{}, err
+	}
+	for _, field := range []string{"event_id", "timestamp", "level", "service", "message", "trace_id", "metadata"} {
+		if _, ok := fields[field]; !ok {
+			return Event{}, fmt.Errorf("event field %q is required", field)
+		}
+	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
 	var event Event
