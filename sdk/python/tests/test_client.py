@@ -4,12 +4,14 @@ import asyncio
 import json
 import threading
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
 import pytest
 
 from stellarmesh_logging import (
+    MAX_EVENT_JSON_BYTES,
     MAX_HTTP_BODY_BYTES,
     Client,
     ClientConfig,
@@ -279,6 +281,39 @@ def test_client_default_body_limit_includes_batch_envelope() -> None:
         base_url="http://logging-service", token="token", service="backend"
     )
     assert config.max_body_bytes == MAX_HTTP_BODY_BYTES
+
+
+def test_client_default_body_limit_sends_maximum_canonical_event() -> None:
+    base = LogEvent(
+        event_id="018f16b6-3f9f-7d98-a328-3eac70bd0542",
+        timestamp=datetime(2026, 8, 1, 12, 0, tzinfo=UTC),
+        service="backend",
+        message="x",
+    )
+    event = LogEvent(
+        event_id=base.event_id,
+        timestamp=base.timestamp,
+        service=base.service,
+        message="x" * (MAX_EVENT_JSON_BYTES - (len(encode_event(base)) - 1)),
+    )
+    assert len(encode_event(event)) == MAX_EVENT_JSON_BYTES
+    requests = 0
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        nonlocal requests
+        requests += 1
+        assert len(request.content) <= MAX_HTTP_BODY_BYTES
+        return _response(1)
+
+    client = Client(
+        ClientConfig(
+            base_url="http://logging-service", token="token", service="backend"
+        ),
+        transport=httpx.MockTransport(handle),
+    )
+    assert client.enqueue(event)
+    assert client.close(timeout=1)
+    assert requests == 1
 
 
 def test_client_isolates_provider_and_drop_handler_errors(

@@ -401,6 +401,56 @@ func TestClientDefaultBodyLimitIncludesBatchEnvelope(t *testing.T) {
 	}
 }
 
+func TestClientDefaultBodyLimitSendsMaximumCanonicalEvent(t *testing.T) {
+	event := Event{
+		EventID:   "018f16b6-3f9f-7d98-a328-3eac70bd0542",
+		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
+		Level:     LevelInfo, Service: "test", Message: "x", Metadata: map[string]any{},
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event.Message = strings.Repeat("x", MaxEventJSONBytesV1-(len(payload)-1))
+	payload, err = json.Marshal(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(payload) != MaxEventJSONBytesV1 {
+		t.Fatalf("event bytes = %d", len(payload))
+	}
+	requests := 0
+	client, err := NewClient(ClientConfig{
+		BaseURL: "http://logging-service", Token: "token", BatchSize: 1,
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			requests++
+			body, readErr := io.ReadAll(request.Body)
+			if readErr != nil {
+				return nil, readErr
+			}
+			if len(body) > MaxHTTPBodyBytesV1 {
+				return nil, errors.New("batch body exceeded the HTTP contract limit")
+			}
+			response := `{"code":202,"message":"ok","data":{"accepted":1},"timestamp":"2026-08-01T12:00:00Z"}`
+			return &http.Response{StatusCode: http.StatusAccepted, Body: io.NopCloser(strings.NewReader(response))}, nil
+		})},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !client.Emit(context.Background(), event) {
+		t.Fatal("Emit() = false")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := client.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d", requests)
+	}
+}
+
 func TestClientAcceptsLegacyOKResponse(t *testing.T) {
 	httpClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		payload := `{"code":200,"message":"ok","data":{"accepted":1},"timestamp":"2026-08-01T12:00:00Z"}`
