@@ -1,4 +1,4 @@
-// Package application coordinates Kafka decoding, ClickHouse insertion, dead-lettering, and offset commits.
+// Package application 协调 Kafka 解码、ClickHouse 写入、死信处理和 offset 提交。
 package application
 
 import (
@@ -17,15 +17,15 @@ import (
 const maxDeadLetterErrorRunes = 2048
 
 var (
-	// ErrClickHouseInsert identifies a retryable ClickHouse stage failure.
+	// ErrClickHouseInsert 标识可重试的 ClickHouse 阶段故障。
 	ErrClickHouseInsert = errors.New("ClickHouse insertion failed")
-	// ErrDeadLetterPublish identifies a retryable DLQ publication failure.
+	// ErrDeadLetterPublish 标识可重试的 DLQ 发布故障。
 	ErrDeadLetterPublish = errors.New("dead-letter publication failed")
-	// ErrOffsetCommit identifies a retryable source offset commit failure.
+	// ErrOffsetCommit 标识可重试的源 offset 提交故障。
 	ErrOffsetCommit = errors.New("Kafka offset commit failed")
 )
 
-// Message contains a Kafka payload, stable source coordinates, and an offset handle.
+// Message 包含 Kafka 载荷、稳定来源坐标和 offset handle。
 type Message struct {
 	Topic     string
 	Partition int
@@ -36,23 +36,23 @@ type Message struct {
 	Handle    any
 }
 
-// Inserter persists decoded events.
+// Inserter 持久化已解码事件。
 type Inserter interface {
 	InsertEvents(context.Context, []sharedlogging.Event) error
 }
 
-// DeadLetterPublisher persists rejected source messages to the configured DLQ.
+// DeadLetterPublisher 将被拒绝的源消息持久化到配置的 DLQ。
 type DeadLetterPublisher interface {
 	PublishDeadLetters(context.Context, []sharedlogging.DeadLetter) error
 	PublishOversizeDeadLetters(context.Context, []sharedlogging.OversizeDeadLetter) error
 }
 
-// Committer advances Kafka offsets after all durable writes succeed.
+// Committer 在所有持久写入成功后推进 Kafka offset。
 type Committer interface {
 	Commit(context.Context, []Message) error
 }
 
-// Observer receives bounded sink metrics and readiness transitions.
+// Observer 接收有界 sink 指标和就绪状态变化。
 type Observer interface {
 	SetReady(bool)
 	SetPendingMessages(int)
@@ -61,7 +61,7 @@ type Observer interface {
 	ObserveOperation(operation, result string)
 }
 
-// ProcessorConfig supplies every durable stage and its clock.
+// ProcessorConfig 提供所有持久处理阶段及其时钟。
 type ProcessorConfig struct {
 	Inserter              Inserter
 	DeadLetters           DeadLetterPublisher
@@ -71,7 +71,7 @@ type ProcessorConfig struct {
 	MaxSourceMessageBytes int64
 }
 
-// Processor owns the insert, dead-letter, and commit ordering.
+// Processor 管理写入、死信和提交顺序。
 type Processor struct {
 	inserter              Inserter
 	deadLetters           DeadLetterPublisher
@@ -81,7 +81,7 @@ type Processor struct {
 	maxSourceMessageBytes int64
 }
 
-// NewProcessor validates the sink's required durable stages.
+// NewProcessor 校验 sink 所需的持久处理阶段。
 func NewProcessor(config ProcessorConfig) (*Processor, error) {
 	if config.Inserter == nil {
 		return nil, errors.New("ClickHouse inserter is required")
@@ -106,7 +106,7 @@ func NewProcessor(config ProcessorConfig) (*Processor, error) {
 	}, nil
 }
 
-// ProcessBatch inserts valid events, publishes rejected messages, and then commits all source offsets.
+// ProcessBatch 写入有效事件、发布被拒绝消息，然后提交所有源 offset。
 func (processor *Processor) ProcessBatch(ctx context.Context, messages []Message) error {
 	if len(messages) == 0 {
 		return nil

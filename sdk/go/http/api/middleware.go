@@ -2,7 +2,7 @@ package api
 
 import "net/http"
 
-// TokenAuthConfig controls shared-token authentication.
+// TokenAuthConfig 控制共享 token 鉴权。
 type TokenAuthConfig struct {
 	Header          string
 	Token           string
@@ -10,7 +10,7 @@ type TokenAuthConfig struct {
 	AllowEmptyToken bool
 }
 
-// TokenAuth validates a shared token header before calling the next handler.
+// TokenAuth 在调用下一个 handler 前校验共享 token 请求头。
 func TokenAuth(cfg TokenAuthConfig) func(http.Handler) http.Handler {
 	message := cfg.Message
 	if message == "" {

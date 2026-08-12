@@ -20,7 +20,7 @@ var sensitiveKeyParts = []string{
 	"api_key", "authorization", "cookie", "credential", "jwt", "password", "secret", "token",
 }
 
-// SanitizeMetadata removes common secrets and bounds nested metadata.
+// SanitizeMetadata 移除常见 Secret，并限制嵌套元数据。
 func SanitizeMetadata(metadata map[string]any) map[string]any {
 	if metadata == nil {
 		return map[string]any{}

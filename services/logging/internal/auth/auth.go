@@ -1,4 +1,4 @@
-// Package auth authenticates service-bound logging credentials.
+// Package auth 验证与服务绑定的日志凭据。
 package auth
 
 import (
@@ -16,7 +16,7 @@ import (
 
 const minimumTokenLength = 32
 
-// FileConfig is the mounted secret format used by the logging service.
+// FileConfig 是日志服务使用的挂载 Secret 格式。
 type FileConfig struct {
 	Services map[string][]string `json:"services"`
 }
@@ -26,12 +26,12 @@ type credential struct {
 	digest  [sha256.Size]byte
 }
 
-// Authenticator maps opaque token digests to one service identity.
+// Authenticator 将不透明 token 摘要映射到服务身份。
 type Authenticator struct {
 	credentials []credential
 }
 
-// LoadFile reads and validates a service-bound token configuration.
+// LoadFile 读取并校验与服务绑定的 token 配置。
 func LoadFile(path string) (*Authenticator, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, errors.New("logging auth file is required")
@@ -55,7 +55,7 @@ func LoadFile(path string) (*Authenticator, error) {
 	return New(config)
 }
 
-// New validates an in-memory service-bound token configuration.
+// New 校验内存中的服务绑定 token 配置。
 func New(config FileConfig) (*Authenticator, error) {
 	if len(config.Services) == 0 {
 		return nil, errors.New("logging auth config requires at least one service")
@@ -84,7 +84,7 @@ func New(config FileConfig) (*Authenticator, error) {
 	return &Authenticator{credentials: credentials}, nil
 }
 
-// Authenticate returns the service identity bound to an opaque token.
+// Authenticate 返回与不透明 token 绑定的服务身份。
 func (authenticator *Authenticator) Authenticate(token string) (string, bool) {
 	if authenticator == nil || token == "" {
 		return "", false

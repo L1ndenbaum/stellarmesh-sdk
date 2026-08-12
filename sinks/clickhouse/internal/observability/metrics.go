@@ -1,4 +1,4 @@
-// Package observability exposes ClickHouse sink health and bounded Prometheus metrics.
+// Package observability 暴露 ClickHouse sink 健康状态和有界 Prometheus 指标。
 package observability
 
 import (
@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics owns one isolated registry and the current sink readiness state.
+// Metrics 持有独立 registry 和当前 sink 就绪状态。
 type Metrics struct {
 	registry     *prometheus.Registry
 	ready        atomic.Bool
@@ -20,7 +20,7 @@ type Metrics struct {
 	pendingBytes prometheus.Gauge
 }
 
-// NewMetrics registers the ClickHouse sink metric set.
+// NewMetrics 注册 ClickHouse sink 指标集。
 func NewMetrics() *Metrics {
 	metrics := &Metrics{
 		registry: prometheus.NewRegistry(),
@@ -45,37 +45,37 @@ func NewMetrics() *Metrics {
 	return metrics
 }
 
-// SetReady updates whether all durable sink stages can currently make progress.
+// SetReady 更新所有持久 sink 阶段当前是否可以继续推进。
 func (metrics *Metrics) SetReady(ready bool) {
 	metrics.ready.Store(ready)
 }
 
-// Ready reports the current readiness state.
+// Ready 报告当前就绪状态。
 func (metrics *Metrics) Ready() bool {
 	return metrics.ready.Load()
 }
 
-// SetPendingMessages records the current uncommitted batch size.
+// SetPendingMessages 记录当前未提交批次的消息数。
 func (metrics *Metrics) SetPendingMessages(count int) {
 	metrics.pending.Set(float64(count))
 }
 
-// SetPendingBytes records source bytes held in the current uncommitted batch.
+// SetPendingBytes 记录当前未提交批次持有的源字节数。
 func (metrics *Metrics) SetPendingBytes(size int64) {
 	metrics.pendingBytes.Set(float64(size))
 }
 
-// ObserveMessages records message outcomes.
+// ObserveMessages 记录消息处理结果。
 func (metrics *Metrics) ObserveMessages(result string, count int) {
 	metrics.messages.WithLabelValues(result).Add(float64(count))
 }
 
-// ObserveOperation records one stage result.
+// ObserveOperation 记录一个阶段的结果。
 func (metrics *Metrics) ObserveOperation(operation, result string) {
 	metrics.operations.WithLabelValues(operation, result).Inc()
 }
 
-// NewRouter exposes liveness, readiness, and Prometheus endpoints.
+// NewRouter 暴露存活、就绪和 Prometheus 端点。
 func NewRouter(metrics *Metrics) http.Handler {
 	mux := http.NewServeMux()
 	liveness := func(w http.ResponseWriter, _ *http.Request) {

@@ -1,4 +1,4 @@
-"""Standard-library logging adapter for the Stellarmesh client."""
+"""面向 Stellarmesh 客户端的标准库 logging 适配器。"""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ _HANDLER_METADATA_ATTRIBUTES = frozenset(
 
 
 class StellarmeshHandler(logging.Handler):
-    """Convert standard ``LogRecord`` instances into Stellarmesh events."""
+    """将标准 ``LogRecord`` 实例转换为 Stellarmesh 事件。"""
 
     def __init__(self, client: Client, *, service: str | None = None) -> None:
         super().__init__()
@@ -34,7 +34,7 @@ class StellarmeshHandler(logging.Handler):
         self._service = service
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Convert and enqueue one record without performing network I/O."""
+        """转换并入队一条记录，不执行网络 I/O。"""
         try:
             metadata, trace_id = _record_metadata(record)
             self._client.emit_event(
@@ -45,10 +45,10 @@ class StellarmeshHandler(logging.Handler):
                 timestamp=datetime.fromtimestamp(record.created, UTC),
                 metadata=metadata,
             )
-        except Exception:  # noqa: BLE001 - logging must not interrupt callers.
+        except Exception:  # noqa: BLE001 - 日志不能中断调用方。
             try:
                 self.handleError(record)
-            except Exception:  # noqa: BLE001 - error reporting must not recurse.
+            except Exception:  # noqa: BLE001 - 错误报告不能递归。
                 return
 
 

@@ -1,4 +1,4 @@
-// Package logging contains the canonical logging v1 contract and clients.
+// Package logging 包含规范日志 v1 契约和客户端。
 package logging
 
 import (
@@ -16,27 +16,27 @@ import (
 )
 
 const (
-	// TopicV1 is the canonical Kafka topic name for logging v1 events.
+	// TopicV1 是日志 v1 事件的规范 Kafka topic 名称。
 	TopicV1 = "stellarmesh.logging.events.v1"
-	// DeadLetterTopicV1 is the canonical Kafka topic name for rejected v1 payloads.
+	// DeadLetterTopicV1 是被拒绝 v1 载荷的规范 Kafka topic 名称。
 	DeadLetterTopicV1 = "stellarmesh.logging.events.v1.dlq"
-	// DeadLetterSchemaV1 identifies the dead-letter record layout.
+	// DeadLetterSchemaV1 标识死信记录结构。
 	DeadLetterSchemaV1 = "v1"
-	// DeadLetterSchemaV2 identifies the compact oversized-message dead-letter layout.
+	// DeadLetterSchemaV2 标识超大消息的紧凑死信记录结构。
 	DeadLetterSchemaV2 = "v2"
-	// MaxEventJSONBytesV1 is the maximum compact JSON size of one canonical event.
+	// MaxEventJSONBytesV1 是单个规范事件紧凑 JSON 的大小上限。
 	MaxEventJSONBytesV1 = 900 * 1024
-	// MaxHTTPBodyBytesV1 is the maximum accepted ingestion request body size.
+	// MaxHTTPBodyBytesV1 是接收请求体的大小上限。
 	MaxHTTPBodyBytesV1 = 1 << 20
-	// MaxKafkaKeyValueBytesV1 reserves protocol overhead below the Kafka message limit.
+	// MaxKafkaKeyValueBytesV1 在 Kafka 消息上限内为协议开销保留空间。
 	MaxKafkaKeyValueBytesV1 = 960 * 1024
-	// MaxKafkaMessageBytesV1 is the maximum serialized Kafka record size.
+	// MaxKafkaMessageBytesV1 是序列化 Kafka 记录的大小上限。
 	MaxKafkaMessageBytesV1 = 1 << 20
 )
 
 const maxDeadLetterErrorRunes = 2048
 
-// Level is a severity value accepted by the logging contract.
+// Level 是日志契约接受的严重级别。
 type Level string
 
 const (
@@ -51,7 +51,7 @@ var validLevels = map[Level]struct{}{
 	LevelDebug: {}, LevelInfo: {}, LevelWarning: {}, LevelError: {}, LevelAudit: {},
 }
 
-// Event is the canonical logging v1 record.
+// Event 是规范日志 v1 记录。
 type Event struct {
 	EventID   string         `json:"event_id"`
 	Timestamp time.Time      `json:"timestamp"`
@@ -62,22 +62,22 @@ type Event struct {
 	Metadata  map[string]any `json:"metadata"`
 }
 
-// IngestRequest wraps one event for the v1 HTTP endpoint.
+// IngestRequest 为 v1 HTTP 端点封装一个事件。
 type IngestRequest struct {
 	Event Event `json:"event"`
 }
 
-// BatchIngestRequest wraps multiple events for the v1 batch endpoint.
+// BatchIngestRequest 为 v1 批量端点封装多个事件。
 type BatchIngestRequest struct {
 	Events []Event `json:"events"`
 }
 
-// IngestResult reports how many events were durably accepted by Kafka or the local spool.
+// IngestResult 报告由 Kafka 或本地 spool 持久接收的事件数量。
 type IngestResult struct {
 	Accepted int `json:"accepted"`
 }
 
-// DeadLetter preserves one rejected Kafka message and its source coordinates.
+// DeadLetter 保存一条被拒绝的 Kafka 消息及其来源坐标。
 type DeadLetter struct {
 	SchemaVersion   string     `json:"schema_version"`
 	SourceTopic     string     `json:"source_topic"`
@@ -91,7 +91,7 @@ type DeadLetter struct {
 	FailedAt        time.Time  `json:"failed_at"`
 }
 
-// OversizeDeadLetter records a compact digest for a Kafka message that cannot be copied into DLQ v1.
+// OversizeDeadLetter 记录无法复制到 DLQ v1 的 Kafka 消息紧凑摘要。
 type OversizeDeadLetter struct {
 	SchemaVersion   string     `json:"schema_version"`
 	SourceTopic     string     `json:"source_topic"`
@@ -108,7 +108,7 @@ type OversizeDeadLetter struct {
 	FailedAt        time.Time  `json:"failed_at"`
 }
 
-// KafkaPartitionKeyV1 returns a bounded stable key while preserving trace co-partitioning.
+// KafkaPartitionKeyV1 返回有界稳定键，同时保持同一 trace 位于相同分区。
 func KafkaPartitionKeyV1(event Event) []byte {
 	if event.TraceID == "" {
 		return []byte(event.EventID)
@@ -117,12 +117,12 @@ func KafkaPartitionKeyV1(event Event) []byte {
 	return digest[:]
 }
 
-// FitsKafkaKeyValueBudgetV1 reports whether a compact event can be safely wrapped as a Kafka record.
+// FitsKafkaKeyValueBudgetV1 判断紧凑事件能否安全封装为 Kafka 记录。
 func FitsKafkaKeyValueBudgetV1(event Event, payloadBytes int) bool {
 	return payloadBytes >= 0 && payloadBytes+len(KafkaPartitionKeyV1(event)) <= MaxKafkaKeyValueBytesV1
 }
 
-// Validate verifies a severity value.
+// Validate 校验严重级别。
 func (level Level) Validate() error {
 	if _, ok := validLevels[level]; !ok {
 		return fmt.Errorf("invalid log level %q", level)
@@ -130,7 +130,7 @@ func (level Level) Validate() error {
 	return nil
 }
 
-// Validate verifies every field required by the v1 contract.
+// Validate 校验 v1 契约要求的所有字段。
 func (event Event) Validate() error {
 	if !validEventID(event.EventID) {
 		return errors.New("event_id must be a canonical UUID")
@@ -153,7 +153,7 @@ func (event Event) Validate() error {
 	return nil
 }
 
-// Validate verifies every field required by the v1 dead-letter contract.
+// Validate 校验 v1 死信契约要求的所有字段。
 func (deadLetter DeadLetter) Validate() error {
 	if deadLetter.SchemaVersion != DeadLetterSchemaV1 {
 		return fmt.Errorf("unsupported dead-letter schema version %q", deadLetter.SchemaVersion)
@@ -185,7 +185,7 @@ func (deadLetter DeadLetter) Validate() error {
 	return nil
 }
 
-// Validate verifies every field required by the v2 oversized-message dead-letter contract.
+// Validate 校验 v2 超大消息死信契约要求的所有字段。
 func (deadLetter OversizeDeadLetter) Validate() error {
 	if deadLetter.SchemaVersion != DeadLetterSchemaV2 {
 		return fmt.Errorf("unsupported oversized dead-letter schema version %q", deadLetter.SchemaVersion)
@@ -220,7 +220,7 @@ func (deadLetter OversizeDeadLetter) Validate() error {
 	return nil
 }
 
-// NewEventID creates a random RFC 4122 version 4 UUID.
+// NewEventID 创建随机的 RFC 4122 版本 4 UUID。
 func NewEventID() (string, error) {
 	raw := make([]byte, 16)
 	if _, err := rand.Read(raw); err != nil {
@@ -232,7 +232,7 @@ func NewEventID() (string, error) {
 	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32], nil
 }
 
-// DecodeEvent strictly decodes one canonical event and rejects unknown fields.
+// DecodeEvent 严格解码一个规范事件并拒绝未知字段。
 func DecodeEvent(payload []byte) (Event, error) {
 	if err := requireJSONFields(payload, "event", "event_id", "timestamp", "level", "service", "message", "trace_id", "metadata"); err != nil {
 		return Event{}, err
@@ -255,7 +255,7 @@ func DecodeEvent(payload []byte) (Event, error) {
 	return event, nil
 }
 
-// DecodeDeadLetter strictly decodes one v1 dead-letter record.
+// DecodeDeadLetter 严格解码一条 v1 死信记录。
 func DecodeDeadLetter(payload []byte) (DeadLetter, error) {
 	if err := requireJSONFields(
 		payload, "dead-letter", "schema_version", "source_topic", "source_partition", "source_offset",
@@ -281,7 +281,7 @@ func DecodeDeadLetter(payload []byte) (DeadLetter, error) {
 	return deadLetter, nil
 }
 
-// DecodeOversizeDeadLetter strictly decodes one v2 oversized-message dead-letter record.
+// DecodeOversizeDeadLetter 严格解码一条 v2 超大消息死信记录。
 func DecodeOversizeDeadLetter(payload []byte) (OversizeDeadLetter, error) {
 	if err := requireJSONFields(
 		payload, "oversize dead-letter", "schema_version", "source_topic", "source_partition", "source_offset",

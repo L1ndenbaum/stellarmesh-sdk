@@ -1,4 +1,4 @@
-"""Canonical logging v1 models."""
+"""规范日志 v1 模型。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ MAX_KAFKA_MESSAGE_BYTES = 1 << 20
 
 
 class Level(StrEnum):
-    """Severity values accepted by the logging contract."""
+    """日志契约接受的严重级别。"""
 
     DEBUG = "DEBUG"
     INFO = "INFO"
@@ -35,13 +35,13 @@ _LEVEL_ORDER = {level: index for index, level in enumerate(Level)}
 
 
 class ContractModel(BaseModel):
-    """Base model that matches additionalProperties=false contracts."""
+    """匹配 additionalProperties=false 契约的基础模型。"""
 
     model_config = ConfigDict(extra="forbid")
 
 
 class LogEvent(ContractModel):
-    """Canonical logging v1 event."""
+    """规范日志 v1 事件。"""
 
     event_id: str = Field(default_factory=lambda: str(uuid4()))
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -94,25 +94,25 @@ class LogEvent(ContractModel):
 
 
 class IngestRequest(ContractModel):
-    """Single-event HTTP request."""
+    """单事件 HTTP 请求。"""
 
     event: LogEvent
 
 
 class BatchIngestRequest(ContractModel):
-    """Batch HTTP request."""
+    """批量 HTTP 请求。"""
 
     events: list[LogEvent]
 
 
 class IngestResult(ContractModel):
-    """Accepted event count returned by the ingester."""
+    """接收服务返回的已接受事件数。"""
 
     accepted: int
 
 
 class DeadLetter(ContractModel):
-    """Rejected Kafka payload with stable source coordinates."""
+    """包含稳定来源坐标的 Kafka 拒绝消息。"""
 
     schema_version: Literal["v1"]
     source_topic: str = Field(min_length=1)
@@ -163,7 +163,7 @@ class DeadLetter(ContractModel):
 
 
 class OversizeDeadLetter(ContractModel):
-    """Compact digest for a Kafka source message that is too large for DLQ v1."""
+    """无法写入 DLQ v1 的超大 Kafka 源消息摘要。"""
 
     schema_version: Literal["v2"]
     source_topic: str = Field(min_length=1)
@@ -206,7 +206,7 @@ class OversizeDeadLetter(ContractModel):
 
 
 def normalize_level(value: object) -> Level:
-    """Normalize a caller-provided level value."""
+    """规范化调用方提供的日志级别。"""
     if isinstance(value, Level):
         return value
     raw = str(value or Level.INFO.value).strip().upper()
@@ -221,7 +221,7 @@ def normalize_level(value: object) -> Level:
 
 
 def should_emit_level(level: object, minimum_level: object) -> bool:
-    """Return whether level meets a minimum severity."""
+    """判断日志级别是否达到最低严重级别。"""
     return (
         _LEVEL_ORDER[normalize_level(level)]
         >= _LEVEL_ORDER[normalize_level(minimum_level)]

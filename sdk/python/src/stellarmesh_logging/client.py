@@ -1,4 +1,4 @@
-"""Non-blocking batch client for the Stellarmesh logging ingester."""
+"""面向 Stellarmesh 日志接收服务的非阻塞批量客户端。"""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class _ClientState(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ClientConfig:
-    """Configuration for an asynchronous logging client."""
+    """异步日志客户端配置。"""
 
     base_url: str
     token: str
@@ -75,7 +75,7 @@ class _QueuedEvent:
 
 
 class Client:
-    """Queue events locally and deliver bounded HTTP batches from a worker thread."""
+    """在本地排队事件，并由工作线程通过有界 HTTP 批次发送。"""
 
     def __init__(
         self,
@@ -122,7 +122,7 @@ class Client:
         timestamp: datetime | None = None,
         service: str | None = None,
     ) -> bool:
-        """Build and queue one event without waiting for remote delivery."""
+        """构造并入队一个事件，不等待远端投递。"""
         try:
             normalized_level = normalize_level(level)
             resolved_trace_id = trace_id
@@ -137,13 +137,13 @@ class Client:
                 trace_id=resolved_trace_id,
                 metadata=metadata or {},
             )
-        except Exception as exc:  # noqa: BLE001 - providers are isolated.
+        except Exception as exc:  # noqa: BLE001 - provider 异常需要隔离。
             self._drop(None, exc)
             return False
         return self.enqueue(event)
 
     def enqueue(self, event: LogEvent) -> bool:
-        """Queue an already validated event."""
+        """将已校验的事件加入队列。"""
         if not self.config.enabled or not should_emit_level(
             event.level, self._minimum_level
         ):
@@ -151,7 +151,7 @@ class Client:
         try:
             snapshot = event.model_copy(deep=True)
             event_bytes = len(encode_event(snapshot))
-        except Exception as exc:  # noqa: BLE001 - serialization is isolated.
+        except Exception as exc:  # noqa: BLE001 - 序列化异常需要隔离。
             self._drop(event, exc)
             return False
         if event_bytes > MAX_EVENT_JSON_BYTES:
@@ -188,7 +188,7 @@ class Client:
         return True
 
     def close(self, *, timeout: float = 2.0) -> bool:
-        """Stop accepting events and wait for queued delivery to finish."""
+        """停止接收事件，并等待队列中的投递完成。"""
         worker = self._request_close()
         if worker is None or worker is threading.current_thread():
             return self._state_snapshot() is not _ClientState.FAILED
@@ -201,7 +201,7 @@ class Client:
         return self._state_snapshot() is _ClientState.CLOSED
 
     async def aclose(self, *, timeout: float = 2.0) -> bool:
-        """Drain without blocking an asyncio event loop."""
+        """在不阻塞 asyncio 事件循环的情况下排空队列。"""
         worker = self._request_close()
         if worker is None or worker is threading.current_thread():
             return self._state_snapshot() is not _ClientState.FAILED
@@ -246,7 +246,7 @@ class Client:
         failure: Exception | None = None
         try:
             self._run_worker()
-        except Exception as exc:  # noqa: BLE001 - isolate logging worker failures.
+        except Exception as exc:  # noqa: BLE001 - 隔离日志工作线程故障。
             failure = exc
             self._fallback_warning(f"logging worker failed: {exc}")
         finally:
@@ -301,7 +301,7 @@ class Client:
     def _send_batch(self, events: list[LogEvent]) -> bool:
         try:
             payload = self._transport.encode(events)
-        except Exception as exc:  # noqa: BLE001 - isolate serialization failures.
+        except Exception as exc:  # noqa: BLE001 - 隔离序列化故障。
             for event in events:
                 self._drop(event, exc)
             return False
@@ -321,7 +321,7 @@ class Client:
         for attempt in range(1, self._max_attempts + 1):
             try:
                 self._transport.send(events, payload)
-            except Exception as exc:  # noqa: BLE001 - logging must not break callers.
+            except Exception as exc:  # noqa: BLE001 - 日志不能中断调用方。
                 last_error = exc
                 if not _retryable_error(exc) or attempt == self._max_attempts:
                     break
@@ -354,7 +354,7 @@ class Client:
             return
         try:
             handler(event, exc)
-        except Exception as callback_error:  # noqa: BLE001 - callbacks are isolated.
+        except Exception as callback_error:  # noqa: BLE001 - callback 异常需要隔离。
             self._fallback_warning(f"logging drop handler failed: {callback_error}")
 
     def _fallback_warning(self, message: str) -> None:
@@ -392,7 +392,7 @@ class Client:
 def _validate_config(config: ClientConfig) -> None:
     try:
         url = httpx.URL(config.base_url)
-    except Exception as exc:  # noqa: BLE001 - normalize configuration errors.
+    except Exception as exc:  # noqa: BLE001 - 统一配置错误。
         raise ValueError("logging base URL is invalid") from exc
     if url.scheme not in {"http", "https"} or not url.host:
         raise ValueError("logging base URL must be an absolute HTTP or HTTPS URL")

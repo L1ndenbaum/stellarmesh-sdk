@@ -1,4 +1,4 @@
-// Package application implements ingestion, batching, and sink fan-out.
+// Package application 实现日志接收、批处理和 sink 扇出。
 package application
 
 import (
@@ -21,12 +21,12 @@ var (
 	ErrDurabilityUnavailable = errors.New("logging durability is unavailable")
 )
 
-// BatchSink writes a flushed batch to a local sink.
+// BatchSink 将已刷新的批次写入本地 sink。
 type BatchSink interface {
 	WriteBatch(context.Context, []sharedlogging.Event) error
 }
 
-// Publisher forwards accepted events to the event bus.
+// Publisher 将已接受事件转发到事件总线。
 type Publisher interface {
 	Publish(context.Context, []sharedlogging.Event) error
 }
@@ -35,7 +35,7 @@ type saturationReporter interface {
 	Saturated() bool
 }
 
-// Observer receives bounded ingestion metrics and readiness transitions.
+// Observer 接收有界接收指标和就绪状态变化。
 type Observer interface {
 	ObserveIngest(result, reason string, count int)
 	SetQueueDepth(depth int)
@@ -44,7 +44,7 @@ type Observer interface {
 	SetReady(ready bool)
 }
 
-// Config controls queue and batch behavior.
+// Config 控制队列和批处理行为。
 type Config struct {
 	FlushInterval       time.Duration
 	PublishTimeout      time.Duration
@@ -56,7 +56,7 @@ type Config struct {
 	Observer            Observer
 }
 
-// Service validates, queues, and flushes log events.
+// Service 校验、排队并刷新日志事件。
 type Service struct {
 	queue        chan queuedBatch
 	sinks        []BatchSink
@@ -78,7 +78,7 @@ type queuedBatch struct {
 	result chan error
 }
 
-// New creates an ingestion service.
+// New 创建日志接收服务。
 func New(config Config, sinks []BatchSink, fallback BatchSink, publisher Publisher) *Service {
 	if config.FlushInterval <= 0 {
 		config.FlushInterval = 500 * time.Millisecond
@@ -107,7 +107,7 @@ func New(config Config, sinks []BatchSink, fallback BatchSink, publisher Publish
 	}
 }
 
-// Start launches the queue worker once.
+// Start 启动一次队列工作线程。
 func (service *Service) Start(ctx context.Context) {
 	service.startOnce.Do(func() {
 		workerCtx, cancel := context.WithCancel(ctx)
@@ -118,7 +118,7 @@ func (service *Service) Start(ctx context.Context) {
 	})
 }
 
-// Ingest validates and queues events, then waits for Kafka or fallback spool durability.
+// Ingest 校验并排队事件，然后等待 Kafka 或 fallback spool 持久确认。
 func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event) error {
 	if len(events) == 0 {
 		service.observeIngest("rejected", "empty", 1)
@@ -198,7 +198,7 @@ func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event
 	}
 }
 
-// Shutdown stops intake and drains queued batches.
+// Shutdown 停止接收并排空队列中的批次。
 func (service *Service) Shutdown(ctx context.Context) error {
 	defer service.setReady(false)
 	service.Start(context.Background())

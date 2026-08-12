@@ -15,7 +15,7 @@ import (
 	"github.com/segmentio/kafka-go/sasl/scram"
 )
 
-// SecurityProtocol selects Kafka transport encryption and authentication.
+// SecurityProtocol 选择 Kafka 传输加密和认证方式。
 type SecurityProtocol string
 
 const (
@@ -25,7 +25,7 @@ const (
 	SecurityProtocolSASLTLS       SecurityProtocol = "SASL_TLS"
 )
 
-// SASLMechanism selects a supported Kafka SASL exchange.
+// SASLMechanism 选择支持的 Kafka SASL 交互机制。
 type SASLMechanism string
 
 const (
@@ -34,7 +34,7 @@ const (
 	SASLMechanismSCRAMSHA512 SASLMechanism = "SCRAM-SHA-512"
 )
 
-// ConnectionConfig contains reusable Kafka client security settings.
+// ConnectionConfig 包含可复用的 Kafka 客户端安全设置。
 type ConnectionConfig struct {
 	ClientID         string
 	SecurityProtocol SecurityProtocol
@@ -48,7 +48,7 @@ type ConnectionConfig struct {
 	DialTimeout      time.Duration
 }
 
-// Connection owns immutable TLS and SASL settings for Kafka clients.
+// Connection 持有 Kafka 客户端不可变的 TLS 和 SASL 设置。
 type Connection struct {
 	clientID    string
 	dialTimeout time.Duration
@@ -56,7 +56,7 @@ type Connection struct {
 	mechanism   sasl.Mechanism
 }
 
-// NewConnection validates security settings and loads any referenced certificates.
+// NewConnection 校验安全设置并加载所有引用的证书。
 func NewConnection(config ConnectionConfig) (*Connection, error) {
 	protocol := config.SecurityProtocol
 	if protocol == "" {
@@ -103,7 +103,7 @@ func NewConnection(config ConnectionConfig) (*Connection, error) {
 	}, nil
 }
 
-// Dialer creates a kafka-go dialer for readers and administrative checks.
+// Dialer 为 reader 和管理检查创建 kafka-go dialer。
 func (connection *Connection) Dialer() *segmentio.Dialer {
 	return &segmentio.Dialer{
 		ClientID: connection.clientID, Timeout: connection.dialTimeout,
@@ -111,7 +111,7 @@ func (connection *Connection) Dialer() *segmentio.Dialer {
 	}
 }
 
-// Transport creates an independently owned kafka-go writer transport.
+// Transport 创建独立持有的 kafka-go writer 传输层。
 func (connection *Connection) Transport() *segmentio.Transport {
 	return &segmentio.Transport{
 		ClientID: connection.clientID, DialTimeout: connection.dialTimeout,

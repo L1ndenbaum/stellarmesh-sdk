@@ -7,17 +7,17 @@ import (
 	"time"
 )
 
-// Source fetches one source message at a time.
+// Source 每次拉取一条源消息。
 type Source interface {
 	FetchMessage(context.Context) (Message, error)
 }
 
-// BatchProcessor durably processes and commits source messages.
+// BatchProcessor 持久处理并提交源消息。
 type BatchProcessor interface {
 	ProcessBatch(context.Context, []Message) error
 }
 
-// ConsumerConfig controls batching, retry, and shutdown drain behavior.
+// ConsumerConfig 控制批处理、重试和关闭排空行为。
 type ConsumerConfig struct {
 	BatchSize       int
 	BatchMaxBytes   int64
@@ -28,7 +28,7 @@ type ConsumerConfig struct {
 	OnError         func(error)
 }
 
-// Run consumes until cancellation and retains failed batches for retry.
+// Run 持续消费直到取消，并保留失败批次以供重试。
 func Run(ctx context.Context, source Source, processor BatchProcessor, config ConsumerConfig) error {
 	if source == nil || processor == nil {
 		return errors.New("Kafka source and batch processor are required")

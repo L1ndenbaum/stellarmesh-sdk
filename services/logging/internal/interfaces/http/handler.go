@@ -1,4 +1,4 @@
-// Package httpapi exposes the logging v1 HTTP API.
+// Package httpapi 暴露日志 v1 HTTP API。
 package httpapi
 
 import (
@@ -11,39 +11,39 @@ import (
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/application"
 )
 
-// Ingestor is the application boundary used by HTTP handlers.
+// Ingestor 是 HTTP handler 使用的应用层边界。
 type Ingestor interface {
 	Ingest(context.Context, []sharedlogging.Event) error
 }
 
-// Authenticator resolves one service identity from an opaque token.
+// Authenticator 从不透明 token 解析服务身份。
 type Authenticator interface {
 	Authenticate(string) (string, bool)
 }
 
-// Readiness reports whether ingestion remains durable.
+// Readiness 报告日志接收是否仍能保证持久性。
 type Readiness interface {
 	Ready() bool
 }
 
-// Handler maps v1 HTTP requests to the ingestion application.
+// Handler 将 v1 HTTP 请求映射到日志接收应用。
 type Handler struct {
 	ingestor      Ingestor
 	authenticator Authenticator
 	readiness     Readiness
 }
 
-// NewHandler creates a logging HTTP handler.
+// NewHandler 创建日志 HTTP handler。
 func NewHandler(ingestor Ingestor, authenticator Authenticator, readiness Readiness) *Handler {
 	return &Handler{ingestor: ingestor, authenticator: authenticator, readiness: readiness}
 }
 
-// HandleHealth reports process liveness.
+// HandleHealth 报告进程存活状态。
 func (handler *Handler) HandleHealth(w http.ResponseWriter, _ *http.Request) {
 	sharedhttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// HandleReady reports whether accepted events can still be delivered or durably buffered.
+// HandleReady 报告已接受事件是否仍可投递或持久缓冲。
 func (handler *Handler) HandleReady(w http.ResponseWriter, _ *http.Request) {
 	if handler.readiness == nil || !handler.readiness.Ready() {
 		sharedhttp.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
@@ -52,7 +52,7 @@ func (handler *Handler) HandleReady(w http.ResponseWriter, _ *http.Request) {
 	sharedhttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
-// HandleLogEvent validates and queues one event.
+// HandleLogEvent 校验并排队一个事件。
 func (handler *Handler) HandleLogEvent(w http.ResponseWriter, r *http.Request) {
 	var request ingestRequest
 	if !handler.decode(w, r, &request) {
@@ -68,7 +68,7 @@ func (handler *Handler) HandleLogEvent(w http.ResponseWriter, r *http.Request) {
 	sharedhttp.WriteJSON(w, http.StatusAccepted, sharedlogging.IngestResult{Accepted: 1})
 }
 
-// HandleLogEventBatch validates and queues a batch.
+// HandleLogEventBatch 校验并排队一个批次。
 func (handler *Handler) HandleLogEventBatch(w http.ResponseWriter, r *http.Request) {
 	var request batchIngestRequest
 	if !handler.decode(w, r, &request) {

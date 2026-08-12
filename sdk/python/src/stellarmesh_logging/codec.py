@@ -1,4 +1,4 @@
-"""JSON codec for canonical logging events."""
+"""规范日志事件的 JSON 编解码器。"""
 
 from __future__ import annotations
 
@@ -25,13 +25,13 @@ _CANONICAL_TIMESTAMP = re.compile(
 
 
 def encode_event(event: LogEvent | dict[str, Any]) -> bytes:
-    """Encode one event as compact UTF-8 JSON."""
+    """将一个事件编码为紧凑的 UTF-8 JSON。"""
     payload = event.model_dump(mode="json") if isinstance(event, LogEvent) else event
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
 
 
 def decode_event(payload: bytes | str) -> LogEvent:
-    """Decode and validate one event JSON object."""
+    """解码并校验一个事件 JSON 对象。"""
     raw = payload.decode() if isinstance(payload, bytes) else payload
     data = json.loads(raw, parse_constant=_reject_json_constant)
     if not isinstance(data, dict):

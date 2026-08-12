@@ -7,16 +7,16 @@ import (
 	"net/http"
 )
 
-// DefaultJSONBodyLimit is the shared default maximum JSON request size.
+// DefaultJSONBodyLimit 是共享的默认 JSON 请求大小上限。
 const DefaultJSONBodyLimit int64 = 1 << 20
 
-// DecodeJSONOptions controls bounded JSON decoding.
+// DecodeJSONOptions 控制有界 JSON 解码。
 type DecodeJSONOptions struct {
 	MaxBytes              int64
 	DisallowUnknownFields bool
 }
 
-// DecodeJSON decodes a bounded JSON body and writes an error response on failure.
+// DecodeJSON 解码有大小限制的 JSON 请求体，并在失败时写入错误响应。
 func DecodeJSON(w http.ResponseWriter, r *http.Request, target any, maxBytes int64) bool {
 	if err := DecodeJSONWithOptions(w, r, target, DecodeJSONOptions{MaxBytes: maxBytes}); err != nil {
 		var maxBytesError *http.MaxBytesError
@@ -30,7 +30,7 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, target any, maxBytes int
 	return true
 }
 
-// DecodeJSONWithOptions returns decoding errors to the caller.
+// DecodeJSONWithOptions 将解码错误返回给调用方。
 func DecodeJSONWithOptions(w http.ResponseWriter, r *http.Request, target any, options DecodeJSONOptions) error {
 	maxBytes := options.MaxBytes
 	if maxBytes <= 0 {
@@ -55,7 +55,7 @@ func DecodeJSONWithOptions(w http.ResponseWriter, r *http.Request, target any, o
 	return nil
 }
 
-// DecodeJSONStrict rejects unknown fields in addition to enforcing the body limit.
+// DecodeJSONStrict 在限制请求体大小的同时拒绝未知字段。
 func DecodeJSONStrict(w http.ResponseWriter, r *http.Request, target any, maxBytes int64) error {
 	return DecodeJSONWithOptions(w, r, target, DecodeJSONOptions{
 		MaxBytes:              maxBytes,

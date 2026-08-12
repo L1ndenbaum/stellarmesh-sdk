@@ -16,7 +16,7 @@ import (
 	sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
 )
 
-// ReplayOnce replays priority and regular segments independently, quarantining permanent failures.
+// ReplayOnce 独立回放 priority 和 regular 分段，并隔离永久失败记录。
 func (store *KafkaFallbackStore) ReplayOnce(ctx context.Context, publisher Publisher) error {
 	if publisher == nil {
 		return nil
@@ -28,7 +28,7 @@ func (store *KafkaFallbackStore) ReplayOnce(ctx context.Context, publisher Publi
 	return errors.Join(priorityErr, regularErr)
 }
 
-// StartReplay periodically retries fallback delivery and reports failures or released space.
+// StartReplay 定期重试 fallback 投递，并报告失败或已释放空间。
 func (store *KafkaFallbackStore) StartReplay(
 	ctx context.Context,
 	publisher CheckedPublisher,

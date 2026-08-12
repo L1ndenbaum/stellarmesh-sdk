@@ -1,4 +1,4 @@
-// Package filesink provides bounded segmented Kafka fallback replay.
+// Package filesink 提供有容量上限的 Kafka fallback 分段与回放。
 package filesink
 
 import (
@@ -20,7 +20,7 @@ const (
 	defaultSegmentBytes   = int64(16 << 20)
 	defaultReplayBatch    = 128
 	defaultMaxRecordBytes = sharedlogging.MaxEventJSONBytesV1 + 1
-	// Covers the bounded reason, source path, timestamp and JSON envelope written beside one quarantined artifact.
+	// 覆盖隔离产物旁保存的有界原因、源路径、时间戳和 JSON envelope。
 	quarantineMetadataReserveBytes = int64(64 << 10)
 	segmentSuffix                  = ".ready.jsonl"
 	stagingDirectory               = ".staging"
@@ -29,33 +29,33 @@ const (
 )
 
 var (
-	// ErrSpoolFull indicates that accepting another batch would exceed the disk budget.
+	// ErrSpoolFull 表示再接收一个批次将超过磁盘预算。
 	ErrSpoolFull = errors.New("logging fallback spool is full")
-	// ErrRecordTooLarge indicates a corrupt or unsupported spool record.
+	// ErrRecordTooLarge 表示 spool 记录已损坏或不受支持。
 	ErrRecordTooLarge = errors.New("logging fallback spool record is too large")
-	// ErrCorruptSegment identifies a segment that cannot be decoded safely.
+	// ErrCorruptSegment 标识无法安全解码的分段。
 	ErrCorruptSegment = errors.New("logging fallback spool segment is corrupt")
 )
 
-// Publisher replays recovered events to the event bus.
+// Publisher 将恢复的事件回放到事件总线。
 type Publisher interface {
 	Publish(context.Context, []sharedlogging.Event) error
 }
 
-// CheckedPublisher verifies Kafka availability before replaying committed segments.
+// CheckedPublisher 在回放已提交分段前校验 Kafka 可用性。
 type CheckedPublisher interface {
 	Publisher
 	Check(context.Context) error
 }
 
-// Observer receives bounded spool metrics.
+// Observer 接收有界 spool 指标。
 type Observer interface {
 	SetSpoolBytes(priority string, size int64)
 	ObserveSpoolWrite(priority, result string, count int)
 	ObserveSpoolReplay(priority, result string, count int)
 }
 
-// Config controls segmented fallback storage.
+// Config 控制分段 fallback 存储。
 type Config struct {
 	RootDir                 string
 	MaxBytes                int64
@@ -66,7 +66,7 @@ type Config struct {
 	Observer                Observer
 }
 
-// KafkaFallbackStore separates regular and error/audit events into atomic segments.
+// KafkaFallbackStore 将普通事件和 error/audit 事件拆分到原子分段中。
 type KafkaFallbackStore struct {
 	rootDir                 string
 	maxBytes                int64
@@ -86,7 +86,7 @@ type KafkaFallbackStore struct {
 	syncDir                 func(string) error
 }
 
-// NewKafkaFallbackStore validates directories and recovers existing segment sizes.
+// NewKafkaFallbackStore 校验目录并恢复既有分段大小。
 func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
 	if strings.TrimSpace(config.RootDir) == "" {
 		return nil, errors.New("logging fallback spool directory is required")
@@ -135,7 +135,7 @@ func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
 	return store, nil
 }
 
-// WriteBatch atomically segments events that failed Kafka publication.
+// WriteBatch 将 Kafka 发布失败的事件原子写入分段。
 func (store *KafkaFallbackStore) WriteBatch(ctx context.Context, events []sharedlogging.Event) error {
 	if len(events) == 0 {
 		return nil
@@ -178,21 +178,21 @@ func (store *KafkaFallbackStore) WriteBatch(ctx context.Context, events []shared
 	return nil
 }
 
-// Saturated reports whether retained segments have exhausted the configured budget.
+// Saturated 判断保留的分段是否已耗尽配置预算。
 func (store *KafkaFallbackStore) Saturated() bool {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return store.budgetedBytesLocked() >= store.maxBytes
 }
 
-// Bytes reports retained regular and priority bytes.
+// Bytes 报告保留的 regular 和 priority 字节数。
 func (store *KafkaFallbackStore) Bytes() (int64, int64) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	return store.regularBytes, store.priorityBytes
 }
 
-// QuarantineBytes reports bytes retained for operator inspection.
+// QuarantineBytes 报告为运维检查保留的字节数。
 func (store *KafkaFallbackStore) QuarantineBytes() int64 {
 	store.mu.Lock()
 	defer store.mu.Unlock()

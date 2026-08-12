@@ -1,4 +1,4 @@
-// Package infrastructure writes canonical events to ClickHouse.
+// Package infrastructure 将规范事件写入 ClickHouse。
 package infrastructure
 
 import (
@@ -19,7 +19,7 @@ import (
 
 const tableName = "log_events"
 
-// WriterConfig configures ClickHouse HTTP JSONEachRow insertion.
+// WriterConfig 配置 ClickHouse HTTP JSONEachRow 写入。
 type WriterConfig struct {
 	BaseURL  string
 	Database string
@@ -30,7 +30,7 @@ type WriterConfig struct {
 	Now      func() time.Time
 }
 
-// Writer inserts canonical events into the fixed log_events table.
+// Writer 将规范事件写入固定的 log_events 表。
 type Writer struct {
 	baseURL  string
 	database string
@@ -40,7 +40,7 @@ type Writer struct {
 	now      func() time.Time
 }
 
-// NewWriter creates a ClickHouse HTTP writer.
+// NewWriter 创建 ClickHouse HTTP writer。
 func NewWriter(config WriterConfig) (*Writer, error) {
 	parsed, err := url.Parse(strings.TrimSpace(config.BaseURL))
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
@@ -73,7 +73,7 @@ func NewWriter(config WriterConfig) (*Writer, error) {
 	}, nil
 }
 
-// Check verifies ClickHouse connectivity and runtime credentials without requiring DDL access.
+// Check 在无需 DDL 权限的情况下校验 ClickHouse 连通性和运行时凭据。
 func (writer *Writer) Check(ctx context.Context) error {
 	requestURL, err := writer.queryURL("SELECT 1")
 	if err != nil {
@@ -96,7 +96,7 @@ func (writer *Writer) Check(ctx context.Context) error {
 	return err
 }
 
-// InsertEvents inserts one JSONEachRow batch.
+// InsertEvents 写入一个 JSONEachRow 批次。
 func (writer *Writer) InsertEvents(ctx context.Context, events []sharedlogging.Event) error {
 	if len(events) == 0 {
 		return nil

@@ -7,15 +7,15 @@ import (
 	"time"
 )
 
-// Emitter accepts one event without blocking on remote delivery.
+// Emitter 接收一个事件，不阻塞等待远端投递。
 type Emitter interface {
 	Emit(context.Context, Event) bool
 }
 
-// TraceIDProvider resolves a trace id from caller-owned context state.
+// TraceIDProvider 从调用方管理的上下文状态中解析 trace id。
 type TraceIDProvider func(context.Context) string
 
-// LoggerConfig configures an application-facing logger.
+// LoggerConfig 配置面向应用的日志记录器。
 type LoggerConfig struct {
 	Service         string
 	Emitter         Emitter
@@ -23,7 +23,7 @@ type LoggerConfig struct {
 	TraceIDProvider TraceIDProvider
 }
 
-// Logger builds structured events for one service.
+// Logger 为单个服务构造结构化事件。
 type Logger struct {
 	service         string
 	emitter         Emitter
@@ -31,7 +31,7 @@ type Logger struct {
 	traceIDProvider TraceIDProvider
 }
 
-// NewLogger creates a structured logger facade.
+// NewLogger 创建结构化日志门面。
 func NewLogger(config LoggerConfig) (*Logger, error) {
 	if strings.TrimSpace(config.Service) == "" {
 		return nil, errors.New("logging service name is required")

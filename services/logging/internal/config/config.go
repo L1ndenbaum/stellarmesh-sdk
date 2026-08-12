@@ -1,4 +1,4 @@
-// Package config loads logging ingester configuration.
+// Package config 加载日志接收服务配置。
 package config
 
 import (
@@ -23,7 +23,7 @@ const (
 	maxRuntimeDuration     = 24 * time.Hour
 )
 
-// Config contains the logging ingester runtime settings.
+// Config 包含日志接收服务运行时设置。
 type Config struct {
 	Addr                 string
 	AuthFile             string
@@ -51,7 +51,7 @@ type Config struct {
 	SpoolReplayBatchSize int
 }
 
-// Load reads canonical STELLARMESH_LOGGING_* environment variables.
+// Load 读取规范的 STELLARMESH_LOGGING_* 环境变量。
 func Load() (Config, error) {
 	loader := envconfig.NewStrictLoader()
 	dataDir := envconfig.String("STELLARMESH_LOGGING_DATA_DIR", "/var/lib/stellarmesh-logging")
@@ -144,7 +144,7 @@ func kafkaConnectionConfig(clientID string) sharedkafka.ConnectionConfig {
 	}
 }
 
-// HTTPServerConfig returns bounded HTTP server settings.
+// HTTPServerConfig 返回设置了边界的 HTTP 服务配置。
 func (cfg Config) HTTPServerConfig() httpserver.Config {
 	return httpserver.Config{
 		Addr: cfg.Addr, ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout,

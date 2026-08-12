@@ -41,10 +41,10 @@ var (
 	ErrEventTooLarge = errors.New("logging event exceeds the client body limit")
 )
 
-// DropHandler observes events that could not be queued or delivered.
+// DropHandler 接收无法入队或投递的事件。
 type DropHandler func(Event, error)
 
-// ClientConfig controls asynchronous HTTP delivery.
+// ClientConfig 控制异步 HTTP 投递。
 type ClientConfig struct {
 	BaseURL        string
 	Token          string
@@ -62,7 +62,7 @@ type ClientConfig struct {
 	FallbackWriter io.Writer
 }
 
-// Client asynchronously delivers v1 log batches.
+// Client 异步投递 v1 日志批次。
 type Client struct {
 	baseURL             string
 	token               string
@@ -94,7 +94,7 @@ type queuedEvent struct {
 	bytes int64
 }
 
-// NewClient creates and starts an asynchronous logging client.
+// NewClient 创建并启动异步日志客户端。
 func NewClient(config ClientConfig) (*Client, error) {
 	if err := validateClientConfig(config); err != nil {
 		return nil, err
@@ -187,7 +187,7 @@ func validateClientConfig(config ClientConfig) error {
 	return nil
 }
 
-// Emit normalizes and queues one event without waiting for network delivery.
+// Emit 规范化并入队一个事件，不等待网络投递。
 func (client *Client) Emit(_ context.Context, event Event) bool {
 	if event.EventID == "" {
 		id, err := NewEventID()
@@ -242,7 +242,7 @@ func (client *Client) Emit(_ context.Context, event Event) bool {
 	}
 }
 
-// Close rejects new events and waits for queued batches to drain.
+// Close 拒绝新事件并等待队列中的批次排空。
 func (client *Client) Close(ctx context.Context) error {
 	client.closeOnce.Do(func() {
 		client.mu.Lock()

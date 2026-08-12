@@ -1,4 +1,4 @@
-// Package console formats accepted events for container logs.
+// Package console 为容器日志格式化已接受事件。
 package console
 
 import (
@@ -10,13 +10,13 @@ import (
 	sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
 )
 
-// Sink writes a human-readable line for every accepted event.
+// Sink 为每个已接受事件写入一行可读文本。
 type Sink struct {
 	Writer io.Writer
 	Color  bool
 }
 
-// WriteBatch formats a batch to the configured writer.
+// WriteBatch 将批次格式化到配置的 writer。
 func (sink *Sink) WriteBatch(_ context.Context, events []sharedlogging.Event) error {
 	for _, event := range events {
 		if _, err := fmt.Fprintln(sink.Writer, Format(event, sink.Color)); err != nil {
@@ -26,7 +26,7 @@ func (sink *Sink) WriteBatch(_ context.Context, events []sharedlogging.Event) er
 	return nil
 }
 
-// Format builds one deterministic console line.
+// Format 构造一行确定性的控制台文本。
 func Format(event sharedlogging.Event, color bool) string {
 	level := string(event.Level)
 	if color {

@@ -1,4 +1,4 @@
-// Package headers defines trusted service-to-service HTTP headers.
+// Package headers 定义可信服务间 HTTP 请求头。
 package headers
 
 import (
@@ -15,7 +15,7 @@ const (
 	HeaderXRealIP       = "X-Real-IP"
 )
 
-// ClientIP extracts the caller IP from trusted proxy headers or RemoteAddr.
+// ClientIP 从可信代理请求头或 RemoteAddr 中提取调用方 IP。
 func ClientIP(r *http.Request) string {
 	if forwardedFor := strings.TrimSpace(r.Header.Get(HeaderXForwardedFor)); forwardedFor != "" {
 		parts := strings.Split(forwardedFor, ",")

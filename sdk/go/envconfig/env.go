@@ -1,4 +1,4 @@
-// Package envconfig provides small, dependency-free environment parsers.
+// Package envconfig 提供小型且无外部依赖的环境变量解析器。
 package envconfig
 
 import (
@@ -9,50 +9,50 @@ import (
 	"time"
 )
 
-// StrictLoader collects the first invalid environment value while returning fallbacks for construction.
+// StrictLoader 记录首个非法环境变量值，同时返回回退值以完成配置构造。
 type StrictLoader struct {
 	err error
 }
 
-// NewStrictLoader creates an environment loader that rejects explicitly invalid values.
+// NewStrictLoader 创建一个拒绝显式非法值的环境变量加载器。
 func NewStrictLoader() *StrictLoader {
 	return &StrictLoader{}
 }
 
-// Err returns the first strict parsing failure.
+// Err 返回首个严格解析错误。
 func (loader *StrictLoader) Err() error {
 	return loader.err
 }
 
-// Duration parses a required-positive duration and records invalid explicit values.
+// Duration 解析必须为正数的时长，并记录显式非法值。
 func (loader *StrictLoader) Duration(key string, fallback time.Duration) time.Duration {
 	value, err := DurationStrict(key, fallback)
 	loader.record(err)
 	return value
 }
 
-// Int parses an integer and records invalid explicit values.
+// Int 解析整数，并记录显式非法值。
 func (loader *StrictLoader) Int(key string, fallback int) int {
 	value, err := IntStrict(key, fallback)
 	loader.record(err)
 	return value
 }
 
-// ByteSize parses a required-positive byte size and records invalid explicit values.
+// ByteSize 解析必须为正数的字节大小，并记录显式非法值。
 func (loader *StrictLoader) ByteSize(key string, fallback int64) int64 {
 	value, err := ByteSizeStrict(key, fallback)
 	loader.record(err)
 	return value
 }
 
-// Bool parses a boolean and records invalid explicit values.
+// Bool 解析布尔值，并记录显式非法值。
 func (loader *StrictLoader) Bool(key string, fallback bool) bool {
 	value, err := BoolStrict(key, fallback)
 	loader.record(err)
 	return value
 }
 
-// CSV parses a non-empty comma-separated list and records invalid explicit values.
+// CSV 解析非空的逗号分隔列表，并记录显式非法值。
 func (loader *StrictLoader) CSV(key, fallback string) []string {
 	value, err := CSVStrict(key, fallback)
 	loader.record(err)
@@ -65,7 +65,7 @@ func (loader *StrictLoader) record(err error) {
 	}
 }
 
-// String returns a trimmed environment value or fallback when it is unset or empty.
+// String 返回去除首尾空白的环境变量值；未设置或为空时返回回退值。
 func String(key, fallback string) string {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -74,13 +74,13 @@ func String(key, fallback string) string {
 	return value
 }
 
-// RequiredString returns a trimmed environment value and whether it was present.
+// RequiredString 返回去除首尾空白的环境变量值以及它是否存在。
 func RequiredString(key string) (string, bool) {
 	value := strings.TrimSpace(os.Getenv(key))
 	return value, value != ""
 }
 
-// Duration parses a Go duration or a positive number of seconds.
+// Duration 解析 Go 时长或以秒表示的正数。
 func Duration(key string, fallback time.Duration) time.Duration {
 	parsed, err := DurationStrict(key, fallback)
 	if err == nil {
@@ -89,7 +89,7 @@ func Duration(key string, fallback time.Duration) time.Duration {
 	return fallback
 }
 
-// DurationStrict parses a Go duration or positive integer seconds and rejects invalid explicit values.
+// DurationStrict 解析 Go 时长或正整数秒，并拒绝显式非法值。
 func DurationStrict(key string, fallback time.Duration) (time.Duration, error) {
 	value, exists := os.LookupEnv(key)
 	value = strings.TrimSpace(value)
@@ -105,7 +105,7 @@ func DurationStrict(key string, fallback time.Duration) (time.Duration, error) {
 	return fallback, fmt.Errorf("%s must be a positive duration or integer seconds", key)
 }
 
-// Int parses an integer environment value or returns fallback.
+// Int 解析整数环境变量值，失败时返回回退值。
 func Int(key string, fallback int) int {
 	parsed, err := IntStrict(key, fallback)
 	if err != nil {
@@ -114,7 +114,7 @@ func Int(key string, fallback int) int {
 	return parsed
 }
 
-// IntStrict parses an integer and rejects invalid explicit values.
+// IntStrict 解析整数，并拒绝显式非法值。
 func IntStrict(key string, fallback int) (int, error) {
 	value, exists := os.LookupEnv(key)
 	value = strings.TrimSpace(value)
@@ -128,7 +128,7 @@ func IntStrict(key string, fallback int) (int, error) {
 	return parsed, nil
 }
 
-// Int64 parses a positive int64 environment value or returns fallback.
+// Int64 解析正 int64 环境变量值，失败时返回回退值。
 func Int64(key string, fallback int64) int64 {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
@@ -141,7 +141,7 @@ func Int64(key string, fallback int64) int64 {
 	return parsed
 }
 
-// ByteSize parses a positive integer with an optional B, KB, MB, GB, KiB, MiB, or GiB suffix.
+// ByteSize 解析正整数及可选的 B、KB、MB、GB、KiB、MiB 或 GiB 后缀。
 func ByteSize(key string, fallback int64) int64 {
 	parsed, err := ByteSizeStrict(key, fallback)
 	if err != nil {
@@ -150,7 +150,7 @@ func ByteSize(key string, fallback int64) int64 {
 	return parsed
 }
 
-// ByteSizeStrict parses a positive byte size and rejects invalid or overflowing explicit values.
+// ByteSizeStrict 解析正数字节大小，并拒绝非法或溢出的显式值。
 func ByteSizeStrict(key string, fallback int64) (int64, error) {
 	value, exists := os.LookupEnv(key)
 	value = strings.TrimSpace(value)
@@ -186,7 +186,7 @@ func ByteSizeStrict(key string, fallback int64) (int64, error) {
 	return parsed * multiplier, nil
 }
 
-// Bool parses common truthy values or returns fallback when unset.
+// Bool 解析常见布尔值，未设置时返回回退值。
 func Bool(key string, fallback bool) bool {
 	parsed, err := BoolStrict(key, fallback)
 	if err != nil {
@@ -195,7 +195,7 @@ func Bool(key string, fallback bool) bool {
 	return parsed
 }
 
-// BoolStrict parses common boolean values and rejects invalid explicit values.
+// BoolStrict 解析常见布尔值，并拒绝显式非法值。
 func BoolStrict(key string, fallback bool) (bool, error) {
 	value, exists := os.LookupEnv(key)
 	value = strings.TrimSpace(strings.ToLower(value))
@@ -212,12 +212,12 @@ func BoolStrict(key string, fallback bool) (bool, error) {
 	}
 }
 
-// CSV parses comma-separated non-empty values.
+// CSV 解析逗号分隔的非空值。
 func CSV(key, fallback string) []string {
 	return parseCSV(String(key, fallback))
 }
 
-// CSVStrict parses a non-empty comma-separated list and rejects an explicitly empty list.
+// CSVStrict 解析非空的逗号分隔列表，并拒绝显式空列表。
 func CSVStrict(key, fallback string) ([]string, error) {
 	raw, exists := os.LookupEnv(key)
 	if !exists {
@@ -230,7 +230,7 @@ func CSVStrict(key, fallback string) ([]string, error) {
 	return values, nil
 }
 
-// CSVAllowEmpty distinguishes an explicitly empty value from an unset value.
+// CSVAllowEmpty 区分显式空值和未设置值。
 func CSVAllowEmpty(key, fallback string) []string {
 	raw, exists := os.LookupEnv(key)
 	if !exists {

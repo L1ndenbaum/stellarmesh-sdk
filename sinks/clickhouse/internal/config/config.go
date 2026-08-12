@@ -1,4 +1,4 @@
-// Package config loads ClickHouse sink settings.
+// Package config 加载 ClickHouse sink 设置。
 package config
 
 import (
@@ -18,7 +18,7 @@ const (
 	maxWriterRuntimePeriod = 24 * time.Hour
 )
 
-// Config contains Kafka consumer and ClickHouse writer settings.
+// Config 包含 Kafka consumer 和 ClickHouse writer 设置。
 type Config struct {
 	KafkaBrokers          []string
 	KafkaTopic            string
@@ -39,7 +39,7 @@ type Config struct {
 	ObservabilityAddr     string
 }
 
-// Load reads canonical STELLARMESH_LOGGING_* environment variables.
+// Load 读取规范的 STELLARMESH_LOGGING_* 环境变量。
 func Load() (Config, error) {
 	loader := envconfig.NewStrictLoader()
 	cfg := Config{

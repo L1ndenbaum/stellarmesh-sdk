@@ -12,12 +12,12 @@ import (
 	segmentio "github.com/segmentio/kafka-go"
 )
 
-// KafkaSource adapts kafka-go fetches and commits to the application boundary.
+// KafkaSource 将 kafka-go 拉取和提交适配到应用层边界。
 type KafkaSource struct {
 	reader *segmentio.Reader
 }
 
-// NewKafkaSource creates a source over one consumer-group reader.
+// NewKafkaSource 基于 consumer group reader 创建消息源。
 func NewKafkaSource(reader *segmentio.Reader) (*KafkaSource, error) {
 	if reader == nil {
 		return nil, errors.New("Kafka reader is required")
@@ -25,7 +25,7 @@ func NewKafkaSource(reader *segmentio.Reader) (*KafkaSource, error) {
 	return &KafkaSource{reader: reader}, nil
 }
 
-// FetchMessage returns a transport-neutral copy with stable source coordinates.
+// FetchMessage 返回包含稳定来源坐标且与传输细节解耦的副本。
 func (source *KafkaSource) FetchMessage(ctx context.Context) (application.Message, error) {
 	message, err := source.reader.FetchMessage(ctx)
 	if err != nil {
@@ -38,7 +38,7 @@ func (source *KafkaSource) FetchMessage(ctx context.Context) (application.Messag
 	}, nil
 }
 
-// Commit advances offsets for every source message in the processed batch.
+// Commit 推进已处理批次中每条源消息的 offset。
 func (source *KafkaSource) Commit(ctx context.Context, messages []application.Message) error {
 	kafkaMessages := make([]segmentio.Message, 0, len(messages))
 	for _, message := range messages {
@@ -54,17 +54,17 @@ func (source *KafkaSource) Commit(ctx context.Context, messages []application.Me
 	return source.reader.CommitMessages(ctx, kafkaMessages...)
 }
 
-// Close releases the consumer-group reader.
+// Close 释放 consumer group reader。
 func (source *KafkaSource) Close() error {
 	return source.reader.Close()
 }
 
-// DeadLetterPublisher serializes canonical DLQ records to Kafka.
+// DeadLetterPublisher 将规范 DLQ 记录序列化到 Kafka。
 type DeadLetterPublisher struct {
 	base *sharedkafka.Publisher
 }
 
-// NewDeadLetterPublisher creates a required Kafka DLQ publisher.
+// NewDeadLetterPublisher 创建必需的 Kafka DLQ 发布器。
 func NewDeadLetterPublisher(
 	brokers []string,
 	topic string,
@@ -80,12 +80,12 @@ func NewDeadLetterPublisher(
 	return &DeadLetterPublisher{base: base}, nil
 }
 
-// Check verifies that the DLQ topic exists and is accessible.
+// Check 校验 DLQ topic 是否存在且可访问。
 func (publisher *DeadLetterPublisher) Check(ctx context.Context) error {
 	return publisher.base.Check(ctx)
 }
 
-// PublishDeadLetters writes canonical rejected-message records.
+// PublishDeadLetters 写入规范的拒绝消息记录。
 func (publisher *DeadLetterPublisher) PublishDeadLetters(
 	ctx context.Context,
 	records []sharedlogging.DeadLetter,
@@ -105,7 +105,7 @@ func (publisher *DeadLetterPublisher) PublishDeadLetters(
 	return publisher.base.Publish(ctx, messages)
 }
 
-// PublishOversizeDeadLetters writes compact v2 records without copying source content.
+// PublishOversizeDeadLetters 写入紧凑 v2 记录，不复制源内容。
 func (publisher *DeadLetterPublisher) PublishOversizeDeadLetters(
 	ctx context.Context,
 	records []sharedlogging.OversizeDeadLetter,
@@ -125,7 +125,7 @@ func (publisher *DeadLetterPublisher) PublishOversizeDeadLetters(
 	return publisher.base.Publish(ctx, messages)
 }
 
-// Close releases the DLQ producer.
+// Close 释放 DLQ producer。
 func (publisher *DeadLetterPublisher) Close() error {
 	return publisher.base.Close()
 }

@@ -1,4 +1,4 @@
-// Package kafka provides a transport-neutral publisher facade around kafka-go.
+// Package kafka 提供基于 kafka-go 且与传输细节解耦的发布门面。
 package kafka
 
 import (
@@ -11,7 +11,7 @@ import (
 	segmentio "github.com/segmentio/kafka-go"
 )
 
-// Config controls a Kafka publisher.
+// Config 控制 Kafka 发布器。
 type Config struct {
 	Brokers      []string
 	Topic        string
@@ -20,14 +20,14 @@ type Config struct {
 	Connection   ConnectionConfig
 }
 
-// Message is the serialized message accepted by Publisher.
+// Message 是 Publisher 接受的序列化消息。
 type Message struct {
 	Key   []byte
 	Value []byte
 	Time  time.Time
 }
 
-// Publisher owns a kafka-go writer.
+// Publisher 持有 kafka-go writer。
 type Publisher struct {
 	brokers   []string
 	topic     string
@@ -36,7 +36,7 @@ type Publisher struct {
 	transport *segmentio.Transport
 }
 
-// IsMessageTooLarge reports whether kafka-go or a broker rejected a serialized record by size.
+// IsMessageTooLarge 判断 kafka-go 或 broker 是否因大小原因拒绝序列化记录。
 func IsMessageTooLarge(err error) bool {
 	if err == nil {
 		return false
@@ -57,7 +57,7 @@ func IsMessageTooLarge(err error) bool {
 	return false
 }
 
-// NewPublisher creates a publisher using hash partitioning and all in-sync replica acknowledgement.
+// NewPublisher 创建使用哈希分区并要求全部同步副本确认的发布器。
 func NewPublisher(cfg Config) (*Publisher, error) {
 	if cfg.BatchBytes < 0 {
 		return nil, errors.New("Kafka publisher batch bytes must not be negative")
@@ -88,12 +88,12 @@ func NewPublisher(cfg Config) (*Publisher, error) {
 	}, nil
 }
 
-// Check verifies that a configured broker exposes the configured topic.
+// Check 校验配置的 broker 是否提供配置的 topic。
 func (publisher *Publisher) Check(ctx context.Context) error {
 	return CheckTopic(ctx, publisher.dialer, publisher.brokers, publisher.topic)
 }
 
-// CheckTopic verifies that a configured broker exposes one existing topic.
+// CheckTopic 校验配置的 broker 是否提供指定的既有 topic。
 func CheckTopic(ctx context.Context, dialer *segmentio.Dialer, brokers []string, topic string) error {
 	if len(brokers) == 0 {
 		return errors.New("kafka brokers are required")
@@ -136,7 +136,7 @@ func CheckTopic(ctx context.Context, dialer *segmentio.Dialer, brokers []string,
 	return fmt.Errorf("kafka startup check failed for topic %q: %s", topic, strings.Join(failures, "; "))
 }
 
-// Publish writes serialized messages to Kafka.
+// Publish 将序列化消息写入 Kafka。
 func (publisher *Publisher) Publish(ctx context.Context, messages []Message) error {
 	if len(messages) == 0 {
 		return nil
@@ -148,7 +148,7 @@ func (publisher *Publisher) Publish(ctx context.Context, messages []Message) err
 	return publisher.writer.WriteMessages(ctx, kafkaMessages...)
 }
 
-// Close releases the Kafka writer.
+// Close 释放 Kafka writer。
 func (publisher *Publisher) Close() error {
 	err := publisher.writer.Close()
 	publisher.transport.CloseIdleConnections()

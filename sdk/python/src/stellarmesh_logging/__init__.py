@@ -1,4 +1,4 @@
-"""Stellarmesh logging SDK public API."""
+"""Stellarmesh 日志 SDK 的公共 API。"""
 
 from .client import Client, ClientConfig, DropHandler, TraceIDProvider
 from .codec import decode_event, encode_event

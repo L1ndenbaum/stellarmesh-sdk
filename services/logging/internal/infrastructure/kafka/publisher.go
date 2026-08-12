@@ -1,4 +1,4 @@
-// Package kafka adapts logging events to the shared Kafka publisher.
+// Package kafka 将日志事件适配到共享 Kafka 发布器。
 package kafka
 
 import (
@@ -12,12 +12,12 @@ import (
 
 var ErrMessageTooLarge = errors.New("logging Kafka message exceeds the contract size limit")
 
-// Publisher serializes canonical logging events.
+// Publisher 序列化规范日志事件。
 type Publisher struct {
 	base *sharedkafka.Publisher
 }
 
-// NewPublisher creates a logging event publisher.
+// NewPublisher 创建日志事件发布器。
 func NewPublisher(brokers []string, topic string, connection sharedkafka.ConnectionConfig) (*Publisher, error) {
 	base, err := sharedkafka.NewPublisher(sharedkafka.Config{
 		Brokers: brokers, Topic: topic, BatchBytes: sharedlogging.MaxKafkaMessageBytesV1, Connection: connection,
@@ -28,12 +28,12 @@ func NewPublisher(brokers []string, topic string, connection sharedkafka.Connect
 	return &Publisher{base: base}, nil
 }
 
-// Check verifies broker and topic availability.
+// Check 校验 broker 和 topic 可用性。
 func (publisher *Publisher) Check(ctx context.Context) error {
 	return publisher.base.Check(ctx)
 }
 
-// Publish serializes and sends events.
+// Publish 序列化并发送事件。
 func (publisher *Publisher) Publish(ctx context.Context, events []sharedlogging.Event) error {
 	messages := make([]sharedkafka.Message, 0, len(events))
 	for _, event := range events {
@@ -54,7 +54,7 @@ func (publisher *Publisher) Publish(ctx context.Context, events []sharedlogging.
 	return err
 }
 
-// Close releases the Kafka writer.
+// Close 释放 Kafka writer。
 func (publisher *Publisher) Close() error {
 	return publisher.base.Close()
 }

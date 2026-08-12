@@ -11,13 +11,13 @@ const serviceTokenHeader = "X-Logging-Service-Token"
 
 type authenticatedServiceKey struct{}
 
-// Monitoring provides the process metrics endpoint and bounded request counters.
+// Monitoring 提供进程指标端点和有界请求计数器。
 type Monitoring interface {
 	Handler() http.Handler
 	ObserveHTTPRequest(route string, status int)
 }
 
-// NewRouter wires liveness and authenticated ingestion routes.
+// NewRouter 连接存活检查和带鉴权的日志接收路由。
 func NewRouter(handler *Handler, monitoring Monitoring) *sharedhttp.Router {
 	router := sharedhttp.NewRouter()
 	router.With(observe(monitoring, "/health")).Get("/health", handler.HandleHealth)

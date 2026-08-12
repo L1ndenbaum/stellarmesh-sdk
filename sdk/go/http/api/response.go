@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// WriteJSON writes a successful or caller-provided response in an Envelope.
+// WriteJSON 使用 Envelope 写入成功响应或调用方提供的响应。
 func WriteJSON(w http.ResponseWriter, status int, payload any) {
 	message := "操作成功"
 	if status >= http.StatusBadRequest {
@@ -20,7 +20,7 @@ func WriteJSON(w http.ResponseWriter, status int, payload any) {
 	})
 }
 
-// WriteError writes an error Envelope.
+// WriteError 写入错误 Envelope。
 func WriteError(w http.ResponseWriter, status int, message string) {
 	writeEnvelope(w, status, Envelope{
 		Code:      status,

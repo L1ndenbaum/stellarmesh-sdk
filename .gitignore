@@ -1,14 +1,14 @@
-# Local configuration and secrets
+# 本地配置和 Secret
 .env
 .env.*
 !.env.example
 
-# Go
+# Go 文件
 bin/
 coverage.out
 .cache/
 
-# Python
+# Python 文件
 .venv/
 .mypy_cache/
 .pytest_cache/
@@ -21,7 +21,7 @@ build/
 dist/
 *.egg-info/
 
-# Editors and operating systems
+# 编辑器和操作系统文件
 .idea/
 .vscode/
 .DS_Store

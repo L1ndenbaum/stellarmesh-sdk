@@ -2,10 +2,10 @@ package api
 
 import "github.com/go-chi/chi/v5"
 
-// Router is the Chi router type used by service entrypoints.
+// Router 是服务入口使用的 Chi 路由类型。
 type Router = chi.Mux
 
-// NewRouter returns an empty router.
+// NewRouter 返回空路由。
 func NewRouter() *Router {
 	return chi.NewRouter()
 }

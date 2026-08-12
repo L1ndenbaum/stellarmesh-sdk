@@ -1,4 +1,4 @@
-"""Metadata redaction and size bounding."""
+"""元数据脱敏与大小限制。"""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def sanitize_metadata(
     _depth: int = 0,
     _seen: set[int] | None = None,
 ) -> Any:
-    """Remove likely secrets and bound recursively nested metadata."""
+    """移除疑似 Secret，并限制递归嵌套元数据。"""
     if _depth > _MAX_DEPTH:
         return "[MAX_DEPTH]"
     seen = _seen if _seen is not None else set()
@@ -89,7 +89,7 @@ def sanitize_metadata(
     if callable(model_dump):
         try:
             dumped = model_dump(mode="python")
-        except Exception:  # noqa: BLE001 - metadata must fail closed.
+        except Exception:  # noqa: BLE001 - 元数据必须以安全方式失败。
             return "[UNSERIALIZABLE]"
         return sanitize_metadata(dumped, _depth=_depth, _seen=seen)
     if isinstance(value, Enum):

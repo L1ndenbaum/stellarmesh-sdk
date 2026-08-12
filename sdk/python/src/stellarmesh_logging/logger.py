@@ -1,4 +1,4 @@
-"""Logger facade backed by an explicitly configured client."""
+"""由显式配置客户端支持的 Logger 门面。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from .contracts import Level
 
 
 class Logger:
-    """Module-scoped structured logger."""
+    """模块级结构化日志记录器。"""
 
     def __init__(
         self,
@@ -31,7 +31,7 @@ class Logger:
         self._bound_metadata = bound_metadata or {}
 
     def bind(self, **metadata: Any) -> Logger:
-        """Return a logger with metadata attached to every event."""
+        """返回一个为每个事件附加元数据的日志记录器。"""
         return Logger(
             self.name,
             client=self._client,
@@ -99,7 +99,7 @@ _default_client_lock = threading.Lock()
 
 
 def set_default_client(client: Client | None) -> None:
-    """Replace the process-wide client without hiding its configuration."""
+    """替换进程级客户端，同时保持配置显式可见。"""
     global _default_client
     with _default_client_lock:
         previous = _default_client
@@ -111,7 +111,7 @@ def set_default_client(client: Client | None) -> None:
 def get_logger(
     name: str, *, client: Client | None = None, service: str | None = None
 ) -> Logger:
-    """Create a logger from an explicit or previously configured default client."""
+    """使用显式客户端或已配置的默认客户端创建日志记录器。"""
     resolved = client
     if resolved is None:
         with _default_client_lock:
@@ -122,7 +122,7 @@ def get_logger(
 
 
 async def shutdown_logging(*, timeout: float = 2.0) -> bool:
-    """Detach and asynchronously drain the default client."""
+    """解除默认客户端并异步排空队列。"""
     global _default_client
     with _default_client_lock:
         client = _default_client
@@ -133,7 +133,7 @@ async def shutdown_logging(*, timeout: float = 2.0) -> bool:
 
 
 def shutdown_logging_sync(*, timeout: float = 2.0) -> bool:
-    """Synchronously drain the default client for non-async entrypoints."""
+    """为非异步入口同步排空默认客户端。"""
     try:
         asyncio.get_running_loop()
     except RuntimeError:

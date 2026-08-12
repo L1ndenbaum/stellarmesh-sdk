@@ -1,4 +1,4 @@
-// Package server builds bounded net/http servers.
+// Package server 构造设置了边界的 net/http 服务。
 package server
 
 import (
@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// Config contains shared HTTP server timeouts.
+// Config 包含共享 HTTP 服务超时配置。
 type Config struct {
 	Addr              string
 	ReadHeaderTimeout time.Duration
@@ -15,7 +15,7 @@ type Config struct {
 	IdleTimeout       time.Duration
 }
 
-// New builds an HTTP server from cfg and handler.
+// New 使用 cfg 和 handler 构造 HTTP 服务。
 func New(cfg Config, handler http.Handler) *http.Server {
 	return &http.Server{
 		Addr:              cfg.Addr,

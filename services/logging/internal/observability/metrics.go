@@ -1,4 +1,4 @@
-// Package observability exposes bounded Prometheus metrics and readiness state.
+// Package observability 暴露有界 Prometheus 指标和就绪状态。
 package observability
 
 import (
@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics owns one isolated registry for the logging ingester.
+// Metrics 为日志接收服务持有独立 registry。
 type Metrics struct {
 	registry     *prometheus.Registry
 	ready        atomic.Bool
@@ -24,7 +24,7 @@ type Metrics struct {
 	spoolReplay  *prometheus.CounterVec
 }
 
-// NewMetrics creates and registers the logging ingester metrics.
+// NewMetrics 创建并注册日志接收服务指标。
 func NewMetrics() *Metrics {
 	metrics := &Metrics{
 		registry: prometheus.NewRegistry(),
@@ -71,57 +71,57 @@ func NewMetrics() *Metrics {
 	return metrics
 }
 
-// Handler exposes this process's Prometheus registry.
+// Handler 暴露当前进程的 Prometheus registry。
 func (metrics *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(metrics.registry, promhttp.HandlerOpts{})
 }
 
-// SetReady updates the process readiness state.
+// SetReady 更新进程就绪状态。
 func (metrics *Metrics) SetReady(ready bool) {
 	metrics.ready.Store(ready)
 }
 
-// Ready reports whether the process should continue receiving traffic.
+// Ready 报告进程是否应继续接收流量。
 func (metrics *Metrics) Ready() bool {
 	return metrics.ready.Load()
 }
 
-// ObserveHTTPRequest records one bounded-route HTTP result.
+// ObserveHTTPRequest 记录一个有界路由的 HTTP 结果。
 func (metrics *Metrics) ObserveHTTPRequest(route string, status int) {
 	metrics.httpRequests.WithLabelValues(route, strconv.Itoa(status)).Inc()
 }
 
-// ObserveIngest records accepted or rejected event counts.
+// ObserveIngest 记录已接受或已拒绝的事件数。
 func (metrics *Metrics) ObserveIngest(result, reason string, count int) {
 	metrics.ingestEvents.WithLabelValues(result, reason).Add(float64(count))
 }
 
-// SetQueueDepth records the number of events still queued.
+// SetQueueDepth 记录仍在队列中的事件数。
 func (metrics *Metrics) SetQueueDepth(depth int) {
 	metrics.queueDepth.Set(float64(depth))
 }
 
-// SetQueueBytes records serialized bytes still awaiting durability acknowledgement.
+// SetQueueBytes 记录仍在等待持久确认的序列化字节数。
 func (metrics *Metrics) SetQueueBytes(size int64) {
 	metrics.queueBytes.Set(float64(size))
 }
 
-// ObserveKafkaPublish records a Kafka batch result by event count.
+// ObserveKafkaPublish 按事件数记录 Kafka 批次结果。
 func (metrics *Metrics) ObserveKafkaPublish(result string, count int) {
 	metrics.kafkaPublish.WithLabelValues(result).Add(float64(count))
 }
 
-// SetSpoolBytes records retained segment bytes for one priority class.
+// SetSpoolBytes 记录一个优先级类别保留的分段字节数。
 func (metrics *Metrics) SetSpoolBytes(priority string, size int64) {
 	metrics.spoolBytes.WithLabelValues(priority).Set(float64(size))
 }
 
-// ObserveSpoolWrite records fallback spool writes.
+// ObserveSpoolWrite 记录 fallback spool 写入。
 func (metrics *Metrics) ObserveSpoolWrite(priority, result string, count int) {
 	metrics.spoolEvents.WithLabelValues(priority, result).Add(float64(count))
 }
 
-// ObserveSpoolReplay records fallback replay attempts.
+// ObserveSpoolReplay 记录 fallback 回放尝试。
 func (metrics *Metrics) ObserveSpoolReplay(priority, result string, count int) {
 	metrics.spoolReplay.WithLabelValues(priority, result).Add(float64(count))
 }

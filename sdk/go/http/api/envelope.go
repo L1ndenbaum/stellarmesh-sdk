@@ -1,7 +1,7 @@
-// Package api contains the shared HTTP JSON contract and helpers.
+// Package api 包含共享 HTTP JSON 契约和辅助函数。
 package api
 
-// Envelope is the response shape shared by Stellarmesh services.
+// Envelope 是 Stellarmesh 服务共享的响应结构。
 type Envelope struct {
 	Code        int    `json:"code"`
 	Message     string `json:"message"`

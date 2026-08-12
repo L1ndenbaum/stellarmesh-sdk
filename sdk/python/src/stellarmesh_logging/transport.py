@@ -1,4 +1,4 @@
-"""Bounded synchronous HTTP transport used by the background worker."""
+"""后台工作线程使用的有界同步 HTTP 传输层。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .contracts import BatchIngestRequest, LogEvent
 
 
 class BatchTransport:
-    """Own an HTTP client and validate the ingestion response contract."""
+    """持有 HTTP 客户端并校验接收响应契约。"""
 
     def __init__(
         self,
@@ -28,7 +28,7 @@ class BatchTransport:
 
     @staticmethod
     def encode(events: list[LogEvent]) -> bytes:
-        """Encode a canonical compact batch payload."""
+        """编码规范的紧凑批量载荷。"""
         return json.dumps(
             BatchIngestRequest(events=events).model_dump(mode="json"),
             ensure_ascii=False,
@@ -36,7 +36,7 @@ class BatchTransport:
         ).encode()
 
     def send(self, events: list[LogEvent], payload: bytes) -> None:
-        """Send one batch and require a matching 200/202 accepted count."""
+        """发送一个批次，并要求 200/202 响应中的接受数量匹配。"""
         response = self._get_client().post(
             f"{self._base_url}/v1/log-events/batch",
             content=payload,
@@ -58,7 +58,7 @@ class BatchTransport:
             raise ValueError("logging service returned an invalid accepted count")
 
     def close(self) -> None:
-        """Close the owned HTTP client."""
+        """关闭持有的 HTTP 客户端。"""
         if self._client is not None:
             self._client.close()
             self._client = None
