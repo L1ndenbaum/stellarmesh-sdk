@@ -1,16 +1,16 @@
 # Stellarmesh SDK
 
-本仓库提供跨项目复用的基础 SDK、统一日志协议、日志接收服务、ClickHouse 落盘服务和版本化迁移制品。业务项目只负责引用 SDK 与声明自己的部署参数；本仓库不提供 Docker Compose、环境变量文件或生产资源编排。
+本仓库提供跨项目复用的基础 SDK、声明式 Go 网关、统一日志协议、日志接收服务、ClickHouse 落盘服务和版本化迁移制品。业务项目只负责引用 SDK 与声明自己的路由、策略及部署参数；本仓库不提供 Docker Compose、环境变量文件或生产资源编排。
 
 ## 仓库内容
 
 - `contracts/logging/v1/`：日志事件、DLQ v1/v2 记录、尺寸限制与 HTTP OpenAPI 契约。
-- `sdk/go/`：Go 公共基础能力和异步日志客户端。
+- `sdk/go/`：Go 公共基础能力、fail-close 网关组件和异步日志客户端。
 - `sdk/python/`：Python 异步日志客户端、标准 `logging.Handler` 适配器与日志门面。
 - `services/logging/`：接收 HTTP 日志并发布到 Kafka 的常驻服务。
 - `sinks/clickhouse/`：消费 Kafka 并写入 ClickHouse 的常驻服务，以及独立迁移镜像。
 
-详细说明见[SDK 内容](docs/sdk-content.md)，语言 SDK 的使用方法见[SDK 接入教程](docs/sdk/README.md)，平台服务与业务项目的整体接入步骤见[接入 SDK 与日志平台](docs/sdk-integration.md)，版本与不可变制品规则见[发布与版本引用](docs/release.md)。
+详细说明见[SDK 内容](docs/sdk-content.md)，语言 SDK 的使用方法见[SDK 接入教程](docs/sdk/README.md)，网关接入见[Go 网关 SDK](docs/sdk/go/gateway.md)，平台服务与业务项目的整体接入步骤见[接入 SDK 与日志平台](docs/sdk-integration.md)，版本与不可变制品规则见[发布与版本引用](docs/release.md)。
 
 ## 本地验证
 

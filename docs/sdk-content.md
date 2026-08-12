@@ -2,7 +2,7 @@
 
 ## 目标与边界
 
-`stellarmesh-sdk` 把原先散落在不同项目中的日志客户端、日志接收服务和 ClickHouse 落盘逻辑集中维护。各项目可以独立部署同一版本的服务制品，使用各自隔离的 Kafka Topic、ClickHouse database、账号与凭据，不需要复制服务源码。
+`stellarmesh-sdk` 把原先散落在不同项目中的基础 HTTP、网关、日志客户端、日志接收服务和 ClickHouse 落盘逻辑集中维护。各项目可以引用相同的网关与日志 SDK，并独立部署同一版本的服务制品，使用各自的业务路由、Kafka Topic、ClickHouse database、账号与凭据，不需要复制公共源码。
 
 仓库有意不包含以下内容：
 
@@ -19,7 +19,7 @@
 | 路径 | 内容 | 发布形式 |
 | --- | --- | --- |
 | `contracts/logging/v1/` | 日志事件、DLQ v1/v2、尺寸限制、OpenAPI 和共享测试数据 | 随仓库版本发布 |
-| `sdk/go/` | Go 公共 HTTP、Kafka、环境配置与日志客户端 | Go module |
+| `sdk/go/` | Go 公共 HTTP、声明式网关、Kafka、环境配置与日志客户端 | Go module |
 | `sdk/python/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | Python package |
 | `services/logging/` | HTTP 接收、内存队列、控制台输出、Kafka 发布与失败暂存 | 常驻服务镜像 |
 | `sinks/clickhouse/` | Kafka 消费、批量写入和 offset 提交 | 常驻 sink 镜像 |
@@ -58,11 +58,16 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 `sdk/go` 包含以下可复用包：
 
 - `logging`：协议模型、校验、元数据清洗、异步批量 HTTP 客户端和日志门面；
+- `gateway`：固定安全顺序的声明式网关、静态路由、可信代理、CORS、反向代理、健康检查和旁路观测；
+- `gateway/jwtauth`：严格校验 HS256、issuer、audience、expiration 和 subject 的 JWT 认证组件；
+- `gateway/redislimit`：按客户端 IP、用户或 upstream 作用域运行的 Redis 原子令牌桶；
 - `http/api`：统一响应 envelope、JSON 解码、路由和中间件；
 - `http/headers`：标准请求头读写；
 - `http/server`：带超时的 HTTP server 构造；
 - `mq/kafka`：具有显式 topic、可复用 Topic 启动检查、TLS、mTLS、SASL/PLAIN 和 SCRAM 配置的 Kafka publisher；
 - `envconfig`：不依赖业务 settings 的基础环境变量解析，并提供显式错误的严格 loader。
+
+网关项目使用 `gateway.New(options ...Option)` 构造一个普通 `http.Handler`。`WithXxx` 只声明使用哪些组件，不改变执行顺序。路由解析、客户端地址解析、鉴权、授权、限流、转发策略和 upstream 解析发生错误时停止转发；访问日志与 Observer 失败只产生旁路观测，不改变已经完成的 HTTP 响应。静态路由默认需要认证，公开路由必须显式设置 `AccessPublic`，未匹配路径返回 `404`。完整接入方式见[Go 网关 SDK](sdk/go/gateway.md)。
 
 日志客户端使用同时受事件数和规范化 JSON 字节数限制的内存队列，调用 `Emit` 或日志级别方法时不会等待网络。构造函数会立即校验 URL、token、service、容量和重试限制。客户端后台对网络异常及明确的临时 HTTP 状态执行最多三次带抖动指数退避，并复用原 `event_id`；队列满、事件无效、客户端关闭、重试耗尽或响应不符合契约时调用 `OnDrop`，callback 的 panic 会被隔离并限频写到 stderr。SDK 没有落盘队列，因此在收到合法 `202` 以前只提供 best-effort 投递；进程退出前应调用 `Close` 并给出明确超时。
 

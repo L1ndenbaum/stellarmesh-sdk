@@ -1,6 +1,6 @@
 # 接入 SDK
 
-本文件说明业务项目接入 SDK、日志接收服务、ClickHouse sink 和迁移制品的完整流程。只接入语言客户端时，可直接阅读 [Go SDK 接入教程](sdk/go/README.md) 或 [Python SDK 接入教程](sdk/python/README.md)。
+本文件说明业务项目接入 SDK、日志接收服务、ClickHouse sink 和迁移制品的完整流程。只接入语言客户端时，可直接阅读 [Go SDK 接入教程](sdk/go/README.md) 或 [Python SDK 接入教程](sdk/python/README.md)；Go 项目需要网关能力时阅读 [Go 网关 SDK 接入教程](sdk/go/gateway.md)。
 
 ## 接入前准备
 
@@ -82,6 +82,14 @@ func traceIDFromProjectContext(context.Context) string {
 - `traceID` 参数非空时优先使用显式值，否则调用 `TraceIDProvider`；
 - `OnDrop` 只应执行轻量、不会递归调用同一 logger 的降级动作；
 - HTTP handler、worker 和定时任务共享同一个客户端即可，不要为每次请求创建后台 worker。
+
+### Go 网关项目
+
+项目不再复制 gateway 内部目录，而是在自己的 `main.go` 中通过 `gateway.New` 组装路由、upstream、JWT、Redis 限流、CORS、健康检查和访问日志。业务仓库继续拥有配置读取、路由表、监听端口、优雅关闭、Compose 和环境变量；本仓库只提供普通 `http.Handler` 和可注入组件。
+
+生产配置应明确可信代理 CIDR。没有可信代理配置时，SDK 只使用 `RemoteAddr`，不会读取 `X-Forwarded-For`。所有静态受保护路由必须配置 Authenticator；Redis 限流器或其他安全决策依赖发生错误时返回 `503`，不会退化为放行。访问日志可以直接复用当前进程的 Go logging Client，它的投递失败不影响网关响应。
+
+完整构造示例、Option 列表、错误状态和验证要求见[Go 网关 SDK 接入教程](sdk/go/gateway.md)。
 
 ## Python 项目
 

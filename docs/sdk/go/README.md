@@ -1,6 +1,6 @@
 # Go SDK 接入教程
 
-本教程对应 Go module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.22 及以上版本。业务日志接入只需要导入其中的 `logging` package。
+本教程对应 Go module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.22 及以上版本。业务日志接入使用 `logging` package；需要复用路由、鉴权、限流和反向代理时，阅读[Go 网关 SDK 接入教程](gateway.md)。
 
 ## 1. 安装固定版本
 
@@ -193,3 +193,9 @@ SDK 调用成功只表示本地入队；`logging-service` 返回 `202` 表示 Ka
 - `service` 改名必须同步更新 token 绑定和查询口径，不应只改业务代码；
 - 如果调整队列或批量大小，应同时观察 drop 计数、关闭排空时间和请求 body 上限；
 - Go SDK、Python SDK 与服务镜像应尽量来自同一发布 commit，避免契约漂移。
+
+## 9. 网关项目
+
+网关 SDK 与日志客户端位于同一个 Go module，但生命周期不同：网关 SDK 返回普通 `http.Handler`，不创建监听端口、不读取环境变量，也不拥有业务路由；日志客户端拥有异步发送 worker，需要在进程退出前关闭。业务项目应在自己的 `main.go` 中组装二者，并继续使用项目配置层管理 upstream 地址、JWT Secret、Redis 地址和 CORS origin。
+
+网关的最小接入、完整 `WithXxx` 列表、固定执行顺序和 fail-close 语义见[Go 网关 SDK 接入教程](gateway.md)。
