@@ -20,7 +20,7 @@
 | --- | --- | --- |
 | `contracts/logging/v1/` | 日志事件、DLQ v1/v2、尺寸限制、OpenAPI 和共享测试数据 | 随仓库版本发布 |
 | `sdk/go/` | Go 公共 HTTP、Kafka、环境配置与日志客户端 | Go module |
-| `sdk/python/` | Python 日志客户端、类型模型与日志门面 | Python package |
+| `sdk/python/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | Python package |
 | `services/logging/` | HTTP 接收、内存队列、控制台输出、Kafka 发布与失败暂存 | 常驻服务镜像 |
 | `sinks/clickhouse/` | Kafka 消费、批量写入和 offset 提交 | 常驻 sink 镜像 |
 | `sinks/clickhouse/migrations/` | `log_events` 表的版本化 up/down SQL | 一次性迁移镜像 |
@@ -73,12 +73,13 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 - Pydantic `LogEvent`、批量请求与响应模型；
 - Pydantic `DeadLetter` 与标准事件、DLQ Topic 常量；
 - `ClientConfig` 和有界队列 `Client`；
+- 标准库适配器 `StellarmeshHandler`；
 - `Logger`、`get_logger`、`set_default_client`；
 - 同步和异步关闭入口；
 - trace provider、drop handler、日志级别过滤和元数据清洗；
 - 协议编码与解码函数及 `py.typed` 类型声明。
 
-Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业务项目的配置模块、Web 框架或请求上下文。业务项目通过构造参数或 provider 注入服务名、令牌和 trace id。provider 与 drop handler 的异常不会传播到业务调用方；worker 具有明确的失败状态，队列的事件数和累计字节均有上限，并提供 best-effort 进程退出排空兜底。
+Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业务项目的配置模块、Web 框架或请求上下文。`StellarmeshHandler` 只把标准 `LogRecord` 转成规范事件，不创建控制台输出、额外队列或重试线程；远程最低级别仍由 `ClientConfig.minimum_level` 统一过滤。业务项目通过构造参数或 provider 注入服务名、令牌和 trace id。provider 与 drop handler 的异常不会传播到业务调用方；worker 具有明确的失败状态，队列的事件数和累计字节均有上限，并提供 best-effort 进程退出排空兜底。
 
 ## 日志数据链路
 

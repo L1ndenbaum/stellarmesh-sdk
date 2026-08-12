@@ -6,7 +6,7 @@
 
 - `contracts/logging/v1/`：日志事件、DLQ v1/v2 记录、尺寸限制与 HTTP OpenAPI 契约。
 - `sdk/go/`：Go 公共基础能力和异步日志客户端。
-- `sdk/python/`：Python 异步日志客户端与日志门面。
+- `sdk/python/`：Python 异步日志客户端、标准 `logging.Handler` 适配器与日志门面。
 - `services/logging/`：接收 HTTP 日志并发布到 Kafka 的常驻服务。
 - `sinks/clickhouse/`：消费 Kafka 并写入 ClickHouse 的常驻服务，以及独立迁移镜像。
 

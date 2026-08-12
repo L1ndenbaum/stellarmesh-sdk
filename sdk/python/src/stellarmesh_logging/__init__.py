@@ -18,6 +18,7 @@ from .contracts import (
     OversizeDeadLetter,
     should_emit_level,
 )
+from .handler import StellarmeshHandler
 from .logger import (
     Logger,
     get_logger,
@@ -45,6 +46,7 @@ __all__ = [
     "LogEvent",
     "OversizeDeadLetter",
     "Logger",
+    "StellarmeshHandler",
     "TraceIDProvider",
     "decode_event",
     "encode_event",

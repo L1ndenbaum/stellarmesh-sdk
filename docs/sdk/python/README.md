@@ -35,13 +35,14 @@ SDK 不读取业务项目的 settings 或 `.env`。业务配置层需要向初�
 from __future__ import annotations
 
 import contextvars
+import logging
 import sys
 
 from stellarmesh_logging import (
     Client,
     ClientConfig,
     Level,
-    get_logger,
+    StellarmeshHandler,
     set_default_client,
 )
 
@@ -70,59 +71,52 @@ client = Client(
 )
 set_default_client(client)
 
-logger = get_logger(__name__).bind(component="scheduler")
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(StellarmeshHandler(client))
+
+logger = logging.getLogger(__name__)
 ```
 
 一个进程通常只需要一个默认客户端。`set_default_client` 会关闭此前的不同客户端，因此不要在每个请求中反复调用。SDK 不直接依赖 FastAPI、Django、Flask、Celery、OpenTelemetry 或业务 settings；框架适配应留在业务项目的应用入口。
 
 `drop_handler` 可能由后台发送线程调用，必须线程安全、快速返回，并且不能再次调用当前远端 logger。callback 自身失败时，SDK 会限频写入标准错误输出。
 
-## 4. 写入结构化日志
+`StellarmeshHandler` 只负责把标准库产生的 `LogRecord` 转换成规范事件并交给现有客户端。它不会创建控制台输出、额外队列或重试线程，也不会在关闭时替业务项目排空客户端。业务项目如果需要控制台日志，应自行配置 `StreamHandler`；不要重复注册远程 Handler，否则同一记录会发送多次。
+
+logger 的有效级别决定一条记录是否会到达 Handler，`ClientConfig.minimum_level` 再决定它是否进入远程队列。建议由业务项目按现有 logging 配置管理前者，并把后者作为远程持久化的统一最低级别。
+
+## 4. 使用标准 logging
 
 ```python
-logger.info("job started", job_id="job-123", queue="default")
-logger.warning("job delayed", job_id="job-123", delay_seconds=12)
-logger.audit("job manually retried", job_id="job-123", operator_id="user-7")
+logger.info(
+    "job %s started",
+    "job-123",
+    extra={"job_id": "job-123", "queue": "default"},
+)
+logger.warning(
+    "job delayed",
+    extra={"job_id": "job-123", "delay_seconds": 12},
+)
 
 try:
     raise RuntimeError("example failure")
 except RuntimeError:
-    logger.exception("job failed", job_id="job-123")
+    logger.exception("job failed", extra={"job_id": "job-123"})
 ```
 
-logger 提供 `debug`、`info`、`warning`、`error`、`audit` 和 `exception`。所有 metadata 都使用关键字参数传入；`bind` 返回附带固定 metadata 的新 logger。
-
-当前 API 不接收标准库 logging 的 printf 风格位置参数。迁移代码时应把：
-
-```python
-legacy_logger.info("job %s started", job_id)
-legacy_logger.warn("job delayed")
-```
-
-改为：
-
-```python
-logger.info("job started", job_id=job_id)
-logger.warning("job delayed")
-```
-
-每个日志方法返回布尔值：
-
-- `True` 表示事件已进入 SDK 本地队列；
-- `False` 表示日志级别被过滤、队列已满、事件非法或客户端不可写；
-- 后台 HTTP 失败通过 `drop_handler` 报告，不会从已经返回的业务调用中抛出。
+Handler 支持标准库的 `%s` 延迟格式化、`exc_info`、`stack_info` 和 `extra`。它会记录 logger 名称、模块、函数与行号，把 `CRITICAL` 映射为契约中的 `ERROR`，并把名称为 `AUDIT` 的自定义级别映射为 `AUDIT`。标准 logging 方法仍返回 `None`；级别过滤、队列已满、客户端已关闭或后台发送失败都不会从业务日志调用中抛出。
 
 metadata 会进行深度、数量、字符串长度和敏感字段处理，但业务代码仍不应把 token、密码、Cookie、Authorization 或其他 Secret 主动放入日志。
 
 ## 5. 传播 trace ID
 
-`trace_id_provider` 是无参数 callable。同步项目可以从线程本地状态读取；asyncio 项目建议使用 `contextvars.ContextVar`。显式传入 `trace_id` 时优先使用显式值：
+`trace_id_provider` 是无参数 callable。同步项目可以从线程本地状态读取；asyncio 项目建议使用 `contextvars.ContextVar`。通过 `extra` 传入 `trace_id` 时优先使用显式值：
 
 ```python
 logger.info(
     "request completed",
-    trace_id="trace-from-request",
-    status_code=200,
+    extra={"trace_id": "trace-from-request", "status_code": 200},
 )
 ```
 
@@ -175,25 +169,28 @@ drained = shutdown_logging_sync(timeout=3.0)
 
 构造 `Client` 时会立即校验 URL、token、service、日志级别和所有正数限制。队列最多 `1000000` 条或 `1GiB`，批次最多 `10000` 条，尝试次数最多 `10`，时间参数最多一小时；配置错误应让应用启动失败，而不是延迟到后台线程。SDK 只重试网络异常和 `408`、`425`、`429`、`500`、`502`、`503`、`504`；其他 4xx 与格式异常的成功响应不会重试。请求结果不确定时可能已经被服务端接受，重试复用相同 `event_id`，下游仍须允许重复。
 
-## 8. 不使用默认客户端
+## 8. 使用结构化日志门面
 
-库代码或需要隔离客户端的测试可以显式传入 `client`：
+需要 `audit`、`bind` 或检查事件是否成功入队时，可以继续使用 SDK 自带的结构化日志门面：
 
 ```python
 from stellarmesh_logging import get_logger
 
-isolated_logger = get_logger("example.module", client=client)
-isolated_logger.info("isolated event", test_case="example")
+structured_logger = get_logger("example.module", client=client).bind(
+    component="scheduler"
+)
+accepted = structured_logger.info("isolated event", test_case="example")
+structured_logger.audit("job manually retried", operator_id="user-7")
 ```
 
-未设置默认客户端且没有显式传入 `client` 时，`get_logger` 会抛出 `RuntimeError`。这能防止配置缺失时静默丢日志。
+日志门面提供 `debug`、`info`、`warning`、`error`、`audit` 和 `exception`，metadata 使用关键字参数传入，各方法返回是否成功进入本地队列。它不接收标准 logging 的 printf 风格位置参数。未设置默认客户端且没有显式传入 `client` 时，`get_logger` 会抛出 `RuntimeError`，防止配置缺失时静默丢日志。
 
 ## 9. 接入验证
 
 在业务测试环境完成以下检查：
 
-1. 初始化客户端后发送一条带唯一测试标识的 `INFO` 日志；
-2. 确认调用返回 `True`，`drop_handler` 未收到错误；
+1. 初始化客户端和 Handler 后，通过标准 logger 发送一条带唯一测试标识的 `INFO` 日志；
+2. 确认业务调用未受影响，`drop_handler` 未收到错误；
 3. 执行应用 shutdown，确认排空结果为 `True`；
 4. 确认 `logging-service` 的 `/health/ready` 为 `200`；
 5. 在 ClickHouse 中按 `service` 和测试标识找到事件；
@@ -206,7 +203,8 @@ SDK 调用成功、本地队列排空、`logging-service` 持久确认和 ClickH
 
 - 固定 `stellarmesh-logging` 版本并提交锁文件；
 - 升级后运行业务项目的 Ruff、mypy 和 pytest；
-- 不要把标准库 logging 的 `%s` 参数或已废弃的 `warn` 直接迁移到本 SDK；
+- 已有标准 logging 调用优先注册 `StellarmeshHandler`，不要为了接入而批量改写调用点；
+- 只注册一次远程 Handler，并根据 logger 名称控制是否包含第三方库日志；
 - `service` 改名必须同步更新 token 绑定、告警和查询口径；
 - 调整队列和批量大小时，应同时观察 drop 计数、进程内存和关闭排空时间；
 - Python SDK、Go SDK 与服务镜像应尽量来自同一发布 commit，避免契约漂移。

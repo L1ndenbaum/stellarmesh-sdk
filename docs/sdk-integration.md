@@ -100,10 +100,12 @@ pip install stellarmesh-logging==0.1.0
 在应用生命周期入口显式配置客户端：
 
 ```python
+import logging
+
 from stellarmesh_logging import (
     Client,
     ClientConfig,
-    get_logger,
+    StellarmeshHandler,
     set_default_client,
     shutdown_logging,
 )
@@ -125,16 +127,19 @@ client = Client(
     )
 )
 set_default_client(client)
-logger = get_logger(__name__).bind(component="scheduler")
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+root_logger.addHandler(StellarmeshHandler(client))
+logger = logging.getLogger(__name__)
 
-logger.info("job started", job_id="job-123")
+logger.info("job %s started", "job-123", extra={"component": "scheduler"})
 
 
 async def application_shutdown() -> None:
     await shutdown_logging(timeout=3.0)
 ```
 
-同步入口使用 `shutdown_logging_sync(timeout=3.0)`。存在 asyncio event loop 时必须 `await shutdown_logging()`，不能调用同步包装器。`debug`、`info`、`warning`、`error`、`audit` 和 `exception` 都返回是否进入本地队列；它们不会等待远端持久化。
+业务项目仍需按照自身运行环境设置 logger 的有效级别；Handler 不创建控制台输出，`ClientConfig.minimum_level` 继续过滤真正进入远程队列的事件。同步入口使用 `shutdown_logging_sync(timeout=3.0)`。存在 asyncio event loop 时必须 `await shutdown_logging()`，不能调用同步包装器。标准 logging 方法返回 `None`；需要获取是否入队的布尔值或使用 `audit`、`bind` 时，可以继续使用 SDK 的 `get_logger()` 日志门面。
 
 `drop_handler` 同样不能再调用当前远端 logger，避免失败时递归。若业务已有 trace 上下文，应在 provider 中适配；SDK 不直接依赖 FastAPI、Django、Flask、OpenTelemetry 或业务自定义 context。
 
