@@ -199,6 +199,92 @@ type CORSConfig struct {
 	MaxAge           time.Duration
 }
 
+// AccessLog 是不包含查询参数或凭据的网关访问记录。
+type AccessLog struct {
+	Timestamp       time.Time
+	RequestID       string
+	Method          string
+	Path            string
+	Route           string
+	ClientIP        string
+	AuthResult      string
+	UserID          string
+	Roles           []string
+	Upstream        string
+	Status          int
+	Elapsed         time.Duration
+	ErrorCode       string
+	RateLimitResult map[RateLimitScope]string
+}
+
+// AccessLogger 接收请求完成后的规范访问记录。
+type AccessLogger interface {
+	Log(context.Context, AccessLog) error
+}
+
+// AccessLoggerFunc 让函数直接实现 AccessLogger。
+type AccessLoggerFunc func(context.Context, AccessLog) error
+
+// Log 调用访问日志函数。
+func (logger AccessLoggerFunc) Log(ctx context.Context, accessLog AccessLog) error {
+	return logger(ctx, accessLog)
+}
+
+// ObservationKind 区分请求完成和旁路组件故障。
+type ObservationKind string
+
+const (
+	ObservationRequestCompleted ObservationKind = "request_completed"
+	ObservationComponentFailure ObservationKind = "component_failure"
+	ObservationAccessLogFailure ObservationKind = "access_log_failure"
+)
+
+// Observation 是可供指标适配器消费的低基数网关事件。
+type Observation struct {
+	Kind      ObservationKind
+	Component string
+	Route     string
+	Upstream  string
+	Status    int
+	Elapsed   time.Duration
+}
+
+// Observer 接收网关观测事件；实现不得依赖请求能否继续转发。
+type Observer interface {
+	Observe(context.Context, Observation)
+}
+
+// ObserverFunc 让函数直接实现 Observer。
+type ObserverFunc func(context.Context, Observation)
+
+// Observe 调用观测函数。
+func (observer ObserverFunc) Observe(ctx context.Context, observation Observation) {
+	observer(ctx, observation)
+}
+
+// ReadinessChecker 检查网关当前是否可以可靠接收流量。
+type ReadinessChecker interface {
+	Check(context.Context) error
+}
+
+// ReadinessCheckerFunc 让函数直接实现 ReadinessChecker。
+type ReadinessCheckerFunc func(context.Context) error
+
+// Check 调用就绪检查函数。
+func (checker ReadinessCheckerFunc) Check(ctx context.Context) error {
+	return checker(ctx)
+}
+
+// HealthConfig 配置网关本地存活和就绪端点。
+type HealthConfig struct {
+	Service       string
+	LivePath      string
+	ReadyPath     string
+	CheckTimeout  time.Duration
+	Readiness     ReadinessChecker
+	LogSuccessful bool
+}
+
 // GatewayError 是错误响应器可安全暴露的网关错误。
 type GatewayError struct {
 	Status     int

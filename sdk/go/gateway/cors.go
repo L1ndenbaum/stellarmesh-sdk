@@ -3,6 +3,7 @@ package gateway
 import (
 	"errors"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -45,6 +46,8 @@ func newCORSPolicy(config *CORSConfig) (*corsPolicy, error) {
 		}
 		if origin == "*" {
 			policy.wildcard = true
+		} else if !validCORSOrigin(origin) {
+			return nil, errors.New("gateway CORS origin is invalid: " + origin)
 		}
 		policy.origins[origin] = struct{}{}
 	}
@@ -57,8 +60,8 @@ func newCORSPolicy(config *CORSConfig) (*corsPolicy, error) {
 	}
 	for _, method := range methods {
 		method = strings.ToUpper(strings.TrimSpace(method))
-		if method == "" {
-			return nil, errors.New("gateway CORS method cannot be empty")
+		if !isHTTPToken(method) {
+			return nil, errors.New("gateway CORS method is invalid")
 		}
 		policy.methods[method] = struct{}{}
 	}
@@ -68,8 +71,8 @@ func newCORSPolicy(config *CORSConfig) (*corsPolicy, error) {
 	}
 	for _, header := range headers {
 		header = http.CanonicalHeaderKey(strings.TrimSpace(header))
-		if header == "" {
-			return nil, errors.New("gateway CORS header cannot be empty")
+		if !isHTTPToken(header) {
+			return nil, errors.New("gateway CORS header is invalid")
 		}
 		policy.headers[strings.ToLower(header)] = header
 	}
@@ -82,6 +85,12 @@ func newCORSPolicy(config *CORSConfig) (*corsPolicy, error) {
 		policy.allowOriginValue = "*"
 	}
 	return policy, nil
+}
+
+func validCORSOrigin(origin string) bool {
+	parsed, err := url.Parse(origin)
+	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" &&
+		parsed.User == nil && parsed.Path == "" && parsed.RawQuery == "" && parsed.Fragment == ""
 }
 
 // handle 返回 true 表示 CORS 已经完成或拒绝该请求。

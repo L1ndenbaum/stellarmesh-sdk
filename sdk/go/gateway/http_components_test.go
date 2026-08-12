@@ -227,6 +227,24 @@ func TestCORSRejectsWildcardWithCredentials(t *testing.T) {
 	}
 }
 
+func TestGatewayRejectsInvalidHTTPConfiguration(t *testing.T) {
+	tests := []Option{
+		WithRequestID(RequestIDConfig{Header: "X-Bad\nHeader"}),
+		WithCORS(CORSConfig{AllowedOrigins: []string{"not-an-origin"}}),
+		WithCORS(CORSConfig{AllowedOrigins: []string{"https://app.example.com"}, AllowedHeaders: []string{"X-Bad\nHeader"}}),
+	}
+	for _, invalid := range tests {
+		_, err := New(
+			WithRoutes(publicRoute()),
+			WithUpstreams(Upstream{Name: "backend", URL: "http://backend.internal"}),
+			invalid,
+		)
+		if err == nil {
+			t.Fatalf("New() accepted invalid option %#v", invalid)
+		}
+	}
+}
+
 func TestRequestIDReplacesUnsafeInboundValue(t *testing.T) {
 	gateway, err := New(
 		WithRoutes(publicRoute()),

@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	sharedapi "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
 	sharedheaders "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/headers"
@@ -22,6 +25,7 @@ const (
 	routeContextKey
 	identityContextKey
 	clientIPContextKey
+	accessLogStateContextKey
 )
 
 // Gateway 按固定的安全顺序执行项目声明的组件。
@@ -38,6 +42,9 @@ type Gateway struct {
 	errorResponder   ErrorResponder
 	requestID        RequestIDConfig
 	cors             *corsPolicy
+	accessLogger     AccessLogger
+	observer         Observer
+	health           *healthPolicy
 }
 
 // New 校验所有声明式组件并构造网关处理器。
@@ -45,7 +52,7 @@ func New(options ...Option) (*Gateway, error) {
 	config := config{configuredComponents: make(map[string]struct{})}
 	for index, option := range options {
 		if option == nil {
-			return nil, errors.New("gateway option at index " + itoa(index) + " is nil")
+			return nil, errors.New("gateway option at index " + strconv.Itoa(index) + " is nil")
 		}
 		if err := option.apply(&config); err != nil {
 			return nil, err
@@ -96,6 +103,10 @@ func New(options ...Option) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	health, err := newHealthPolicy(config.health)
+	if err != nil {
+		return nil, err
+	}
 	if err := validateStaticUpstreams(config.staticRoutes, config.upstreamResolver); err != nil {
 		return nil, err
 	}
@@ -112,13 +123,19 @@ func New(options ...Option) (*Gateway, error) {
 		errorResponder:   config.errorResponder,
 		requestID:        requestID,
 		cors:             cors,
+		accessLogger:     config.accessLogger,
+		observer:         config.observer,
+		health:           health,
 	}, nil
 }
 
 // ServeHTTP 执行固定流水线；任何转发决策组件错误都会停止请求。
 func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	recorder := newResponseRecorder(w)
-	defer gateway.recoverPanic(recorder, r)
+	accessState := newAccessLogState(r)
+	r = r.WithContext(context.WithValue(r.Context(), accessLogStateContextKey, accessState))
+	defer gateway.finishRequest(r.Context(), recorder, accessState)
+	defer gateway.recoverPanic(recorder, r, accessState)
 
 	requestID, err := gateway.resolveRequestID(r)
 	if err != nil {
@@ -127,8 +144,12 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.Header.Set(gateway.requestID.Header, requestID)
 	recorder.Header().Set(gateway.requestID.Header, requestID)
+	accessState.RequestID = requestID
 	r = r.WithContext(context.WithValue(r.Context(), requestIDContextKey, requestID))
 	if gateway.cors != nil && gateway.cors.handle(recorder, r, gateway) {
+		return
+	}
+	if gateway.health != nil && gateway.health.handle(recorder, r, gateway, accessState) {
 		return
 	}
 
@@ -141,7 +162,13 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		gateway.fail(recorder, r, GatewayError{Status: http.StatusNotFound, Code: "route_not_found", Message: "route not found"})
 		return
 	}
-	route = cloneRoute(route)
+	route, err = normalizeResolvedRoute(route)
+	if err != nil {
+		gateway.fail(recorder, r, unavailableError("invalid_resolved_route", err))
+		return
+	}
+	accessState.Route = route.Name
+	accessState.Upstream = route.Upstream
 	r = r.WithContext(context.WithValue(r.Context(), routeContextKey, route))
 	upstream, err := gateway.upstreams.ResolveUpstream(route)
 	if err != nil || upstream == nil {
@@ -161,6 +188,7 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r = r.WithContext(context.WithValue(r.Context(), clientIPContextKey, clientIP))
+	accessState.ClientIP = clientIP
 	requestContext := RequestContext{RequestID: requestID, ClientIP: clientIP, Route: route}
 	if !gateway.applyRateLimit(recorder, r, gateway.clientIPLimiter, RateLimitRequest{
 		Scope: RateLimitScopeClientIP, Key: clientIP, Route: route.Name, Upstream: route.Upstream,
@@ -206,47 +234,58 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (gateway *Gateway) authenticate(w http.ResponseWriter, r *http.Request, route Route) (*Identity, bool) {
 	if route.Access == AccessPublic {
+		setAuthResult(r, "public", nil)
 		return nil, true
 	}
 	if gateway.authenticator == nil {
+		setAuthResult(r, "error", nil)
 		gateway.fail(w, r, unavailableError("authenticator_unavailable", errors.New("gateway authenticator is not configured")))
 		return nil, false
 	}
 	raw := strings.TrimSpace(r.Header.Get("Authorization"))
 	if len(raw) <= len("Bearer ") || !strings.EqualFold(raw[:len("Bearer ")], "Bearer ") {
+		setAuthResult(r, "missing_token", nil)
 		gateway.fail(w, r, GatewayError{Status: http.StatusUnauthorized, Code: "missing_bearer_token", Message: "unauthorized"})
 		return nil, false
 	}
 	token := strings.TrimSpace(raw[len("Bearer "):])
 	if token == "" {
+		setAuthResult(r, "missing_token", nil)
 		gateway.fail(w, r, GatewayError{Status: http.StatusUnauthorized, Code: "missing_bearer_token", Message: "unauthorized"})
 		return nil, false
 	}
 	decision, err := gateway.authenticator.Authenticate(r.Context(), token)
 	if err != nil {
+		setAuthResult(r, "error", nil)
 		gateway.fail(w, r, unavailableError("authentication_failed", err))
 		return nil, false
 	}
 	if !decision.Authenticated || strings.TrimSpace(decision.Identity.UserID) == "" {
+		setAuthResult(r, "invalid_token", nil)
 		gateway.fail(w, r, GatewayError{Status: http.StatusUnauthorized, Code: "invalid_bearer_token", Message: "unauthorized"})
 		return nil, false
 	}
 	identity := cloneIdentity(decision.Identity)
+	setAuthResult(r, "success", &identity)
 	return &identity, true
 }
 
 func (gateway *Gateway) applyRateLimit(w http.ResponseWriter, r *http.Request, limiter RateLimiter, request RateLimitRequest) bool {
 	if limiter == nil {
+		setRateLimitResult(r, request.Scope, "disabled")
 		return true
 	}
 	decision, err := limiter.Allow(r.Context(), request)
 	if err != nil {
+		setRateLimitResult(r, request.Scope, "error")
 		gateway.fail(w, r, unavailableError("rate_limiter_unavailable", err))
 		return false
 	}
 	if decision.Allowed {
+		setRateLimitResult(r, request.Scope, "allowed")
 		return true
 	}
+	setRateLimitResult(r, request.Scope, "rejected")
 	gateway.fail(w, r, GatewayError{
 		Status: http.StatusTooManyRequests, Code: "rate_limit_exceeded", Message: "rate limit exceeded", RetryAfter: decision.RetryAfter,
 	})
@@ -285,13 +324,23 @@ func (gateway *Gateway) applyBeforeProxy(w http.ResponseWriter, r *http.Request,
 	return false
 }
 
-func (gateway *Gateway) recoverPanic(w *responseRecorder, r *http.Request) {
-	if recovered := recover(); recovered != nil && !w.WroteHeader() {
-		gateway.fail(w, r, GatewayError{Status: http.StatusInternalServerError, Code: "gateway_panic", Message: "internal server error", Cause: errors.New("gateway component panic")})
+func (gateway *Gateway) recoverPanic(w *responseRecorder, r *http.Request, state *accessLogState) {
+	if recovered := recover(); recovered != nil {
+		if recovered == http.ErrAbortHandler {
+			state.ErrorCode = "upstream_stream_aborted"
+			state.FailureComponent = "upstream_stream_aborted"
+			return
+		}
+		state.ErrorCode = "gateway_panic"
+		state.FailureComponent = "gateway_panic"
+		if !w.WroteHeader() {
+			gateway.fail(w, r, GatewayError{Status: http.StatusInternalServerError, Code: "gateway_panic", Message: "internal server error", Cause: errors.New("gateway component panic")})
+		}
 	}
 }
 
 func (gateway *Gateway) fail(w http.ResponseWriter, r *http.Request, gatewayError GatewayError) {
+	recordGatewayError(r, gatewayError)
 	gateway.errorResponder.Respond(w, r, gatewayError)
 }
 
@@ -336,6 +385,9 @@ func normalizeRequestIDConfig(config RequestIDConfig) (RequestIDConfig, error) {
 	config.Header = strings.TrimSpace(config.Header)
 	if config.Header == "" {
 		config.Header = sharedheaders.HeaderXRequestID
+	}
+	if !isHTTPToken(config.Header) {
+		return RequestIDConfig{}, errors.New("gateway request ID header is invalid")
 	}
 	if config.MaxLength == 0 {
 		config.MaxLength = defaultRequestIDMaxLength
@@ -437,7 +489,12 @@ type defaultErrorResponder struct{}
 func (defaultErrorResponder) Respond(w http.ResponseWriter, _ *http.Request, gatewayError GatewayError) {
 	if gatewayError.RetryAfter > 0 {
 		seconds := int64((gatewayError.RetryAfter + 999999999) / 1000000000)
-		w.Header().Set("Retry-After", itoa(int(seconds)))
+		w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
 	}
-	sharedapi.WriteError(w, gatewayError.Status, gatewayError.Message)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(gatewayError.Status)
+	_ = json.NewEncoder(w).Encode(sharedapi.Envelope{
+		Code: gatewayError.Status, Message: gatewayError.Message, Data: nil,
+		Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ErrorReason: gatewayError.Code,
+	})
 }

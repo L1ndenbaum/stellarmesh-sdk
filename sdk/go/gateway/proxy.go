@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,7 +27,7 @@ func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, 
 	for index, upstream := range upstreams {
 		name := strings.TrimSpace(upstream.Name)
 		if name == "" {
-			return nil, errors.New("gateway upstream name is required at index " + itoa(index))
+			return nil, errors.New("gateway upstream name is required at index " + strconv.Itoa(index))
 		}
 		if _, exists := resolver.proxies[name]; exists {
 			return nil, errors.New("duplicate gateway upstream: " + name)
@@ -75,7 +76,9 @@ func newReverseProxy(target *url.URL, transport http.RoundTripper, responder Err
 				code = "upstream_timeout"
 				message = "upstream timeout"
 			}
-			responder.Respond(w, r, GatewayError{Status: status, Code: code, Message: message, Cause: err})
+			gatewayError := GatewayError{Status: status, Code: code, Message: message, Cause: err}
+			recordGatewayError(r, gatewayError)
+			responder.Respond(w, r, gatewayError)
 		},
 	}
 }

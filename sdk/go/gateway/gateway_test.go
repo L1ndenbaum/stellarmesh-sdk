@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -79,6 +80,12 @@ func TestGatewayFailsClosedWhenLimiterFails(t *testing.T) {
 	if proxied {
 		t.Fatal("request reached upstream after limiter failure")
 	}
+	var envelope struct {
+		ErrorReason string `json:"error_reason"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil || envelope.ErrorReason != "rate_limiter_unavailable" {
+		t.Fatalf("error envelope = %#v, %v", envelope, err)
+	}
 }
 
 func TestGatewayRejectsProtectedRoutesWithoutAuthenticatorAtConstruction(t *testing.T) {
@@ -109,6 +116,26 @@ func TestGatewayDynamicProtectedRouteWithoutAuthenticatorFailsClosed(t *testing.
 	gateway.ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d", response.Code)
+	}
+}
+
+func TestGatewayRejectsInvalidDynamicRouteBeforeProxying(t *testing.T) {
+	proxied := false
+	gateway, err := New(
+		WithRouteResolver(RouteResolverFunc(func(*http.Request) (Route, bool, error) {
+			return Route{Upstream: "backend", Access: AccessPublic}, true, nil
+		})),
+		withTestUpstreams(map[string]http.Handler{"backend": http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			proxied = true
+		})}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	gateway.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://gateway/dynamic", nil))
+	if response.Code != http.StatusServiceUnavailable || proxied {
+		t.Fatalf("status = %d, proxied = %v", response.Code, proxied)
 	}
 }
 

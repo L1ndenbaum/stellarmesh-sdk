@@ -32,6 +32,9 @@ type config struct {
 	upstreamSpecs        []Upstream
 	transport            http.RoundTripper
 	cors                 *CORSConfig
+	accessLogger         AccessLogger
+	observer             Observer
+	health               *HealthConfig
 	configuredComponents map[string]struct{}
 }
 
@@ -176,6 +179,37 @@ func WithCORS(cors CORSConfig) Option {
 		copied.AllowedMethods = append([]string(nil), cors.AllowedMethods...)
 		copied.AllowedHeaders = append([]string(nil), cors.AllowedHeaders...)
 		config.cors = &copied
+		return nil
+	})
+}
+
+// WithAccessLogger 启用请求完成后的旁路访问日志。
+func WithAccessLogger(logger AccessLogger) Option {
+	return componentOption("access_logger", func(config *config) error {
+		if isNilInterface(logger) {
+			return errors.New("gateway access logger is nil")
+		}
+		config.accessLogger = logger
+		return nil
+	})
+}
+
+// WithObserver 启用不影响请求结果的低基数观测事件。
+func WithObserver(observer Observer) Option {
+	return componentOption("observer", func(config *config) error {
+		if isNilInterface(observer) {
+			return errors.New("gateway observer is nil")
+		}
+		config.observer = observer
+		return nil
+	})
+}
+
+// WithHealth 启用网关本地存活和就绪端点。
+func WithHealth(health HealthConfig) Option {
+	return componentOption("health", func(config *config) error {
+		copied := health
+		config.health = &copied
 		return nil
 	})
 }

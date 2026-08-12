@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -26,7 +27,7 @@ func newStaticRouteResolver(routes []Route) (*staticRouteResolver, error) {
 	for index, route := range routes {
 		compiled, err := compileRoute(route)
 		if err != nil {
-			return nil, errors.New("invalid gateway route at index " + itoa(index) + ": " + err.Error())
+			return nil, errors.New("invalid gateway route at index " + strconv.Itoa(index) + ": " + err.Error())
 		}
 		key := routeMatchKey(compiled)
 		if _, exists := seen[key]; exists {
@@ -75,13 +76,29 @@ func compileRoute(route Route) (compiledRoute, error) {
 	methods := make(map[string]struct{}, len(route.Match.Methods))
 	for _, method := range route.Match.Methods {
 		method = strings.ToUpper(strings.TrimSpace(method))
-		if method == "" {
-			return compiledRoute{}, errors.New("route method cannot be empty")
+		if !isHTTPToken(method) {
+			return compiledRoute{}, errors.New("route method is invalid")
 		}
 		methods[method] = struct{}{}
 	}
 	route.Match.Methods = sortedKeys(methods)
 	return compiledRoute{route: route, methods: methods}, nil
+}
+
+func normalizeResolvedRoute(route Route) (Route, error) {
+	route = cloneRoute(route)
+	route.Name = strings.TrimSpace(route.Name)
+	route.Upstream = strings.TrimSpace(route.Upstream)
+	if route.Name == "" || route.Upstream == "" {
+		return Route{}, errors.New("resolved route name and upstream are required")
+	}
+	if route.Access != AccessProtected && route.Access != AccessPublic {
+		return Route{}, errors.New("resolved route access mode is invalid")
+	}
+	if route.MaxBodyBytes < 0 {
+		return Route{}, errors.New("resolved route maximum request body bytes cannot be negative")
+	}
+	return route, nil
 }
 
 func (resolver *staticRouteResolver) Resolve(r *http.Request) (Route, bool, error) {
@@ -122,19 +139,4 @@ func sortedKeys(values map[string]struct{}) []string {
 func cloneRoute(route Route) Route {
 	route.Match.Methods = append([]string(nil), route.Match.Methods...)
 	return route
-}
-
-func itoa(value int) string {
-	if value == 0 {
-		return "0"
-	}
-	digits := make([]byte, 0, 8)
-	for value > 0 {
-		digits = append(digits, byte('0'+value%10))
-		value /= 10
-	}
-	for left, right := 0, len(digits)-1; left < right; left, right = left+1, right-1 {
-		digits[left], digits[right] = digits[right], digits[left]
-	}
-	return string(digits)
 }
