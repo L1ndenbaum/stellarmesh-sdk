@@ -33,6 +33,12 @@ type Route struct {
 	MaxBodyBytes int64
 }
 
+// Upstream 描述一个在网关启动阶段解析的固定上游。
+type Upstream struct {
+	Name string
+	URL  string
+}
+
 // RouteResolver 把请求解析为一个项目声明的路由。
 type RouteResolver interface {
 	Resolve(*http.Request) (Route, bool, error)
@@ -182,6 +188,15 @@ type RequestIDConfig struct {
 	Header    string
 	MaxLength int
 	Generate  func() (string, error)
+}
+
+// CORSConfig 控制网关拥有的浏览器跨域策略。
+type CORSConfig struct {
+	AllowedOrigins   []string
+	AllowedMethods   []string
+	AllowedHeaders   []string
+	AllowCredentials bool
+	MaxAge           time.Duration
 }
 
 // GatewayError 是错误响应器可安全暴露的网关错误。

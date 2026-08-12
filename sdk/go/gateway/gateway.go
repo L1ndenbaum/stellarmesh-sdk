@@ -21,6 +21,7 @@ const (
 	requestIDContextKey contextKey = iota
 	routeContextKey
 	identityContextKey
+	clientIPContextKey
 )
 
 // Gateway 按固定的安全顺序执行项目声明的组件。
@@ -36,6 +37,7 @@ type Gateway struct {
 	upstreamLimiter  RateLimiter
 	errorResponder   ErrorResponder
 	requestID        RequestIDConfig
+	cors             *corsPolicy
 }
 
 // New 校验所有声明式组件并构造网关处理器。
@@ -62,6 +64,21 @@ func New(options ...Option) (*Gateway, error) {
 	if config.routeResolver == nil {
 		return nil, errors.New("gateway route resolver is required")
 	}
+	if len(config.upstreamSpecs) > 0 && config.upstreamResolver != nil {
+		return nil, errors.New("gateway fixed upstreams and upstream resolver are mutually exclusive")
+	}
+	if config.errorResponder == nil {
+		config.errorResponder = defaultErrorResponder{}
+	}
+	if len(config.upstreamSpecs) > 0 {
+		resolver, err := newReverseProxyResolver(config.upstreamSpecs, config.transport, config.errorResponder)
+		if err != nil {
+			return nil, err
+		}
+		config.upstreamResolver = resolver
+	} else if config.transport != nil {
+		return nil, errors.New("gateway transport requires fixed upstreams")
+	}
 	if config.upstreamResolver == nil {
 		return nil, errors.New("gateway upstream resolver is required")
 	}
@@ -71,11 +88,15 @@ func New(options ...Option) (*Gateway, error) {
 	if config.clientIPResolver == nil {
 		config.clientIPResolver = ClientIPResolverFunc(resolveRemoteAddr)
 	}
-	if config.errorResponder == nil {
-		config.errorResponder = defaultErrorResponder{}
-	}
 	requestID, err := normalizeRequestIDConfig(config.requestID)
 	if err != nil {
+		return nil, err
+	}
+	cors, err := newCORSPolicy(config.cors)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateStaticUpstreams(config.staticRoutes, config.upstreamResolver); err != nil {
 		return nil, err
 	}
 	return &Gateway{
@@ -90,6 +111,7 @@ func New(options ...Option) (*Gateway, error) {
 		upstreamLimiter:  config.upstreamLimiter,
 		errorResponder:   config.errorResponder,
 		requestID:        requestID,
+		cors:             cors,
 	}, nil
 }
 
@@ -106,6 +128,9 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Header.Set(gateway.requestID.Header, requestID)
 	recorder.Header().Set(gateway.requestID.Header, requestID)
 	r = r.WithContext(context.WithValue(r.Context(), requestIDContextKey, requestID))
+	if gateway.cors != nil && gateway.cors.handle(recorder, r, gateway) {
+		return
+	}
 
 	route, found, err := gateway.routes.Resolve(r)
 	if err != nil {
@@ -135,6 +160,7 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		gateway.fail(recorder, r, unavailableError("client_ip_resolution_failed", err))
 		return
 	}
+	r = r.WithContext(context.WithValue(r.Context(), clientIPContextKey, clientIP))
 	requestContext := RequestContext{RequestID: requestID, ClientIP: clientIP, Route: route}
 	if !gateway.applyRateLimit(recorder, r, gateway.clientIPLimiter, RateLimitRequest{
 		Scope: RateLimitScopeClientIP, Key: clientIP, Route: route.Name, Upstream: route.Upstream,
@@ -282,6 +308,19 @@ func containsProtectedRoute(routes []Route) bool {
 	return false
 }
 
+func validateStaticUpstreams(routes []Route, resolver UpstreamResolver) error {
+	for _, route := range routes {
+		compiled, err := compileRoute(route)
+		if err != nil {
+			return err
+		}
+		if _, err := resolver.ResolveUpstream(compiled.route); err != nil {
+			return errors.New("invalid upstream for route " + route.Name + ": " + err.Error())
+		}
+	}
+	return nil
+}
+
 func resolveRemoteAddr(r *http.Request) (string, error) {
 	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
 	if err == nil {
@@ -385,6 +424,12 @@ func RouteFromContext(ctx context.Context) (Route, bool) {
 func IdentityFromContext(ctx context.Context) (Identity, bool) {
 	identity, ok := ctx.Value(identityContextKey).(Identity)
 	return cloneIdentity(identity), ok
+}
+
+// ClientIPFromContext 返回经过可信代理策略解析的客户端地址。
+func ClientIPFromContext(ctx context.Context) (string, bool) {
+	clientIP, ok := ctx.Value(clientIPContextKey).(string)
+	return clientIP, ok
 }
 
 type defaultErrorResponder struct{}

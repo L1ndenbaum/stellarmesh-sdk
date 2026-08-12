@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"errors"
+	"net/http"
 )
 
 // Option 声明一个网关组件；安全关键组件的执行顺序不由 Option 顺序决定。
@@ -28,6 +29,9 @@ type config struct {
 	upstreamLimiter      RateLimiter
 	errorResponder       ErrorResponder
 	requestID            RequestIDConfig
+	upstreamSpecs        []Upstream
+	transport            http.RoundTripper
+	cors                 *CORSConfig
 	configuredComponents map[string]struct{}
 }
 
@@ -57,6 +61,25 @@ func WithUpstreamResolver(resolver UpstreamResolver) Option {
 			return errors.New("gateway upstream resolver is nil")
 		}
 		config.upstreamResolver = resolver
+		return nil
+	})
+}
+
+// WithUpstreams 使用启动时编译的固定上游地址。
+func WithUpstreams(upstreams ...Upstream) Option {
+	return componentOption("upstreams", func(config *config) error {
+		config.upstreamSpecs = append([]Upstream(nil), upstreams...)
+		return nil
+	})
+}
+
+// WithTransport 覆盖内置反向代理的共享 HTTP Transport。
+func WithTransport(transport http.RoundTripper) Option {
+	return componentOption("transport", func(config *config) error {
+		if transport == nil {
+			return errors.New("gateway transport is nil")
+		}
+		config.transport = transport
 		return nil
 	})
 }
@@ -141,6 +164,18 @@ func WithErrorResponder(responder ErrorResponder) Option {
 func WithRequestID(requestID RequestIDConfig) Option {
 	return componentOption("request_id", func(config *config) error {
 		config.requestID = requestID
+		return nil
+	})
+}
+
+// WithCORS 启用显式的浏览器跨域策略。
+func WithCORS(cors CORSConfig) Option {
+	return componentOption("cors", func(config *config) error {
+		copied := cors
+		copied.AllowedOrigins = append([]string(nil), cors.AllowedOrigins...)
+		copied.AllowedMethods = append([]string(nil), cors.AllowedMethods...)
+		copied.AllowedHeaders = append([]string(nil), cors.AllowedHeaders...)
+		config.cors = &copied
 		return nil
 	})
 }
