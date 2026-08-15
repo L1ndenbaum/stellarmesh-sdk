@@ -32,10 +32,10 @@
 
 建议发布四个相互独立、但来自同一 Git commit 的镜像：
 
-- `stellarmesh-logging-service`；
-- `stellarmesh-storage-service`；
-- `stellarmesh-logging-clickhouse-sink`；
-- `stellarmesh-logging-clickhouse-migrate`。
+- `ghcr.io/<组织>/stellarmesh-sdk/logging-service`；
+- `ghcr.io/<组织>/stellarmesh-sdk/storage-service`；
+- `ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-sink`；
+- `ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-migrate`。
 
 迁移镜像与服务镜像分开，目的不是形成新的安全边界，而是让外部编排器能够用迁移身份一次性运行固定 digest 的迁移，并确保迁移凭据不会进入常驻容器。
 

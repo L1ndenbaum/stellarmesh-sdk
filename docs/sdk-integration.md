@@ -200,7 +200,7 @@ Bucket、Policy、CORS、Lifecycle、Versioning、ACL 和 Secret 注入属于业
 
 ## 部署日志接收服务
 
-业务项目从固定 tag 或 digest 引用 `stellarmesh-logging-service` 镜像，并自行管理网络、端口、持久卷和配置注入。服务配置如下：
+业务项目从固定 tag 或 digest 引用 `ghcr.io/<组织>/stellarmesh-sdk/logging-service` 镜像，并自行管理网络、端口、持久卷和配置注入。服务配置如下：
 
 | 配置键 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -253,7 +253,7 @@ Bucket、Policy、CORS、Lifecycle、Versioning、ACL 和 Secret 注入属于业
 
 ## 部署 ClickHouse sink
 
-业务项目从固定 tag 或 digest 引用 `stellarmesh-logging-clickhouse-sink` 镜像。运行时只注入 Kafka 消费权限和 ClickHouse DML 权限，不注入迁移身份。
+业务项目从固定 tag 或 digest 引用 `ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-sink` 镜像。运行时只注入 Kafka 消费权限和 ClickHouse DML 权限，不注入迁移身份。
 
 | 配置键 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -301,12 +301,12 @@ sink 会严格解析每条源消息。有效事件写入 ClickHouse；普通无�
 
 ## 执行迁移制品
 
-迁移不是业务 Compose 中的常驻服务，也不是日志接收服务或 sink 的启动命令。`server-infrastructure` 应在资源准备、备份和 preflight 完成后，以单实例一次性任务运行固定 digest 的 `stellarmesh-logging-clickhouse-migrate` 镜像。
+迁移不是业务 Compose 中的常驻服务，也不是日志接收服务或 sink 的启动命令。`server-infrastructure` 应在资源准备、备份和 preflight 完成后，以单实例一次性任务运行固定 digest 的 `ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-migrate` 镜像。
 
 开发环境可以由业务项目用自己的连接信息执行同一制品，例如：
 
 ```sh
-docker run --rm stellarmesh-logging-clickhouse-migrate:0.1.0 \
+docker run --rm ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-migrate:0.1.0 \
   -database 'clickhouse://clickhouse:9000?username=migrator&password=example&database=logging&x-multi-statement=true' \
   up
 ```
