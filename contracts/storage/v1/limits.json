@@ -1,0 +1,16 @@
+{
+  "schema_version": "v1",
+  "max_control_body_bytes": 65536,
+  "namespace_pattern": "^[a-z][a-z0-9_-]{0,63}$",
+  "max_physical_key_bytes": 1024,
+  "max_metadata_items": 32,
+  "max_metadata_utf8_bytes": 2048,
+  "max_content_type_bytes": 255,
+  "min_token_unicode_characters": 32,
+  "default_presign_ttl_seconds": 900,
+  "min_presign_ttl_seconds": 60,
+  "max_presign_ttl_seconds": 3600,
+  "min_multipart_part_number": 1,
+  "max_multipart_part_number": 10000,
+  "max_single_put_bytes": 5368709120
+}

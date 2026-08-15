@@ -1,0 +1,400 @@
+openapi: 3.1.0
+info:
+  title: Stellarmesh Storage API
+  version: 1.0.0
+  description: 项目级对象存储控制面；对象字节通过预签名请求在客户端与 S3 之间直传。
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        "200": {$ref: "#/components/responses/Health"}
+  /health/live:
+    get:
+      operationId: getLiveness
+      responses:
+        "200": {$ref: "#/components/responses/Health"}
+  /health/ready:
+    get:
+      operationId: getReadiness
+      responses:
+        "200": {$ref: "#/components/responses/Health"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /metrics:
+    get:
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus 文本格式指标
+          content:
+            text/plain:
+              schema: {type: string}
+  /v1/objects/stat:
+    post:
+      operationId: statObject
+      security: [{StorageServiceToken: []}]
+      requestBody: {$ref: "#/components/requestBodies/ObjectRequest"}
+      responses:
+        "200":
+          description: 对象元数据
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ObjectInfoEnvelope"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /v1/objects/delete:
+    post:
+      operationId: deleteObject
+      security: [{StorageServiceToken: []}]
+      requestBody: {$ref: "#/components/requestBodies/ObjectRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/EmptySuccess"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /v1/presign/get:
+    post:
+      operationId: presignGetObject
+      security: [{StorageServiceToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PresignGetRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Presigned"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /v1/presign/put:
+    post:
+      operationId: presignPutObject
+      security: [{StorageServiceToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/PresignPutRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Presigned"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /v1/multipart/create:
+    post:
+      operationId: createMultipart
+      security: [{StorageServiceToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/MultipartCreateRequest"}
+      responses:
+        "200":
+          description: Multipart 标识
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/MultipartUploadEnvelope"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /v1/multipart/presign-part:
+    post:
+      operationId: presignMultipartPart
+      security: [{StorageServiceToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/MultipartPartRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Presigned"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /v1/multipart/complete:
+    post:
+      operationId: completeMultipart
+      security: [{StorageServiceToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/MultipartCompleteRequest"}
+      responses:
+        "200":
+          description: 完成后的对象信息
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ObjectInfoEnvelope"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "409": {$ref: "#/components/responses/Conflict"}
+        "412": {$ref: "#/components/responses/PreconditionFailed"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+  /v1/multipart/abort:
+    post:
+      operationId: abortMultipart
+      security: [{StorageServiceToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/MultipartAbortRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/EmptySuccess"}
+        "400": {$ref: "#/components/responses/BadRequest"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404": {$ref: "#/components/responses/NotFound"}
+        "413": {$ref: "#/components/responses/PayloadTooLarge"}
+        "503": {$ref: "#/components/responses/Unavailable"}
+components:
+  securitySchemes:
+    StorageServiceToken:
+      type: apiKey
+      in: header
+      name: X-Storage-Service-Token
+  requestBodies:
+    ObjectRequest:
+      required: true
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ObjectRequest"}
+  schemas:
+    Namespace:
+      type: string
+      pattern: "^[a-z][a-z0-9_-]{0,63}$"
+    Key:
+      type: string
+      minLength: 1
+    Metadata:
+      type: object
+      maxProperties: 32
+      additionalProperties: {type: string}
+    Checksum:
+      type: object
+      additionalProperties: false
+      required: [algorithm, value]
+      properties:
+        algorithm: {enum: [CRC32, CRC32C, SHA1, SHA256]}
+        value: {type: string, minLength: 1, contentEncoding: base64}
+    ObjectRequest:
+      type: object
+      additionalProperties: false
+      required: [namespace, key]
+      properties:
+        namespace: {$ref: "#/components/schemas/Namespace"}
+        key: {$ref: "#/components/schemas/Key"}
+        version_id: {type: string}
+    PresignGetRequest:
+      type: object
+      additionalProperties: false
+      required: [namespace, key]
+      properties:
+        namespace: {$ref: "#/components/schemas/Namespace"}
+        key: {$ref: "#/components/schemas/Key"}
+        version_id: {type: string}
+        expires_in: {type: integer, minimum: 60, maximum: 3600, default: 900}
+    PresignPutRequest:
+      type: object
+      additionalProperties: false
+      required: [namespace, key, size]
+      properties:
+        namespace: {$ref: "#/components/schemas/Namespace"}
+        key: {$ref: "#/components/schemas/Key"}
+        size: {type: integer, minimum: 0, maximum: 5368709120}
+        content_type: {type: string, maxLength: 255}
+        metadata: {$ref: "#/components/schemas/Metadata"}
+        checksum: {$ref: "#/components/schemas/Checksum"}
+        expires_in: {type: integer, minimum: 60, maximum: 3600, default: 900}
+    MultipartCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [namespace, key]
+      properties:
+        namespace: {$ref: "#/components/schemas/Namespace"}
+        key: {$ref: "#/components/schemas/Key"}
+        content_type: {type: string, maxLength: 255}
+        metadata: {$ref: "#/components/schemas/Metadata"}
+        checksum: {$ref: "#/components/schemas/Checksum"}
+    MultipartPartRequest:
+      type: object
+      additionalProperties: false
+      required: [namespace, key, upload_id, part_number]
+      properties:
+        namespace: {$ref: "#/components/schemas/Namespace"}
+        key: {$ref: "#/components/schemas/Key"}
+        upload_id: {type: string, minLength: 1}
+        part_number: {type: integer, minimum: 1, maximum: 10000}
+        expires_in: {type: integer, minimum: 60, maximum: 3600, default: 900}
+    CompletedPart:
+      type: object
+      additionalProperties: false
+      required: [part_number, etag]
+      properties:
+        part_number: {type: integer, minimum: 1, maximum: 10000}
+        etag: {type: string, minLength: 1}
+    MultipartCompleteRequest:
+      type: object
+      additionalProperties: false
+      required: [namespace, key, upload_id, parts]
+      properties:
+        namespace: {$ref: "#/components/schemas/Namespace"}
+        key: {$ref: "#/components/schemas/Key"}
+        upload_id: {type: string, minLength: 1}
+        parts:
+          type: array
+          minItems: 1
+          maxItems: 10000
+          items: {$ref: "#/components/schemas/CompletedPart"}
+    MultipartAbortRequest:
+      type: object
+      additionalProperties: false
+      required: [namespace, key, upload_id]
+      properties:
+        namespace: {$ref: "#/components/schemas/Namespace"}
+        key: {$ref: "#/components/schemas/Key"}
+        upload_id: {type: string, minLength: 1}
+    ObjectInfo:
+      type: object
+      additionalProperties: false
+      required: [key, size, metadata]
+      properties:
+        key: {type: string}
+        version_id: {type: string}
+        etag: {type: string}
+        size: {type: integer, minimum: 0}
+        content_type: {type: string}
+        last_modified: {type: string, format: date-time}
+        metadata: {$ref: "#/components/schemas/Metadata"}
+        checksum: {$ref: "#/components/schemas/Checksum"}
+    PresignedRequest:
+      type: object
+      additionalProperties: false
+      required: [method, url, headers, expires_at]
+      properties:
+        method: {enum: [GET, PUT]}
+        url: {type: string, format: uri}
+        headers:
+          type: object
+          additionalProperties:
+            type: array
+            items: {type: string}
+        expires_at: {type: string, format: date-time}
+    MultipartUpload:
+      type: object
+      additionalProperties: false
+      required: [key, upload_id]
+      properties:
+        key: {type: string}
+        upload_id: {type: string}
+    EmptyData:
+      type: object
+      additionalProperties: false
+    ApiEnvelope:
+      type: object
+      additionalProperties: false
+      required: [code, message, data, timestamp]
+      properties:
+        code: {type: integer}
+        message: {type: string}
+        data: {}
+        timestamp: {type: string, format: date-time}
+        error_reason: {type: string}
+    ObjectInfoEnvelope:
+      allOf:
+        - {$ref: "#/components/schemas/ApiEnvelope"}
+        - type: object
+          properties:
+            data: {$ref: "#/components/schemas/ObjectInfo"}
+    PresignedRequestEnvelope:
+      allOf:
+        - {$ref: "#/components/schemas/ApiEnvelope"}
+        - type: object
+          properties:
+            data: {$ref: "#/components/schemas/PresignedRequest"}
+    MultipartUploadEnvelope:
+      allOf:
+        - {$ref: "#/components/schemas/ApiEnvelope"}
+        - type: object
+          properties:
+            data: {$ref: "#/components/schemas/MultipartUpload"}
+  responses:
+    Health:
+      description: 进程存活或依赖就绪状态
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}
+    EmptySuccess:
+      description: 操作完成
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}
+    Presigned:
+      description: 完整预签名数据面请求
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/PresignedRequestEnvelope"}
+    BadRequest:
+      description: 请求结构或参数无效
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}
+    Unauthorized:
+      description: 服务 token 无效
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}
+    Forbidden:
+      description: 已认证 principal 无 namespace 或 capability 权限
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}
+    NotFound:
+      description: 对象、版本或 Multipart 不存在
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}
+    Conflict:
+      description: provider 报告资源冲突
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}
+    PreconditionFailed:
+      description: 条件请求失败
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}
+    PayloadTooLarge:
+      description: 控制面请求体超过 64 KiB
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}
+    Unavailable:
+      description: namespace 当前不可访问、请求超时或 provider 错误
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/ApiEnvelope"}

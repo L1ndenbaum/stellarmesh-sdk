@@ -1,0 +1,40 @@
+[
+  {
+    "name": "未知字段",
+    "payload": {
+      "namespaces": {"documents": {"bucket": "bucket", "prefix": "", "unknown": true}},
+      "principals": {"backend": {"tokens": ["storage-contract-primary-token-00000001"], "grants": {"documents": ["read"]}}}
+    }
+  },
+  {
+    "name": "未知 namespace",
+    "payload": {
+      "namespaces": {"documents": {"bucket": "bucket", "prefix": ""}},
+      "principals": {"backend": {"tokens": ["storage-contract-primary-token-00000001"], "grants": {"missing": ["read"]}}}
+    }
+  },
+  {
+    "name": "短 token",
+    "payload": {
+      "namespaces": {"documents": {"bucket": "bucket", "prefix": ""}},
+      "principals": {"backend": {"tokens": ["too-short"], "grants": {"documents": ["read"]}}}
+    }
+  },
+  {
+    "name": "未知 capability",
+    "payload": {
+      "namespaces": {"documents": {"bucket": "bucket", "prefix": ""}},
+      "principals": {"backend": {"tokens": ["storage-contract-primary-token-00000001"], "grants": {"documents": ["admin"]}}}
+    }
+  },
+  {
+    "name": "重复 token",
+    "payload": {
+      "namespaces": {"documents": {"bucket": "bucket", "prefix": ""}},
+      "principals": {
+        "backend": {"tokens": ["storage-contract-primary-token-00000001"], "grants": {"documents": ["read"]}},
+        "worker": {"tokens": ["storage-contract-primary-token-00000001"], "grants": {"documents": ["write"]}}
+      }
+    }
+  }
+]
