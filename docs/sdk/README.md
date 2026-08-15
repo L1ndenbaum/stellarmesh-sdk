@@ -1,15 +1,18 @@
 # SDK 接入教程
 
-本目录按照仓库中可独立发布和被业务项目引用的 SDK 划分。当前提供两个语言 SDK：
+本目录按照仓库中可独立发布和被业务项目引用的 SDK 划分。当前提供一个 Go module 和两个独立 Python distribution：
 
-- [Go SDK 接入教程](go/README.md)：对应 `sdk/go` Go module，包含日志、HTTP 和网关能力；
-- [Python SDK 接入教程](python/README.md)：对应 `sdk/python` 中发布的 `stellarmesh-logging` 包。
+- [Go SDK 接入教程](go/README.md)：对应 `sdk/go` Go module，包含日志、HTTP、网关和进程内对象存储能力；
+- [Python 日志 SDK 接入教程](python/README.md)：对应 `sdk/python` 中发布的 `stellarmesh-logging` 包；
+- [Python 对象存储 SDK 接入教程](python/storage.md)：对应 `sdk/python/storage` 中发布的 `stellarmesh-storage` 包。
 
-两种语言 SDK 都能在业务进程内构造规范日志事件，通过有界异步队列批量发送到 `logging-service`。Python SDK 还提供标准库 `logging.Handler` 适配器，使已有项目无需替换日志调用方式。Go SDK 另外提供[声明式网关组件](go/gateway.md)，项目通过 `WithXxx` 选择路由、鉴权、限流和观测能力，安全执行顺序由 SDK 固定。SDK 不负责部署 `logging-service`、Kafka、ClickHouse，不执行迁移，也不读取业务项目的配置模块。
+Go 与 Python 日志 SDK 都能在业务进程内构造规范日志事件，通过有界异步队列批量发送到 `logging-service`。Python 日志包还提供标准库 `logging.Handler` 适配器。Go SDK 另外提供[声明式网关组件](go/gateway.md)，项目通过 `WithXxx` 选择路由、鉴权、限流和观测能力，安全执行顺序由 SDK 固定。
+
+Go 对象存储包适合进程内服务直接访问 S3；Python 对象存储包通过项目级 `storage-service` 获取预签名请求，内容不经过 Go 控制面。SDK 不负责部署平台服务、创建 Bucket、配置 CORS/Policy/Lifecycle、创建 Kafka/ClickHouse 资源或执行迁移，也不读取业务项目的配置模块。
 
 ## 共同准备
 
-接入任一 SDK 前，需要从业务项目自己的配置与 Secret 管理中取得：
+接入日志 SDK 前，需要从业务项目自己的配置与 Secret 管理中取得：
 
 - `logging-service` 的 HTTP 地址，例如 `http://logging-service:8091`；
 - 分配给当前业务 `service` 的 token；
@@ -19,6 +22,8 @@
 token 与 `service` 必须匹配。SDK 会把 token 放入 `X-Logging-Service-Token` 请求头，`logging-service` 会拒绝 token 无权代表的 `service`。
 
 正式环境必须使用已经发布的固定版本，不要直接引用可变分支。Go 与 Python SDK、`logging-service` 镜像应来自同一个发布 commit；完整发布规则见[发布与版本引用](../release.md)。
+
+接入对象存储时，还需要项目自己的逻辑 namespace、`storage-service` 地址与 token，或进程内 Go SDK 使用的项目 IAM Role/MinIO 凭据。Bucket 不作为业务请求参数，真实权限由项目 Policy 限制。
 
 ## 语义边界
 

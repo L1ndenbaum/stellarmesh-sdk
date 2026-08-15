@@ -1,6 +1,6 @@
 # Go SDK 接入教程
 
-本教程对应 Go module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.24 及以上版本。业务日志接入使用 `logging` package；需要复用路由、鉴权、限流和反向代理时，阅读[Go 网关 SDK 接入教程](gateway.md)。
+本教程对应 Go module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.24 及以上版本。业务日志接入使用 `logging` package；需要复用路由、鉴权、限流和反向代理时，阅读[Go 网关 SDK 接入教程](gateway.md)；需要进程内访问 AWS S3 或 MinIO 时，阅读[Go 对象存储 SDK 接入教程](object-storage.md)。
 
 ## 1. 安装固定版本
 
@@ -199,3 +199,9 @@ SDK 调用成功只表示本地入队；`logging-service` 返回 `202` 表示 Ka
 网关 SDK 与日志客户端位于同一个 Go module，但生命周期不同：网关 SDK 返回普通 `http.Handler`，不创建监听端口、不读取环境变量，也不拥有业务路由；日志客户端拥有异步发送 worker，需要在进程退出前关闭。业务项目应在自己的 `main.go` 中组装二者，并继续使用项目配置层管理 upstream 地址、JWT Secret、Redis 地址和 CORS origin。
 
 网关的最小接入、完整 `WithXxx` 列表、固定执行顺序和 fail-close 语义见[Go 网关 SDK 接入教程](gateway.md)。
+
+## 10. 对象存储项目
+
+`objectstorage` 定义 provider-neutral 小接口、namespace/key 校验、公共错误与 Observer；`objectstorage/s3store` 使用 AWS SDK for Go v2 实现 AWS S3 和 S3-compatible 适配。每个客户端在构造时固定 Bucket 与 Prefix，业务请求只传逻辑 key。
+
+Go 服务可以直接流式 Put/Get、读取 Stat、删除指定版本、生成预签名请求或显式管理 Multipart。SDK 不创建临时文件，不自动创建 Bucket，也不提供 List、Copy、ACL、CORS、Policy、Lifecycle 和 Versioning 管理。完整构造方式、MinIO 双 Endpoint、Reader 关闭责任、错误语义与权限边界见[Go 对象存储 SDK 接入教程](object-storage.md)。

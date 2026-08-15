@@ -1,6 +1,6 @@
 # 接入 SDK
 
-本文件说明业务项目接入 SDK、日志接收服务、ClickHouse sink 和迁移制品的完整流程。只接入语言客户端时，可直接阅读 [Go SDK 接入教程](sdk/go/README.md) 或 [Python SDK 接入教程](sdk/python/README.md)；Go 项目需要网关能力时阅读 [Go 网关 SDK 接入教程](sdk/go/gateway.md)。
+本文件说明业务项目接入 SDK、日志接收服务、对象存储服务、ClickHouse sink 和迁移制品的完整流程。只接入语言客户端时，可直接阅读 [Go SDK 接入教程](sdk/go/README.md) 或 [Python SDK 接入教程](sdk/python/README.md)；Go 项目需要网关能力时阅读 [Go 网关 SDK 接入教程](sdk/go/gateway.md)，对象存储接入分别阅读 [Go 对象存储 SDK](sdk/go/object-storage.md)、[Python 对象存储 SDK](sdk/python/storage.md) 和 [storage-service 部署文档](storage-service.md)。
 
 ## 接入前准备
 
@@ -13,6 +13,8 @@
 - 项目独立的 Kafka DLQ Topic、保留策略和 sink 生产权限；
 - 项目独立的 ClickHouse database、迁移身份与运行时身份；
 - 日志接收服务本地 spool 的持久化目录。
+- 项目对象存储的逻辑 namespace、Bucket、Prefix 和最小权限 IAM 或 MinIO Policy；
+- 项目独立的 `storage-service` 访问文件、轮换 token 和可选的 S3-compatible Endpoint；
 
 开发环境可由业务项目自行用 Compose、测试容器或共享开发基础设施提供。生产资源必须通过 `server-infrastructure` 声明和编排。
 
@@ -151,6 +153,51 @@ async def application_shutdown() -> None:
 
 `drop_handler` 同样不能再调用当前远端 logger，避免失败时递归。若业务已有 trace 上下文，应在 provider 中适配；SDK 不直接依赖 FastAPI、Django、Flask、OpenTelemetry 或业务自定义 context。
 
+## 接入对象存储
+
+对象存储有两种接入路径，二者共享 Storage v1 的 key、TTL、Metadata 和错误边界：
+
+- Go 服务需要在进程内读取或写入对象时，直接使用 `objectstorage/s3store`，由应用启动配置把一个客户端绑定到一个 Bucket 与 Prefix；
+- Python 或其他不应持有对象存储凭据的客户端，通过项目自己的 `storage-service` 获取预签名请求，再直接与 S3 或 MinIO 传输对象字节。
+
+Go 进程内客户端使用标准 AWS 凭据链，不应把 Bucket 暴露为每次业务调用的参数。AWS 模式不设置自定义 Endpoint；MinIO 模式显式设置内部 Endpoint、客户端可访问的 `PresignEndpoint` 和 `UsePathStyle=true`。`Check` 只执行只读可访问性检查，不创建 Bucket。构造、Range、Checksum、错误映射和显式 Multipart 示例见 [Go 对象存储 SDK](sdk/go/object-storage.md)。
+
+Python 包独立安装，不能用日志包替代：
+
+```sh
+pip install stellarmesh-storage==0.1.0
+```
+
+```python
+from stellarmesh_storage import Client, ClientConfig
+
+config = ClientConfig(
+    base_url="http://storage-service:8090",
+    token="storage-project-service-token-00000001",
+    timeout_seconds=5.0,
+    max_attempts=3,
+)
+
+with Client(config) as client:
+    client.upload_file(
+        "documents",
+        "reports/2026.pdf",
+        "/work/report.pdf",
+        content_type="application/pdf",
+    )
+    client.download_file(
+        "documents",
+        "reports/2026.pdf",
+        "/work/result.pdf",
+    )
+```
+
+`storage-service` 必须一项目一实例，使用该项目自己的 IAM Role、Web Identity 或 MinIO 项目凭据。只读访问文件声明 namespace 到 Bucket/Prefix 的映射，以及 principal token 对 `read`、`write`、`delete` 的授权。服务只提供 Stat、Delete、Presign GET/PUT 和显式 Multipart 控制面，不提供对象字节代理路由。
+
+部署时至少配置 `STELLARMESH_STORAGE_ACCESS_FILE` 和 AWS Region；MinIO 还需要 `STELLARMESH_STORAGE_ENDPOINT`、通常需要 `STELLARMESH_STORAGE_USE_PATH_STYLE=true`，若客户端不能访问内部地址则配置 `STELLARMESH_STORAGE_PRESIGN_ENDPOINT`。存活检查使用 `/health/live`，就绪检查使用 `/health/ready`，指标使用 `/metrics`。readiness 只有在全部 namespace 可访问时才成功；not-ready 时控制面 fail-close 返回 `503`。
+
+Bucket、Policy、CORS、Lifecycle、Versioning、ACL 和 Secret 注入属于业务部署或 `server-infrastructure`。SDK 与服务不管理这些资源，也不提供跨项目中央凭据池。每个业务项目应先在自己的分支完成接入和回归；本仓库发布制品不会自动修改或迁移业务仓库。
+
 ## 部署日志接收服务
 
 业务项目从固定 tag 或 digest 引用 `stellarmesh-logging-service` 镜像，并自行管理网络、端口、持久卷和配置注入。服务配置如下：
@@ -286,5 +333,7 @@ docker run --rm stellarmesh-logging-clickhouse-migrate:0.1.0 \
 - `stellarmesh_logging_clickhouse_sink_pending_messages`、`stellarmesh_logging_clickhouse_sink_pending_bytes`、各阶段失败计数和 sink readiness；
 - ClickHouse 批量插入错误、DLQ 产生速率、DLQ lag、DLQ 保留容量和重复记录；
 - 应用关闭时 SDK drain 是否超时。
+- `storage-service` 的 `401`、`403`、`413`、`503`、readiness 切换和优雅关闭；
+- 对象存储操作按有限 operation/result 标签统计的失败率与延迟，以及 S3 或 MinIO 自身的容量、配额和可用性；
 
 收到 `202` 表示事件已由 Kafka 全同步副本确认，或已经原子提交到 logging-service 的持久 spool；它不表示 ClickHouse 已经写入。后续 Kafka 消费、ClickHouse 写入和 offset 提交仍按 at-least-once 重试，所以不能只用 HTTP 成功率判断最终查询链路是否完整。审计类业务如果要求业务事务与审计记录原子提交，仍应设计事务性审计存储，不能把独立日志链路当作业务事务的一部分。

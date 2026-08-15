@@ -2,7 +2,7 @@
 
 ## 目标与边界
 
-`stellarmesh-sdk` 把原先散落在不同项目中的基础 HTTP、网关、日志客户端、日志接收服务和 ClickHouse 落盘逻辑集中维护。各项目可以引用相同的网关与日志 SDK，并独立部署同一版本的服务制品，使用各自的业务路由、Kafka Topic、ClickHouse database、账号与凭据，不需要复制公共源码。
+`stellarmesh-sdk` 把原先散落在不同项目中的基础 HTTP、网关、日志和对象存储能力集中维护。各项目可以引用相同的 SDK，并独立部署同一版本的服务制品，使用各自的业务路由、Kafka Topic、ClickHouse database、对象存储 namespace、账号与凭据，不需要复制公共源码。
 
 仓库有意不包含以下内容：
 
@@ -10,6 +10,8 @@
 - `.env` 或任何生产地址、账号和 Secret；
 - ClickHouse database、用户、角色和配额的创建逻辑；
 - Kafka Topic、principal 和 ACL 的创建逻辑；
+- S3 或 MinIO Bucket、Policy、CORS、Lifecycle、Versioning 和 ACL 的管理逻辑；
+- 多项目中央对象存储凭据池；
 - 在常驻服务启动阶段自动执行迁移的入口。
 
 这些内容属于业务项目的开发部署配置或 `server-infrastructure` 的生产资源与发布清单。
@@ -19,15 +21,19 @@
 | 路径 | 内容 | 发布形式 |
 | --- | --- | --- |
 | `contracts/logging/v1/` | 日志事件、DLQ v1/v2、尺寸限制、OpenAPI 和共享测试数据 | 随仓库版本发布 |
-| `sdk/go/` | Go 公共 HTTP、声明式网关、Kafka、环境配置与日志客户端 | Go module |
-| `sdk/python/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | Python package |
+| `contracts/storage/v1/` | 对象存储控制面 OpenAPI、访问配置 Schema、统一限制和共享测试数据 | 随仓库版本发布 |
+| `sdk/go/` | Go 公共 HTTP、声明式网关、Kafka、日志和对象存储客户端 | Go module |
+| `sdk/python/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | `stellarmesh-logging` Python package |
+| `sdk/python/storage/` | Python 对象存储同步与异步客户端 | `stellarmesh-storage` Python package |
 | `services/logging/` | HTTP 接收、内存队列、控制台输出、Kafka 发布与失败暂存 | 常驻服务镜像 |
+| `services/storage/` | 项目级对象存储认证、授权、readiness 与预签名控制面 | 常驻服务镜像 |
 | `sinks/clickhouse/` | Kafka 消费、批量写入和 offset 提交 | 常驻 sink 镜像 |
 | `sinks/clickhouse/migrations/` | `log_events` 表的版本化 up/down SQL | 一次性迁移镜像 |
 
-建议发布三个相互独立、但来自同一 Git commit 的镜像：
+建议发布四个相互独立、但来自同一 Git commit 的镜像：
 
 - `stellarmesh-logging-service`；
+- `stellarmesh-storage-service`；
 - `stellarmesh-logging-clickhouse-sink`；
 - `stellarmesh-logging-clickhouse-migrate`。
 
@@ -65,6 +71,9 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 - `http/headers`：标准请求头读写；
 - `http/server`：带超时的 HTTP server 构造；
 - `mq/kafka`：具有显式 topic、可复用 Topic 启动检查、TLS、mTLS、SASL/PLAIN 和 SCRAM 配置的 Kafka publisher；
+- `objectstorage`：namespace 绑定的 provider-neutral 小接口、对象模型、参数校验和稳定错误；
+- `objectstorage/s3store`：基于 AWS SDK for Go v2 的 AWS S3 与 S3-compatible 适配器；
+- `storagecontract`：Storage v1 的统一限制、严格访问配置和 capability 校验；
 - `envconfig`：不依赖业务 settings 的基础环境变量解析，并提供显式错误的严格 loader。
 
 网关项目使用 `gateway.New(options ...Option)` 构造一个普通 `http.Handler`。`WithXxx` 只声明使用哪些组件，不改变执行顺序。路由解析、客户端地址解析、鉴权、授权、限流、转发策略和 upstream 解析发生错误时停止转发；访问日志与 Observer 失败只产生旁路观测，不改变已经完成的 HTTP 响应。静态路由默认需要认证，公开路由必须显式设置 `AccessPublic`，未匹配路径返回 `404`。完整接入方式见[Go 网关 SDK](sdk/go/gateway.md)。
@@ -85,6 +94,22 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 - 协议编码与解码函数及 `py.typed` 类型声明。
 
 Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业务项目的配置模块、Web 框架或请求上下文。`StellarmeshHandler` 只把标准 `LogRecord` 转成规范事件，不创建控制台输出、额外队列或重试线程；远程最低级别仍由 `ClientConfig.minimum_level` 统一过滤。业务项目通过构造参数或 provider 注入服务名、令牌和 trace id。provider 与 drop handler 的异常不会传播到业务调用方；worker 具有明确的失败状态，队列的事件数和累计字节均有上限，并提供 best-effort 进程退出排空兜底。
+
+独立发布的 `stellarmesh-storage` 包提供严格 Pydantic 模型、同步 `Client` 和异步 `AsyncClient`。它只向项目级 `storage-service` 发送控制面请求，通过预签名 URL 让对象字节直接在客户端与 S3 或 MinIO 之间传输。service token 不会进入数据面请求；单次上传超过 5 GiB 时明确要求调用方管理 Multipart，不在客户端隐藏 UploadID 和 Part 状态；文件下载使用同目录临时文件并在成功后原子替换目标。完整用法见 [Python 对象存储 SDK](sdk/python/storage.md)。
+
+## 对象存储协议与数据链路
+
+Storage v1 的业务请求只包含逻辑 `namespace` 和 `key`，不接受 Bucket。每个项目独立部署一份 `storage-service`，由只读访问文件把 namespace 映射到 Bucket 与 Prefix，并把 principal token 映射到 `read`、`write`、`delete` capability。同一实例可以声明多个 namespace，但所有 namespace 必须使用同一项目的 AWS IAM Role、Web Identity 或 MinIO 项目凭据。
+
+```text
+Go 服务 -> 进程内 objectstorage SDK -> S3 或 MinIO
+
+Python 或其他客户端
+  -> storage-service：认证、授权、readiness、预签名
+  -> S3 或 MinIO：使用返回的 Method 与 Signed Headers 直传对象字节
+```
+
+`storage-service` 不代理对象内容、不写临时文件，也不创建 Bucket。readiness 初始为 false，只有全部 namespace 的只读可访问性检查成功才变为 ready；检查失败时受保护路由 fail-close 返回 `503`。未知 token 返回 `401`，已认证但没有 namespace 或 capability 权限返回 `403`。预签名 URL、Bucket、完整 Key 和 principal 不进入指标标签或 Observer。详细部署参数和责任边界见 [storage-service 部署文档](storage-service.md)，Go 进程内用法见 [Go 对象存储 SDK](sdk/go/object-storage.md)。
 
 ## 日志数据链路
 
@@ -126,12 +151,13 @@ resources plan/apply
   -> postcheck
 ```
 
-生产清单最终固定三个镜像的 digest。迁移失败必须阻止常驻服务发布；不应通过自动 downgrade 掩盖失败。
+生产清单最终固定四个镜像的 digest。迁移失败必须阻止日志常驻服务发布；不应通过自动 downgrade 掩盖失败。`storage-service` 不参与 ClickHouse 迁移，但仍应与 SDK 和 Storage v1 契约使用同一验证版本。
 
 ## 版本兼容规则
 
 - 协议目录的 `v1` 是消息兼容边界；新增可选字段必须同时更新契约与四方测试。
+- Storage v1 的 OpenAPI、访问配置 Schema、Go 服务和 Python 客户端必须同步更新共享限制与 testdata。
 - DLQ 记录是独立的 v1 协议，不得直接投回正常事件 Topic；修复并重放前必须显式解码 `payload_base64`、校验来源坐标并经过审计。
 - 删除字段、改变含义或收紧校验属于破坏性变化，应创建新的协议版本与 Topic。
-- SDK、接收服务、sink 与迁移镜像应使用同一仓库 tag 构建。
+- Go SDK、两个 Python 包、接收服务、storage-service、sink 与迁移镜像应使用同一仓库 commit 构建。
 - 每个业务项目可以选择自己的升级窗口，但不能混用未验证的协议版本。
