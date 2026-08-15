@@ -1,7 +1,8 @@
 SHELL := /bin/sh
 
 ROOT := $(CURDIR)
-PYTHON_DIR := sdk/python
+PYTHON_LOGGING_DIR := sdk/python
+PYTHON_STORAGE_DIR := sdk/python/storage
 VENV := $(ROOT)/.venv
 GO_PACKAGES := ./sdk/go/... ./services/logging/... ./services/storage/... ./sinks/clickhouse/...
 
@@ -13,26 +14,33 @@ export GOMODCACHE ?= $(ROOT)/.cache/go-mod
 
 bootstrap:
 	python3 -m venv $(VENV)
-	$(VENV)/bin/pip install -e '$(PYTHON_DIR)[dev]'
+	$(VENV)/bin/pip install -e '$(PYTHON_LOGGING_DIR)[dev]'
+	$(VENV)/bin/pip install -e '$(PYTHON_STORAGE_DIR)[dev]'
 
 format:
 	gofmt -w $$(rg --files sdk/go services/logging services/storage sinks/clickhouse -g '*.go')
-	cd $(PYTHON_DIR) && $(VENV)/bin/ruff check . --fix
-	cd $(PYTHON_DIR) && $(VENV)/bin/ruff format .
+	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/ruff check src tests --fix
+	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/ruff format src tests
+	cd $(PYTHON_STORAGE_DIR) && $(VENV)/bin/ruff check . --fix
+	cd $(PYTHON_STORAGE_DIR) && $(VENV)/bin/ruff format .
 
 check:
 	test -z "$$(gofmt -l sdk/go services/logging services/storage sinks/clickhouse)"
 	go vet $(GO_PACKAGES)
-	cd $(PYTHON_DIR) && $(VENV)/bin/ruff check .
-	cd $(PYTHON_DIR) && $(VENV)/bin/ruff format --check .
-	cd $(PYTHON_DIR) && $(VENV)/bin/mypy .
+	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/ruff check src tests
+	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/ruff format --check src tests
+	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/mypy src tests
+	cd $(PYTHON_STORAGE_DIR) && $(VENV)/bin/ruff check .
+	cd $(PYTHON_STORAGE_DIR) && $(VENV)/bin/ruff format --check .
+	cd $(PYTHON_STORAGE_DIR) && $(VENV)/bin/mypy .
 	sh -n services/logging/docker-entrypoint.sh
 	sh -n tests/integration/logging-pipeline.sh
 	git diff --check
 
 test:
 	go test $(GO_PACKAGES)
-	cd $(PYTHON_DIR) && $(VENV)/bin/pytest
+	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/pytest
+	cd $(PYTHON_STORAGE_DIR) && $(VENV)/bin/pytest
 
 race:
 	go test -race $(GO_PACKAGES)
