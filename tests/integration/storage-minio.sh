@@ -180,4 +180,12 @@ wait_ready 503
 docker start "$MINIO_CONTAINER" >/dev/null
 wait_ready 200
 
+docker stop --time 10 "$SERVICE_CONTAINER" >/dev/null
+SERVICE_EXIT_CODE=$(docker inspect -f '{{.State.ExitCode}}' "$SERVICE_CONTAINER")
+if [ "$SERVICE_EXIT_CODE" != "0" ]; then
+    echo "storage-service 优雅关闭退出码为 $SERVICE_EXIT_CODE" >&2
+    docker logs "$SERVICE_CONTAINER" >&2 || true
+    exit 1
+fi
+
 echo 'Storage MinIO 集成验证通过'
