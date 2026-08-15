@@ -1,6 +1,6 @@
 # Go SDK 接入教程
 
-本教程对应 Go module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.22 及以上版本。业务日志接入使用 `logging` package；需要复用路由、鉴权、限流和反向代理时，阅读[Go 网关 SDK 接入教程](gateway.md)。
+本教程对应 Go module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.24 及以上版本。业务日志接入使用 `logging` package；需要复用路由、鉴权、限流和反向代理时，阅读[Go 网关 SDK 接入教程](gateway.md)。
 
 ## 1. 安装固定版本
 
