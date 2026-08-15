@@ -80,7 +80,7 @@ type ObjectInfo struct {
 	ETag         string            `json:"etag,omitempty"`
 	Size         int64             `json:"size"`
 	ContentType  string            `json:"content_type,omitempty"`
-	LastModified time.Time         `json:"last_modified,omitempty"`
+	LastModified *time.Time        `json:"last_modified,omitempty"`
 	Metadata     map[string]string `json:"metadata"`
 	Checksum     *Checksum         `json:"checksum,omitempty"`
 }

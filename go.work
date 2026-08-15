@@ -3,6 +3,7 @@ go 1.24
 use (
 	./sdk/go
 	./services/logging
+	./services/storage
 	./sinks/clickhouse
 )
 

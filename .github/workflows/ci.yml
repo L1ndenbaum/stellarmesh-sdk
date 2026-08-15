@@ -25,6 +25,7 @@ jobs:
           cache-dependency-path: |
             sdk/go/go.sum
             services/logging/go.sum
+            services/storage/go.sum
             sinks/clickhouse/go.sum
 
       - name: 安装 Python

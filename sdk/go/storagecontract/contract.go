@@ -169,18 +169,7 @@ func CompilePolicy(config AccessConfig) (*Policy, error) {
 
 // Authorize 使用常量时间 digest 比较进行认证和授权。
 func (p *Policy) Authorize(token, namespace string, capability Capability) Decision {
-	if p == nil || token == "" {
-		return DecisionUnauthenticated
-	}
-	digest := sha256.Sum256([]byte(token))
-	matched := -1
-	for principalIndex, principal := range p.principals {
-		for _, candidate := range principal.tokens {
-			if subtle.ConstantTimeCompare(digest[:], candidate[:]) == 1 {
-				matched = principalIndex
-			}
-		}
-	}
+	matched := p.authenticate(token)
 	if matched < 0 {
 		return DecisionUnauthenticated
 	}
@@ -192,6 +181,27 @@ func (p *Policy) Authorize(token, namespace string, capability Capability) Decis
 		return DecisionForbidden
 	}
 	return DecisionAllowed
+}
+
+// Authenticate 仅校验 token 是否属于已声明 principal。
+func (p *Policy) Authenticate(token string) bool {
+	return p.authenticate(token) >= 0
+}
+
+func (p *Policy) authenticate(token string) int {
+	if p == nil || token == "" {
+		return -1
+	}
+	digest := sha256.Sum256([]byte(token))
+	matched := -1
+	for principalIndex, principal := range p.principals {
+		for _, candidate := range principal.tokens {
+			if subtle.ConstantTimeCompare(digest[:], candidate[:]) == 1 {
+				matched = principalIndex
+			}
+		}
+	}
+	return matched
 }
 
 // Namespace 返回逻辑 namespace 的只读副本。
