@@ -50,16 +50,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: stellarmesh-logging-service
+          - image: stellarmesh-sdk/logging-service
             context: .
             file: services/logging/Dockerfile
-          - image: stellarmesh-storage-service
+          - image: stellarmesh-sdk/storage-service
             context: .
             file: services/storage/Dockerfile
-          - image: stellarmesh-logging-clickhouse-sink
+          - image: stellarmesh-sdk/logging-clickhouse-sink
             context: .
             file: sinks/clickhouse/Dockerfile
-          - image: stellarmesh-logging-clickhouse-migrate
+          - image: stellarmesh-sdk/logging-clickhouse-migrate
             context: sinks/clickhouse
             file: sinks/clickhouse/Dockerfile.migrate
     steps:
