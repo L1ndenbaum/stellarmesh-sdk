@@ -12,6 +12,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from enum import StrEnum
 from typing import Any, TypeAlias, cast
 
@@ -55,7 +56,7 @@ class ClientConfig:
     service: str
     enabled: bool = True
     minimum_level: Level | str = Level.INFO
-    timeout_seconds: float = 2.0
+    timeout_seconds: float = 7.0
     queue_size: int = 4096
     queue_bytes: int = 16 << 20
     batch_size: int = 128
@@ -64,6 +65,7 @@ class ClientConfig:
     max_attempts: int = 3
     initial_backoff_seconds: float = 0.1
     max_backoff_seconds: float = 1.0
+    max_retry_after_seconds: float = 30.0
     trace_id_provider: TraceIDProvider | None = None
     drop_handler: DropHandler | None = None
 
@@ -92,6 +94,7 @@ class Client:
         self._max_attempts = config.max_attempts
         self._initial_backoff = config.initial_backoff_seconds
         self._max_backoff = config.max_backoff_seconds
+        self._max_retry_after = config.max_retry_after_seconds
         self._transport = BatchTransport(
             base_url=config.base_url,
             token=config.token,
@@ -104,6 +107,7 @@ class Client:
         self._state_lock = threading.Lock()
         self._fallback_lock = threading.Lock()
         self._stop_requested = threading.Event()
+        self._abort_requested = threading.Event()
         self._worker_done = threading.Event()
         self._worker: threading.Thread | None = None
         self._state = _ClientState.NEW
@@ -325,7 +329,11 @@ class Client:
                 last_error = exc
                 if not _retryable_error(exc) or attempt == self._max_attempts:
                     break
-                time.sleep(self._retry_delay(attempt))
+                retry_after = _retry_after_delay(exc, self._max_retry_after)
+                if self._abort_requested.wait(
+                    max(self._retry_delay(attempt), retry_after)
+                ):
+                    break
             else:
                 return True
         assert last_error is not None
@@ -398,8 +406,8 @@ def _validate_config(config: ClientConfig) -> None:
         raise ValueError("logging base URL must be an absolute HTTP or HTTPS URL")
     if not config.token.strip():
         raise ValueError("logging service token is required")
-    if not config.service.strip():
-        raise ValueError("logging service name is required")
+    if not config.service.strip() or config.service != config.service.strip():
+        raise ValueError("logging service name must be non-empty and trimmed")
     if config.timeout_seconds <= 0:
         raise ValueError("logging timeout_seconds must be positive")
     if config.queue_size <= 0:
@@ -422,9 +430,15 @@ def _validate_config(config: ClientConfig) -> None:
         raise ValueError("logging initial_backoff_seconds must be positive")
     if config.max_backoff_seconds <= 0:
         raise ValueError("logging max_backoff_seconds must be positive")
+    if config.max_retry_after_seconds <= 0:
+        raise ValueError("logging max_retry_after_seconds must be positive")
     if config.initial_backoff_seconds > config.max_backoff_seconds:
         raise ValueError(
             "logging initial_backoff_seconds must not exceed max_backoff_seconds"
+        )
+    if config.max_retry_after_seconds < config.max_backoff_seconds:
+        raise ValueError(
+            "logging max_retry_after_seconds must not be less than max_backoff_seconds"
         )
     if config.queue_size > _MAX_QUEUE_EVENTS:
         raise ValueError("logging queue_size is outside supported bounds")
@@ -441,6 +455,7 @@ def _validate_config(config: ClientConfig) -> None:
             config.flush_interval_ms / 1000,
             config.initial_backoff_seconds,
             config.max_backoff_seconds,
+            config.max_retry_after_seconds,
         )
     ):
         raise ValueError("logging client duration is outside supported bounds")
@@ -453,3 +468,26 @@ def _retryable_error(exc: Exception) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code in {408, 425, 429, 500, 502, 503, 504}
     return False
+
+
+def _retry_after_delay(exc: Exception, maximum: float) -> float:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return 0.0
+    value = exc.response.headers.get("Retry-After", "").strip()
+    if not value:
+        return 0.0
+    try:
+        seconds = int(value)
+    except ValueError:
+        try:
+            when = parsedate_to_datetime(value)
+        except (TypeError, ValueError, OverflowError):
+            return 0.0
+        if when.tzinfo is None:
+            return 0.0
+        seconds_value = (when - datetime.now(UTC)).total_seconds()
+    else:
+        seconds_value = float(seconds)
+    if seconds_value <= 0:
+        return 0.0
+    return min(seconds_value, maximum)

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +20,7 @@ import (
 )
 
 const (
-	defaultClientTimeout       = 2 * time.Second
+	defaultClientTimeout       = 7 * time.Second
 	defaultClientQueueSize     = 4096
 	defaultClientBatchSize     = 128
 	defaultClientFlushInterval = 100 * time.Millisecond
@@ -28,6 +29,7 @@ const (
 	defaultClientMaxAttempts   = 3
 	defaultInitialBackoff      = 100 * time.Millisecond
 	defaultMaxBackoff          = time.Second
+	defaultMaxRetryAfter       = 30 * time.Second
 	maxClientQueueEvents       = 1_000_000
 	maxClientQueueBytes        = int64(1 << 30)
 	maxClientBatchEvents       = 10_000
@@ -57,6 +59,7 @@ type ClientConfig struct {
 	MaxAttempts    int
 	InitialBackoff time.Duration
 	MaxBackoff     time.Duration
+	MaxRetryAfter  time.Duration
 	HTTPClient     *http.Client
 	OnDrop         DropHandler
 	FallbackWriter io.Writer
@@ -73,6 +76,7 @@ type Client struct {
 	maxAttempts         int
 	initialBackoff      time.Duration
 	maxBackoff          time.Duration
+	maxRetryAfter       time.Duration
 	httpClient          *http.Client
 	onDrop              DropHandler
 	fallbackWriter      io.Writer
@@ -135,6 +139,13 @@ func NewClient(config ClientConfig) (*Client, error) {
 	if maxBackoff <= 0 {
 		maxBackoff = defaultMaxBackoff
 	}
+	maxRetryAfter := config.MaxRetryAfter
+	if maxRetryAfter <= 0 {
+		maxRetryAfter = defaultMaxRetryAfter
+	}
+	if maxRetryAfter < maxBackoff {
+		return nil, errors.New("logging maximum Retry-After must not be less than maximum backoff")
+	}
 	httpClient := config.HTTPClient
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: timeout}
@@ -143,7 +154,8 @@ func NewClient(config ClientConfig) (*Client, error) {
 		baseURL: strings.TrimRight(config.BaseURL, "/"), token: config.Token, timeout: timeout,
 		batchSize: batchSize, flushInterval: flushInterval, maxBodyBytes: maxBodyBytes,
 		maxAttempts: maxAttempts, initialBackoff: initialBackoff, maxBackoff: maxBackoff,
-		httpClient: httpClient, onDrop: config.OnDrop, fallbackWriter: config.FallbackWriter,
+		maxRetryAfter: maxRetryAfter,
+		httpClient:    httpClient, onDrop: config.OnDrop, fallbackWriter: config.FallbackWriter,
 		queue: make(chan queuedEvent, queueSize), queueCapacityEvents: queueSize,
 		queueCapacityBytes: queueBytes, done: make(chan struct{}),
 	}
@@ -164,7 +176,7 @@ func validateClientConfig(config ClientConfig) error {
 	}
 	if config.Timeout < 0 || config.QueueSize < 0 || config.QueueBytes < 0 || config.BatchSize < 0 ||
 		config.FlushInterval < 0 || config.MaxBodyBytes < 0 || config.MaxAttempts < 0 ||
-		config.InitialBackoff < 0 || config.MaxBackoff < 0 {
+		config.InitialBackoff < 0 || config.MaxBackoff < 0 || config.MaxRetryAfter < 0 {
 		return errors.New("logging client limits must not be negative")
 	}
 	if config.MaxBodyBytes > MaxHTTPBodyBytesV1 {
@@ -175,7 +187,7 @@ func validateClientConfig(config ClientConfig) error {
 		return errors.New("logging client capacity is outside supported bounds")
 	}
 	for _, duration := range []time.Duration{
-		config.Timeout, config.FlushInterval, config.InitialBackoff, config.MaxBackoff,
+		config.Timeout, config.FlushInterval, config.InitialBackoff, config.MaxBackoff, config.MaxRetryAfter,
 	} {
 		if duration > maxClientDuration {
 			return errors.New("logging client duration is outside supported bounds")
@@ -311,7 +323,7 @@ func (client *Client) sendBatch(queued []queuedEvent) {
 	}
 	var lastErr error
 	for attempt := 1; attempt <= client.maxAttempts; attempt++ {
-		retryable, err := client.sendOnce(events, payload)
+		retryable, retryAfter, err := client.sendOnce(events, payload)
 		if err == nil {
 			return
 		}
@@ -319,40 +331,40 @@ func (client *Client) sendBatch(queued []queuedEvent) {
 		if !retryable || attempt == client.maxAttempts {
 			break
 		}
-		time.Sleep(client.retryDelay(attempt))
+		time.Sleep(client.retryDelay(attempt, retryAfter))
 	}
 	client.dropBatch(events, lastErr)
 }
 
-func (client *Client) sendOnce(events []Event, payload []byte) (bool, error) {
+func (client *Client) sendOnce(events []Event, payload []byte) (bool, time.Duration, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), client.timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.baseURL+"/v1/log-events/batch", bytes.NewReader(payload))
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("X-Logging-Service-Token", client.token)
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		return true, err
+		return true, 0, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		_, _ = io.Copy(io.Discard, response.Body)
-		return retryableStatus(response.StatusCode), fmt.Errorf("logging service returned %d", response.StatusCode)
+		return retryableStatus(response.StatusCode), parseRetryAfter(response.Header.Get("Retry-After"), time.Now(), client.maxRetryAfter), fmt.Errorf("logging service returned %d", response.StatusCode)
 	}
 	var envelope struct {
 		sharedapi.Envelope
 		Data IngestResult `json:"data"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
-		return false, err
+		return false, 0, err
 	}
 	if (envelope.Code != http.StatusOK && envelope.Code != http.StatusAccepted) || envelope.Code != response.StatusCode || envelope.Data.Accepted != len(events) {
-		return false, fmt.Errorf("invalid accepted count: code=%d accepted=%d expected=%d", envelope.Code, envelope.Data.Accepted, len(events))
+		return false, 0, fmt.Errorf("invalid accepted count: code=%d accepted=%d expected=%d", envelope.Code, envelope.Data.Accepted, len(events))
 	}
-	return false, nil
+	return false, 0, nil
 }
 
 func retryableStatus(status int) bool {
@@ -366,7 +378,7 @@ func retryableStatus(status int) bool {
 	}
 }
 
-func (client *Client) retryDelay(failedAttempt int) time.Duration {
+func (client *Client) retryDelay(failedAttempt int, retryAfter time.Duration) time.Duration {
 	delay := client.initialBackoff
 	for current := 1; current < failedAttempt && delay < client.maxBackoff; current++ {
 		if delay > client.maxBackoff/2 {
@@ -378,10 +390,38 @@ func (client *Client) retryDelay(failedAttempt int) time.Duration {
 	if delay > client.maxBackoff {
 		delay = client.maxBackoff
 	}
-	if delay <= 1 {
-		return delay
+	if delay > 1 {
+		delay = time.Duration(rand.Int64N(int64(delay))) + 1
 	}
-	return time.Duration(rand.Int64N(int64(delay))) + 1
+	if retryAfter > delay {
+		return retryAfter
+	}
+	return delay
+}
+
+func parseRetryAfter(value string, now time.Time, maximum time.Duration) time.Duration {
+	value = strings.TrimSpace(value)
+	if value == "" || maximum <= 0 {
+		return 0
+	}
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds < 0 {
+			return 0
+		}
+		if seconds > int64(maximum/time.Second) {
+			return maximum
+		}
+		return min(time.Duration(seconds)*time.Second, maximum)
+	}
+	when, err := http.ParseTime(value)
+	if err != nil {
+		return 0
+	}
+	delay := when.Sub(now)
+	if delay <= 0 {
+		return 0
+	}
+	return min(delay, maximum)
 }
 
 func (client *Client) release(events []queuedEvent) {

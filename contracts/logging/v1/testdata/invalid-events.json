@@ -61,6 +61,18 @@
     }
   },
   {
+    "name": "service with surrounding whitespace",
+    "payload": {
+      "event_id": "b6dd42df-660d-4aca-a712-6ce1c85ceafd",
+      "timestamp": "2026-08-01T12:00:00Z",
+      "level": "INFO",
+      "service": " contract-test ",
+      "message": "valid message",
+      "trace_id": "trace-123",
+      "metadata": {}
+    }
+  },
+  {
     "name": "non-object metadata",
     "payload": {
       "event_id": "b6dd42df-660d-4aca-a712-6ce1c85ceafd",

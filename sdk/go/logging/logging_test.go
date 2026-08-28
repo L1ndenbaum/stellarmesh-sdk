@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -157,12 +158,18 @@ func TestSanitizeMetadata(t *testing.T) {
 	}
 	got := SanitizeMetadata(map[string]any{
 		"api_token": "secret",
+		"apiKey":    "secret",
 		"nested":    map[string]string{"password": "hidden", "safe": "value"},
 		"typed":     credentials{Password: "hidden", Safe: "value"},
-		"channel":   make(chan int),
+		"error":     errors.New("request failed"),
+		"large": struct {
+			Value int64 `json:"value"`
+		}{Value: 9_007_199_254_740_993},
+		"nan":     math.NaN(),
+		"channel": make(chan int),
 	})
-	if got["api_token"] != redactedValue {
-		t.Fatalf("api_token = %v", got["api_token"])
+	if got["api_token"] != redactedValue || got["apiKey"] != redactedValue {
+		t.Fatalf("sensitive values = %#v", got)
 	}
 	if got["nested"].(map[string]any)["password"] != redactedValue {
 		t.Fatalf("nested = %#v", got["nested"])
@@ -172,6 +179,13 @@ func TestSanitizeMetadata(t *testing.T) {
 	}
 	if got["channel"] != unserializableValue {
 		t.Fatalf("channel = %#v", got["channel"])
+	}
+	if got["error"] != "request failed" || got["nan"] != unserializableValue {
+		t.Fatalf("special values = %#v", got)
+	}
+	large := got["large"].(map[string]any)["value"]
+	if number, ok := large.(json.Number); !ok || number.String() != "9007199254740993" {
+		t.Fatalf("large integer = %#v", large)
 	}
 }
 
@@ -238,6 +252,15 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return fn(request)
+}
+
+type recordingEmitter struct {
+	events []Event
+}
+
+func (emitter *recordingEmitter) Emit(_ context.Context, event Event) bool {
+	emitter.events = append(emitter.events, event)
+	return true
 }
 
 func TestClientReportsQueueFailure(t *testing.T) {
@@ -394,6 +417,9 @@ func TestClientDefaultBodyLimitIncludesBatchEnvelope(t *testing.T) {
 	if client.maxBodyBytes != MaxHTTPBodyBytesV1 {
 		t.Fatalf("max body bytes = %d", client.maxBodyBytes)
 	}
+	if client.timeout != 7*time.Second || client.maxRetryAfter != 30*time.Second {
+		t.Fatalf("timeout=%s max_retry_after=%s", client.timeout, client.maxRetryAfter)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := client.Close(ctx); err != nil {
@@ -507,7 +533,48 @@ func TestClientAndLoggerRejectInvalidConfiguration(t *testing.T) {
 	}); err == nil {
 		t.Fatal("NewClient() accepted an unsafe queue byte limit")
 	}
+	if _, err := NewClient(ClientConfig{
+		BaseURL: "http://logging-service", Token: "token", MaxBackoff: time.Second, MaxRetryAfter: time.Millisecond,
+	}); err == nil {
+		t.Fatal("NewClient() accepted Retry-After below maximum backoff")
+	}
 	if _, err := NewLogger(LoggerConfig{}); err == nil {
 		t.Fatal("NewLogger() accepted invalid configuration")
+	}
+	if _, err := NewLogger(LoggerConfig{Service: " backend ", Emitter: &recordingEmitter{}}); err == nil {
+		t.Fatal("NewLogger() accepted an untrimmed service")
+	}
+}
+
+func TestEventRejectsUntrimmedServiceButPreservesMessageWhitespace(t *testing.T) {
+	event := Event{
+		EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", Timestamp: time.Now(), Level: LevelInfo,
+		Service: " backend ", Message: " message\n", Metadata: map[string]any{},
+	}
+	if err := event.Validate(); err == nil {
+		t.Fatal("Validate() accepted an untrimmed service")
+	}
+	event.Service = "backend"
+	if err := event.Validate(); err != nil {
+		t.Fatalf("Validate() rejected message whitespace: %v", err)
+	}
+}
+
+func TestParseRetryAfter(t *testing.T) {
+	now := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	if got := parseRetryAfter("12", now, 30*time.Second); got != 12*time.Second {
+		t.Fatalf("seconds delay = %s", got)
+	}
+	if got := parseRetryAfter("120", now, 30*time.Second); got != 30*time.Second {
+		t.Fatalf("capped delay = %s", got)
+	}
+	when := now.Add(5 * time.Second).Format(http.TimeFormat)
+	if got := parseRetryAfter(when, now, 30*time.Second); got != 5*time.Second {
+		t.Fatalf("date delay = %s", got)
+	}
+	for _, value := range []string{"invalid", "-1", now.Add(-time.Second).Format(http.TimeFormat)} {
+		if got := parseRetryAfter(value, now, 30*time.Second); got != 0 {
+			t.Fatalf("parseRetryAfter(%q) = %s", value, got)
+		}
 	}
 }

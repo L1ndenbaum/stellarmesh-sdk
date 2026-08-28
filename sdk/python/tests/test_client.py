@@ -5,6 +5,7 @@ import json
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from email.utils import format_datetime
 from typing import Any
 
 import httpx
@@ -20,6 +21,7 @@ from stellarmesh_logging import (
     encode_event,
     get_logger,
 )
+from stellarmesh_logging.client import _retry_after_delay
 
 
 def _response(accepted: int) -> httpx.Response:
@@ -281,6 +283,8 @@ def test_client_default_body_limit_includes_batch_envelope() -> None:
         base_url="http://logging-service", token="token", service="backend"
     )
     assert config.max_body_bytes == MAX_HTTP_BODY_BYTES
+    assert config.timeout_seconds == 7.0
+    assert config.max_retry_after_seconds == 30.0
 
 
 def test_client_default_body_limit_sends_maximum_canonical_event() -> None:
@@ -345,6 +349,9 @@ def test_client_rejects_invalid_configuration() -> None:
         ClientConfig(base_url="http://logging-service", token="", service="backend"),
         ClientConfig(base_url="http://logging-service", token="token", service=""),
         ClientConfig(
+            base_url="http://logging-service", token="token", service=" backend "
+        ),
+        ClientConfig(
             base_url="http://logging-service",
             token="token",
             service="backend",
@@ -368,6 +375,13 @@ def test_client_rejects_invalid_configuration() -> None:
             service="backend",
             queue_bytes=2 << 30,
         ),
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            max_backoff_seconds=2.0,
+            max_retry_after_seconds=1.0,
+        ),
     ]
     for config in invalid:
         try:
@@ -388,8 +402,26 @@ def test_typed_metadata_is_redacted_and_unknown_objects_fail_closed() -> None:
         message="event",
         metadata={
             "typed": Credentials(password="secret", safe="value"),
+            "apiKey": "secret",
+            "error": RuntimeError("request failed"),
             "unknown": object(),
         },
     )
     assert event.metadata["typed"] == {"password": "[REDACTED]", "safe": "value"}
+    assert event.metadata["apiKey"] == "[REDACTED]"
+    assert event.metadata["error"] == "request failed"
     assert event.metadata["unknown"] == "[UNSERIALIZABLE]"
+
+
+def test_retry_after_supports_seconds_dates_and_bounds() -> None:
+    request = httpx.Request("POST", "http://logging-service")
+
+    def error(value: str) -> httpx.HTTPStatusError:
+        response = httpx.Response(503, headers={"Retry-After": value}, request=request)
+        return httpx.HTTPStatusError("unavailable", request=request, response=response)
+
+    assert _retry_after_delay(error("12"), 30.0) == 12.0
+    assert _retry_after_delay(error("120"), 30.0) == 30.0
+    future = format_datetime(datetime.now(UTC).replace(microsecond=0))
+    assert _retry_after_delay(error(future), 30.0) == 0.0
+    assert _retry_after_delay(error("invalid"), 30.0) == 0.0

@@ -1,9 +1,12 @@
 package logging
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -41,6 +44,8 @@ func sanitizeValue(value any, depth int) any {
 		return maxDepthValue
 	}
 	switch typed := value.(type) {
+	case error:
+		return sanitizeValue(typed.Error(), depth)
 	case map[string]any:
 		result := make(map[string]any, len(typed))
 		for key, nested := range typed {
@@ -72,7 +77,19 @@ func sanitizeValue(value any, depth int) any {
 		return typed
 	case []byte:
 		return fmt.Sprintf("<bytes:%d>", len(typed))
-	case nil, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+	case float32:
+		if math.IsNaN(float64(typed)) || math.IsInf(float64(typed), 0) {
+			return unserializableValue
+		}
+		return typed
+	case float64:
+		if math.IsNaN(typed) || math.IsInf(typed, 0) {
+			return unserializableValue
+		}
+		return typed
+	case json.Number:
+		return typed
+	case nil, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return typed
 	default:
 		normalized, err := normalizeJSONValue(typed)
@@ -89,16 +106,24 @@ func normalizeJSONValue(value any) (any, error) {
 		return nil, err
 	}
 	var normalized any
-	if err := json.Unmarshal(payload, &normalized); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	if err := decoder.Decode(&normalized); err != nil {
 		return nil, err
 	}
 	return normalized, nil
 }
 
 func sensitiveKey(key string) bool {
-	normalized := strings.ReplaceAll(strings.ToLower(key), "-", "_")
+	normalized := strings.Map(func(value rune) rune {
+		if unicode.IsLetter(value) || unicode.IsDigit(value) {
+			return unicode.ToLower(value)
+		}
+		return -1
+	}, key)
 	for _, part := range sensitiveKeyParts {
-		if strings.Contains(normalized, part) {
+		canonicalPart := strings.ReplaceAll(part, "_", "")
+		if strings.Contains(normalized, canonicalPart) {
 			return true
 		}
 	}

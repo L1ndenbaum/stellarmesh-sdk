@@ -28,9 +28,8 @@ type emitterAccessLogger struct {
 // WithAccessLogEmitter 把网关访问日志直接适配到已有异步日志客户端。
 func WithAccessLogEmitter(service string, emitter sharedlogging.Emitter) Option {
 	return componentOption("access_logger", func(config *config) error {
-		service = strings.TrimSpace(service)
-		if service == "" {
-			return errors.New("gateway access log service is required")
+		if strings.TrimSpace(service) == "" || service != strings.TrimSpace(service) {
+			return errors.New("gateway access log service must be non-empty and trimmed")
 		}
 		if isNilInterface(emitter) {
 			return errors.New("gateway access log emitter is nil")

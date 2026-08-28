@@ -68,6 +68,13 @@ class LogEvent(ContractModel):
             raise ValueError("value must not be empty")
         return text
 
+    @field_validator("service")
+    @classmethod
+    def _require_trimmed_service(cls, value: str) -> str:
+        if value != value.strip():
+            raise ValueError("service must be trimmed")
+        return value
+
     @field_validator("timestamp", mode="after")
     @classmethod
     def _ensure_timezone(cls, value: datetime) -> datetime:

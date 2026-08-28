@@ -33,8 +33,8 @@ type Logger struct {
 
 // NewLogger 创建结构化日志门面。
 func NewLogger(config LoggerConfig) (*Logger, error) {
-	if strings.TrimSpace(config.Service) == "" {
-		return nil, errors.New("logging service name is required")
+	if strings.TrimSpace(config.Service) == "" || config.Service != strings.TrimSpace(config.Service) {
+		return nil, errors.New("logging service name must be non-empty and trimmed")
 	}
 	if config.Emitter == nil {
 		return nil, errors.New("logging emitter is required")

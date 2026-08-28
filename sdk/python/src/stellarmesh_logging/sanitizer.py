@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import fields, is_dataclass
 from datetime import date, datetime
@@ -59,6 +60,8 @@ def sanitize_metadata(
         if len(value) > _MAX_STRING_LENGTH:
             return value[:_MAX_STRING_LENGTH] + "...[TRUNCATED]"
         return value
+    if isinstance(value, BaseException):
+        return sanitize_metadata(str(value), _depth=_depth, _seen=seen)
     if isinstance(value, bytes):
         return f"<bytes:{len(value)}>"
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
@@ -104,5 +107,5 @@ def sanitize_metadata(
 
 
 def _is_sensitive_key(key: str) -> bool:
-    normalized = key.lower().replace("-", "_")
-    return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
+    normalized = re.sub(r"[\W_]", "", key, flags=re.UNICODE).lower()
+    return any(part.replace("_", "") in normalized for part in _SENSITIVE_KEY_PARTS)

@@ -104,10 +104,11 @@ def test_json_schema_rejects_all_shared_invalid_fixtures() -> None:
             validator.validate(fixture["payload"])
 
 
-def test_event_preserves_nonempty_surrounding_whitespace() -> None:
-    event = LogEvent(service=" backend ", message=" message ")
-    assert event.service == " backend "
-    assert event.message == " message "
+def test_event_rejects_untrimmed_service_and_preserves_message_whitespace() -> None:
+    with pytest.raises(ValidationError):
+        LogEvent(service=" backend ", message="message")
+    event = LogEvent(service="backend", message=" message\n")
+    assert event.message == " message\n"
 
 
 def test_wire_decoder_rejects_nonstandard_json_and_timestamp() -> None:

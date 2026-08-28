@@ -141,8 +141,8 @@ func (event Event) Validate() error {
 	if err := event.Level.Validate(); err != nil {
 		return err
 	}
-	if strings.TrimSpace(event.Service) == "" {
-		return errors.New("service is required")
+	if strings.TrimSpace(event.Service) == "" || event.Service != strings.TrimSpace(event.Service) {
+		return errors.New("service must be non-empty and trimmed")
 	}
 	if strings.TrimSpace(event.Message) == "" {
 		return errors.New("message is required")
