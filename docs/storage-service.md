@@ -2,7 +2,7 @@
 
 `stellarmesh-storage-service` 是项目级对象存储控制面。每个项目独立部署一份实例并使用该项目自己的 AWS IAM Role、Web Identity 或 MinIO 项目凭据；同一实例可以声明多个逻辑 namespace，但所有 namespace 共用同一项目凭据池。
 
-测试环境可以按固定版本引用 `ghcr.io/<组织>/stellarmesh-sdk/storage-service:0.1.0`；生产环境必须把已经验证的版本解析为 digest，并引用 `ghcr.io/<组织>/stellarmesh-sdk/storage-service@sha256:<摘要>`。镜像默认保持私有，拉取身份只需要 `read:packages`，不能把凭据写入 Compose 或镜像。
+测试环境可以按固定版本引用 `ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service:0.1.1`；生产环境必须把已经验证的版本解析为 digest，并引用 `ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service@sha256:<摘要>`。镜像为公开制品，可以匿名拉取，不需要把 GitHub 凭据写入 Compose 或镜像。
 
 服务不代理对象字节、不写临时文件，也不提供对象内容 GET/PUT 路由。Go 服务可以直接使用进程内 `objectstorage` SDK；Python、浏览器或其他客户端通过控制面获得预签名请求后直接与 S3 或 MinIO 传输内容。
 

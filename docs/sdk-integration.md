@@ -23,10 +23,10 @@
 安装固定版本：
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.1.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.1.1
 ```
 
-在应用启动时构造一个进程级客户端和 logger：
+在应用启动时构造一个进程级客户端，并优先接入标准库 `log/slog`：
 
 ```go
 package main
@@ -34,6 +34,7 @@ package main
 import (
     "context"
     "log"
+    "log/slog"
     "time"
 
     logging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
@@ -50,9 +51,9 @@ func main() {
     if err != nil {
         log.Fatal(err)
     }
-    logger, err := logging.NewLogger(logging.LoggerConfig{
+    handler, err := logging.NewSlogHandler(client, logging.SlogHandlerConfig{
         Service: "example-api",
-        Emitter: client,
+        MinimumLevel: logging.LevelInfo,
         TraceIDProvider: func(ctx context.Context) string {
             return traceIDFromProjectContext(ctx)
         },
@@ -61,10 +62,11 @@ func main() {
         log.Fatal(err)
     }
 
+    logger := slog.New(handler)
     ctx := context.Background()
-    logger.Info(ctx, "order created", "", map[string]any{"order_id": "123"})
+    logger.InfoContext(ctx, "order created", slog.String("order_id", "123"))
 
-    shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+    shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
     defer cancel()
     if err := client.Close(shutdownCtx); err != nil {
         log.Printf("logging drain failed: %v", err)
@@ -78,12 +80,13 @@ func traceIDFromProjectContext(context.Context) string {
 
 注意：
 
-- `Debug`、`Info`、`Warning`、`Error` 和 `Audit` 返回值表示事件是否成功进入 SDK 队列；
+- `slog.Handler` 在调用栈内只完成级别过滤、事件转换和非阻塞入队，不执行 HTTP；
 - Go 构造函数会立即拒绝非法 URL、空 token、空 service 和负数限制，不把配置错误延迟到后台 worker；
-- `true` 不代表事件已持久化；
-- `traceID` 参数非空时优先使用显式值，否则调用 `TraceIDProvider`；
+- 根级 `trace_id` attribute 优先于 `TraceIDProvider`，嵌套组中的同名字段只是 metadata；
 - `OnDrop` 只应执行轻量、不会递归调用同一 logger 的降级动作；
 - HTTP handler、worker 和定时任务共享同一个客户端即可，不要为每次请求创建后台 worker。
+
+旧 `Logger` 继续兼容，并可通过 `LoggerConfig.MinimumLevel` 设置远程最低级别；零值保持原来的 `DEBUG` 行为。需要直接提交已构造事件时使用 `Client.Enqueue`。`Emitter.Emit` 的 context 只用于入队前的 Handler、Logger 和 trace 提取，事件入队后由客户端生命周期管理，不继承业务请求取消信号。
 
 ### Go 网关项目
 
@@ -101,10 +104,10 @@ func traceIDFromProjectContext(context.Context) string {
 pip install ./sdk/python
 ```
 
-发布到内部 Python registry 后，应固定包版本：
+发布到 PyPI 后，应固定包版本：
 
 ```sh
-pip install stellarmesh-logging==0.1.0
+pip install stellarmesh-logging==0.1.1
 ```
 
 在应用生命周期入口显式配置客户端：
@@ -146,10 +149,10 @@ logger.info("job %s started", "job-123", extra={"component": "scheduler"})
 
 
 async def application_shutdown() -> None:
-    await shutdown_logging(timeout=3.0)
+    await shutdown_logging(timeout=10.0)
 ```
 
-业务项目仍需按照自身运行环境设置 logger 的有效级别；Handler 不创建控制台输出，`ClientConfig.minimum_level` 继续过滤真正进入远程队列的事件。同步入口使用 `shutdown_logging_sync(timeout=3.0)`。存在 asyncio event loop 时必须 `await shutdown_logging()`，不能调用同步包装器。标准 logging 方法返回 `None`；需要获取是否入队的布尔值或使用 `audit`、`bind` 时，可以继续使用 SDK 的 `get_logger()` 日志门面。
+业务项目仍需按照自身运行环境设置 logger 的有效级别；Handler 不创建控制台输出，`ClientConfig.minimum_level` 继续过滤真正进入远程队列的事件。同步入口使用 `shutdown_logging_sync(timeout=10.0)`。存在 asyncio event loop 时必须 `await shutdown_logging()`，不能调用同步包装器。标准 logging 方法返回 `None`；需要获取是否入队的布尔值或使用 `audit`、`bind` 时，可以继续使用 SDK 的 `get_logger()` 日志门面。
 
 `drop_handler` 同样不能再调用当前远端 logger，避免失败时递归。若业务已有 trace 上下文，应在 provider 中适配；SDK 不直接依赖 FastAPI、Django、Flask、OpenTelemetry 或业务自定义 context。
 
@@ -200,14 +203,13 @@ Bucket、Policy、CORS、Lifecycle、Versioning、ACL 和 Secret 注入属于业
 
 ## 部署日志接收服务
 
-业务项目从固定 tag 或 digest 引用 `ghcr.io/<组织>/stellarmesh-sdk/logging-service` 镜像，并自行管理网络、端口、持久卷和配置注入。服务配置如下：
+业务项目从固定 tag 或 digest 引用公开的 `ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-service` 镜像，并自行管理网络、端口、持久卷和配置注入。公开镜像支持匿名拉取，生产仍应固定已验证 digest。服务配置如下：
 
 | 配置键 | 默认值 | 说明 |
 | --- | --- | --- |
 | `STELLARMESH_LOGGING_ADDR` | `:8091` | HTTP 监听地址 |
 | `STELLARMESH_LOGGING_AUTH_FILE` | 无 | 必填；挂载的 service-token 绑定配置 |
 | `STELLARMESH_LOGGING_DATA_DIR` | `/var/lib/stellarmesh-logging` | 本地持久化根目录 |
-| `STELLARMESH_LOGGING_CONSOLE_COLOR` | `true` | 控制台颜色 |
 | `STELLARMESH_LOGGING_READ_HEADER_TIMEOUT` | `5s` | HTTP header 读取超时 |
 | `STELLARMESH_LOGGING_READ_TIMEOUT` | `10s` | HTTP 请求读取超时 |
 | `STELLARMESH_LOGGING_WRITE_TIMEOUT` | `10s` | HTTP 响应写入超时 |
@@ -245,15 +247,19 @@ Bucket、Policy、CORS、Lifecycle、Versioning、ACL 和 Secret 注入属于业
 
 同一个 service 可以同时配置两个 token，用于滚动轮换；同一 token 不得绑定到不同 service。请求中的每个事件都必须使用与 token 绑定一致的 `service`，否则返回 `403`。轮换顺序是先同时配置新旧 token 并滚动重启 ingester，再切换客户端，最后移除旧 token 并再次滚动重启。
 
-容器必须能写入 `STELLARMESH_LOGGING_DATA_DIR`，且该目录应使用业务项目管理的持久卷。spool 在权限为 `0700` 的 `.staging/` 中准备完整批次，再原子提交到 `batches/`；`ERROR` 和 `AUDIT` 的分段优先回放，但 priority 临时失败不会阻止本轮继续尝试 regular。升级后的服务仍会回放旧版本 `regular/` 与 `priority/` 中的 `.ready.jsonl`，但不会识别业务项目自行实现的其他 JSONL spool。损坏或不兼容的 segment 会整体移入 `quarantine/`；publisher 判定为永久失败时，回放会递归缩小失败批次，只把具体失败记录与来源、错误元数据写入 `quarantine/`，同段正常记录继续发布。每个 live segment 在容量账本中额外预留等同自身大小的替换空间和 `64KiB` 元数据空间，隔离临界路径不会先突破 `STELLARMESH_LOGGING_SPOOL_MAX_BYTES` 再删除源文件；因此该配置是物理数据与安全预留的共同预算，不等于可接收事件的净容量。隔离数据计入容量但不会自动删除，运维确认后才能清理。暂时失败时保留原分段，重试可能重复发送已经发布的段内事件；ClickHouse 表的事件标识用于降低重复的最终影响，但消费侧仍应按 at-least-once 设计。
+容器必须能写入 `STELLARMESH_LOGGING_DATA_DIR`，且该目录应使用业务项目管理的持久卷。spool 在权限为 `0700` 的 `.staging/` 中准备完整批次，再原子提交到 `batches/`；`ERROR` 和 `AUDIT` 的分段优先回放，但 priority 临时失败不会阻止本轮继续尝试 regular。本版本没有为 priority 预留独立容量，普通日志占满共同 spool 后，高优先级日志仍可能无法写入，因此应同时配置生产最低日志级别、容量告警和隔离数据处置流程。升级后的服务仍会回放旧版本 `regular/` 与 `priority/` 中的 `.ready.jsonl`，但不会识别业务项目自行实现的其他 JSONL spool。损坏或不兼容的 segment 会整体移入 `quarantine/`；publisher 判定为永久失败时，回放会递归缩小失败批次，只把具体失败记录与来源、错误元数据写入 `quarantine/`，同段正常记录继续发布。每个 live segment 在容量账本中额外预留等同自身大小的替换空间和 `64KiB` 元数据空间，隔离临界路径不会先突破 `STELLARMESH_LOGGING_SPOOL_MAX_BYTES` 再删除源文件；因此该配置是物理数据与安全预留的共同预算，不等于可接收事件的净容量。隔离数据计入容量但不会自动删除，运维确认后才能清理。暂时失败时保留原分段，重试可能重复发送已经发布的段内事件；ClickHouse 表的事件标识用于降低重复的最终影响，但消费侧仍应按 at-least-once 设计。
 
-服务启动时仍会检查 Topic，但 Kafka 不可用、Topic 暂时不存在或 ACL 检查失败时，只要本地 spool 可以初始化且尚有容量，ingester 会以降级模式启动并通过 spool 持久接收；它不会自行创建 Kafka 资源。后台检查成功后自动恢复 Kafka 发布和重放。单次重放发布与可用性检查都受 `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT` 限制。关闭超过 `STELLARMESH_LOGGING_SHUTDOWN_TIMEOUT` 时进程停止等待后台 I/O 并返回失败，由编排器完成进程级回收；此路径不会并发关闭仍被 worker 使用的 publisher。
+服务启动时仍会检查 Topic，但 Kafka 不可用、Topic 暂时不存在或 ACL 检查失败时，只要本地 spool 可以初始化且尚有容量，ingester 会以降级模式启动并通过 spool 持久接收；它不会自行创建 Kafka 资源。Topic 检查并行探测全部去重后的非空 broker，任一 broker 能访问目标 Topic 且返回 partition 即成功；全部失败时返回聚合错误。后台检查成功后自动恢复 Kafka 发布和重放，即使 spool 为空也能恢复 readiness。单次重放发布与可用性检查都受 `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT` 限制。
+
+Kafka 或 spool 持久确认成功后，服务才把事件副本交给异步控制台 sink。控制台每个事件输出一行紧凑 JSON；消息中的换行、ANSI 和控制字符由 JSON 编码转义。控制台队列同时限制事件数和字节数，队列满、编码失败或 stdout 写入失败只丢弃控制台副本，不改变 HTTP、Kafka 或 spool 结果。关闭时先停止 HTTP 并排空持久化队列，再在共同 deadline 内尝试排空控制台；阻塞 stdout 不会阻止进程退出。已有部署继续携带 `STELLARMESH_LOGGING_CONSOLE_COLOR` 不会导致启动失败，但该变量已被忽略并应从部署配置删除。
+
+默认客户端 HTTP 超时为 `7s`，用于覆盖默认 `500ms` 聚合等待与 `5s` Kafka 发布超时。如果提高这两个服务端参数，调用方必须同步提高 Go `Timeout` 或 Python `timeout_seconds`。客户端支持整数秒与 HTTP-date 形式的 `Retry-After`，默认最多等待 `30s`；关闭信号可以中断在途请求和重试等待。关闭超过 `STELLARMESH_LOGGING_SHUTDOWN_TIMEOUT` 时服务停止等待后台 I/O 并返回失败，由编排器完成进程级回收；此路径不会并发关闭仍被 worker 使用的 publisher。
 
 存活检查使用 `GET /health/live`，就绪检查使用 `GET /health/ready`，原有 `GET /health` 仍作为存活检查兼容入口。就绪状态在 Kafka 发布失败且 spool 写入失败或达到容量上限时变为 `503`，后台 Kafka 检查与回放可以在没有新请求时恢复就绪状态。Prometheus 抓取地址为 `GET /metrics`。SDK 写入使用 `POST /v1/log-events/batch` 和 `X-Logging-Service-Token`；请求体上限为 `1MiB`，其中每条规范化事件不得超过 `900KiB`。Kafka key/value 另受 `960KiB` 预算约束，分区键使用 `trace_id` 的 SHA-256 摘要或 `event_id`，并为 Kafka 协议开销保留余量。请求会等待批次获得 Kafka 全同步副本确认或 spool 原子提交，正式成功状态才是 `202`，两条持久路径均失败时返回 `503`。客户端请求提前取消后，服务仍会处理已经入队的事件，因此重试必须按 at-least-once 接受重复；迁移期客户端也接受状态与 envelope 同为 `200` 的旧服务响应。
 
 ## 部署 ClickHouse sink
 
-业务项目从固定 tag 或 digest 引用 `ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-sink` 镜像。运行时只注入 Kafka 消费权限和 ClickHouse DML 权限，不注入迁移身份。
+业务项目从固定 tag 或 digest 引用 `ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-clickhouse-sink` 镜像。运行时只注入 Kafka 消费权限和 ClickHouse DML 权限，不注入迁移身份。
 
 | 配置键 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -301,12 +307,12 @@ sink 会严格解析每条源消息。有效事件写入 ClickHouse；普通无�
 
 ## 执行迁移制品
 
-迁移不是业务 Compose 中的常驻服务，也不是日志接收服务或 sink 的启动命令。`server-infrastructure` 应在资源准备、备份和 preflight 完成后，以单实例一次性任务运行固定 digest 的 `ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-migrate` 镜像。
+迁移不是业务 Compose 中的常驻服务，也不是日志接收服务或 sink 的启动命令。`server-infrastructure` 应在资源准备、备份和 preflight 完成后，以单实例一次性任务运行固定 digest 的 `ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-clickhouse-migrate` 镜像。
 
 开发环境可以由业务项目用自己的连接信息执行同一制品，例如：
 
 ```sh
-docker run --rm ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-migrate:0.1.0 \
+docker run --rm ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-clickhouse-migrate:0.1.1 \
   -database 'clickhouse://clickhouse:9000?username=migrator&password=example&database=logging&x-multi-statement=true' \
   up
 ```
@@ -329,6 +335,7 @@ docker run --rm ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-migrate:0.1.
 - SDK `drop_handler` 或 `OnDrop` 计数；
 - logging-service 的 `400`、`401`、`413`、`503`、readiness 和队列排空失败；
 - `stellarmesh_logging_ingester_queue_events`、`stellarmesh_logging_ingester_queue_bytes`、Kafka 发布失败计数、regular/priority/quarantine spool 字节数与重放结果计数；
+- `stellarmesh_logging_ingester_console_events_total{result}`，其中 `result` 只允许 `emitted`、`dropped`、`failed`；
 - Kafka consumer lag；
 - `stellarmesh_logging_clickhouse_sink_pending_messages`、`stellarmesh_logging_clickhouse_sink_pending_bytes`、各阶段失败计数和 sink readiness；
 - ClickHouse 批量插入错误、DLQ 产生速率、DLQ lag、DLQ 保留容量和重复记录；

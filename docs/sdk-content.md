@@ -32,10 +32,12 @@
 
 建议发布四个相互独立、但来自同一 Git commit 的镜像：
 
-- `ghcr.io/<组织>/stellarmesh-sdk/logging-service`；
-- `ghcr.io/<组织>/stellarmesh-sdk/storage-service`；
-- `ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-sink`；
-- `ghcr.io/<组织>/stellarmesh-sdk/logging-clickhouse-migrate`。
+- `ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-service`；
+- `ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service`；
+- `ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-clickhouse-sink`；
+- `ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-clickhouse-migrate`。
+
+这些镜像是公开制品，可以匿名拉取；测试环境固定完整版本，生产环境固定已验证的 manifest digest。
 
 迁移镜像与服务镜像分开，目的不是形成新的安全边界，而是让外部编排器能够用迁移身份一次性运行固定 digest 的迁移，并确保迁移凭据不会进入常驻容器。
 
@@ -48,12 +50,12 @@
 | `event_id` | UUID 字符串 | 事件唯一标识；客户端未提供时生成 |
 | `timestamp` | RFC 3339 时间 | 统一转换为 UTC |
 | `level` | 枚举 | `DEBUG`、`INFO`、`WARNING`、`ERROR`、`AUDIT` |
-| `service` | 非空字符串 | 业务服务稳定标识 |
+| `service` | 非空且已去除首尾空白的字符串 | 业务服务稳定标识 |
 | `message` | 非空字符串 | 日志消息 |
 | `trace_id` | 字符串 | 可由业务显式提供或通过 provider 注入 |
 | `metadata` | JSON 对象 | 扩展字段；SDK 会转换不安全或不可序列化的值 |
 
-wire payload 必须显式包含以上全部字段。`timestamp` 使用规范 RFC 3339 形式，UTC 后缀必须写为大写 `Z`，JSON 中不接受 `NaN` 或无穷值；`level` 只接受规范的大写值；`service` 与 `message` 必须含有非空白字符，但已有的首尾空白会原样保留，避免不同语言产生不同编码。SDK 的调用方构造器仍可填充默认字段并把 `WARN` 归一化为 `WARNING`，严格 wire decoder 不接受省略字段或非规范枚举。HTTP 单条与批量入口、Go/Python decoder 和 sink 共用相同的严格事件约束。
+wire payload 必须显式包含以上全部字段。`timestamp` 使用规范 RFC 3339 形式，UTC 后缀必须写为大写 `Z`，JSON 中不接受 `NaN` 或无穷值；`level` 只接受规范的大写值；`service` 必须非空且已经去除首尾空白，避免认证身份存在多个视觉等价写法；`message` 只要求去除空白后非空，允许保留首尾空白和换行。SDK 的调用方构造器仍可填充默认字段并把 `WARN` 归一化为 `WARNING`，严格 wire decoder 不接受省略字段或非规范枚举。HTTP 单条与批量入口、Go/Python decoder 和 sink 共用相同的严格事件约束。
 
 HTTP 接口为 `/v1/log-events` 和 `/v1/log-events/batch`，鉴权头为 `X-Logging-Service-Token`。Kafka 协议的默认 Topic 是 `stellarmesh.logging.events.v1`。这是规范默认值，不表示运行时可以自动创建 Topic。单条规范事件的紧凑 JSON 最大为 `900KiB`，HTTP body 与 Kafka 完整消息最大为 `1MiB`，应用层 Kafka key/value 预算为 `960KiB`，剩余空间保留给协议封装。Kafka 分区键在存在 `trace_id` 时使用其 SHA-256 摘要，否则使用 `event_id`；这样既保留同一 trace 的稳定分区，也不会因超长 trace 重复占用 key 而让已确认事件无法发布。
 
@@ -63,7 +65,7 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 
 `sdk/go` 包含以下可复用包：
 
-- `logging`：协议模型、校验、元数据清洗、异步批量 HTTP 客户端和日志门面；
+- `logging`：协议模型、校验、元数据清洗、异步批量 HTTP 客户端、标准 `slog.Handler` 和兼容日志门面；
 - `gateway`：固定安全顺序的声明式网关、静态路由、可信代理、CORS、反向代理、健康检查和旁路观测；
 - `gateway/jwtauth`：严格校验 HS256、issuer、audience、expiration 和 subject 的 JWT 认证组件；
 - `gateway/redislimit`：按客户端 IP、用户或 upstream 作用域运行的 Redis 原子令牌桶；
@@ -78,7 +80,7 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 
 网关项目使用 `gateway.New(options ...Option)` 构造一个普通 `http.Handler`。`WithXxx` 只声明使用哪些组件，不改变执行顺序。路由解析、客户端地址解析、鉴权、授权、限流、转发策略和 upstream 解析发生错误时停止转发；访问日志与 Observer 失败只产生旁路观测，不改变已经完成的 HTTP 响应。静态路由默认需要认证，公开路由必须显式设置 `AccessPublic`，未匹配路径返回 `404`。完整接入方式见[Go 网关 SDK](sdk/go/gateway.md)。
 
-日志客户端使用同时受事件数和规范化 JSON 字节数限制的内存队列，调用 `Emit` 或日志级别方法时不会等待网络。构造函数会立即校验 URL、token、service、容量和重试限制。客户端后台对网络异常及明确的临时 HTTP 状态执行最多三次带抖动指数退避，并复用原 `event_id`；队列满、事件无效、客户端关闭、重试耗尽或响应不符合契约时调用 `OnDrop`，callback 的 panic 会被隔离并限频写到 stderr。SDK 没有落盘队列，因此在收到合法 `202` 以前只提供 best-effort 投递；进程退出前应调用 `Close` 并给出明确超时。
+日志客户端使用同时受事件数和规范化 JSON 字节数限制的内存队列，调用 `Emit`、`Enqueue`、`slog.Handler` 或日志级别方法时不会等待网络。构造函数会立即校验 URL、token、service、容量和重试限制。客户端后台对网络异常及明确的临时 HTTP 状态执行最多三次带抖动指数退避，支持有上限的 `Retry-After`，并复用原 `event_id`；队列满、事件无效、客户端关闭、重试耗尽或响应不符合契约时调用 `OnDrop`，callback 的 panic 会被隔离并限频写到 stderr。`Close` 到期会取消在途 HTTP 和退避等待，并逐条报告尚未发送的事件。SDK 没有落盘队列，因此在收到合法 `202` 以前只提供 best-effort 投递；进程退出前应调用 `Close` 并给出明确超时。
 
 ## Python SDK
 
@@ -125,9 +127,11 @@ Python 或其他客户端
 
 `logging-service` 从挂载的受保护 JSON 文件加载 service-token 绑定关系；token 只以 SHA-256 digest 留在进程内，比较使用常量时间操作。同一 service 可以同时配置新旧 token 完成滚动轮换，事件不能伪造其他 service 身份。服务启动时还会使用与运行期相同的 Kafka TLS/SASL transport 检查 Topic 可访问性；检查失败但本地 spool 可用时进入降级接收，而不是因为 Kafka 暂时不可用直接退出。
 
-正常批次写到控制台并发布 Kafka；Kafka 发布失败时，批次写入有总容量上限的本地分段 spool，后台按段定期重放。`ERROR` 和 `AUDIT` 进入高优先级分段，其他级别进入普通分段；每轮先尝试高优先级，但其失败不会阻止普通分段获得尝试。一个接收批次先完整写入 `.staging/` 并执行 `fsync`，再通过目录重命名一次提交到 `batches/`，因此不会暴露只包含部分优先级或部分分段的批次。升级时仍会读取旧版本 `regular/` 和 `priority/` 中的 `.ready.jsonl`；这项兼容不包括业务项目自行实现的其他 JSONL 格式。损坏或不兼容的整个 segment 会连同原因元数据移入持久 `quarantine/`；publisher 判定为永久失败时，回放会把失败范围缩小到单条，只隔离不可发布记录并继续发布同段正常记录。容量账本会为每个 live segment 预留等同自身大小的隔离副本空间和 `64KiB` 元数据空间，使原文件、隔离记录和元数据并存的瞬时状态仍受同一硬上限约束；配置容量因此大于业务事件的净可用容量。隔离数据计入 spool 容量并等待人工处置，不会自动删除。暂时失败时保留原 segment，因此 Kafka 在中途恢复时允许出现重复事件，不能把这条链路理解为 exactly-once。数据目录必须由业务部署持久化，但目录挂载方式由业务项目管理。
+正常批次先由 Kafka 全同步副本确认；Kafka 发布失败时，批次先写入有总容量上限的本地分段 spool。只有其中一条持久化路径成功后，事件副本才进入有事件数和字节数双重上限的异步控制台队列。控制台按事件输出紧凑单行 JSON，writer 阻塞、编码失败或队列满只丢弃控制台副本，不影响 Kafka、spool 或已经返回的 HTTP 结果。
 
-接收队列同时限制尚未获得持久确认的事件数和规范化 JSON 字节数，不按 HTTP 请求数限制；发布批次也同时受事件数和字节数约束。请求进入队列后会等待当前批次由 Kafka 全部同步副本确认，或在 Kafka 失败时由本地 spool 原子提交；只有满足其中一项才返回 `202`，两者均失败则返回 `503`。客户端请求提前取消不会撤销已经入队的事件，客户端重试可能产生重复。队列已满、服务关闭或持久路径均不可用时，服务会通过 `503` 或 readiness 暴露背压。`/health/live` 只判断进程存活，`/health/ready` 表示服务最近一次确认仍能可靠转交或缓冲新事件，后台 Kafka 检查可在空 spool 时恢复就绪状态；后续请求也会重新探测持久路径。`/metrics` 暴露有界标签的 Prometheus 指标，`/health` 保留为存活检查兼容入口。
+spool 后台按段定期重放。`ERROR` 和 `AUDIT` 进入高优先级分段，其他级别进入普通分段；每轮先尝试高优先级，但其失败不会阻止普通分段获得尝试。本实现没有为 priority 预留独立容量，因此普通日志已经占满共同 spool 时，新的 `ERROR` 或 `AUDIT` 仍可能无法落盘；容量告警和生产日志级别过滤仍是必要的保护。一个接收批次先完整写入 `.staging/` 并执行 `fsync`，再通过目录重命名一次提交到 `batches/`，因此不会暴露只包含部分优先级或部分分段的批次。升级时仍会读取旧版本 `regular/` 和 `priority/` 中的 `.ready.jsonl`；这项兼容不包括业务项目自行实现的其他 JSONL 格式。损坏或不兼容的整个 segment 会连同原因元数据移入持久 `quarantine/`；publisher 判定为永久失败时，回放会把失败范围缩小到单条，只隔离不可发布记录并继续发布同段正常记录。容量账本会为每个 live segment 预留等同自身大小的隔离副本空间和 `64KiB` 元数据空间，使原文件、隔离记录和元数据并存的瞬时状态仍受同一硬上限约束；配置容量因此大于业务事件的净可用容量。隔离数据计入 spool 容量并等待人工处置，不会自动删除。暂时失败时保留原 segment，因此 Kafka 在中途恢复时允许出现重复事件，不能把这条链路理解为 exactly-once。数据目录必须由业务部署持久化，但目录挂载方式由业务项目管理。
+
+接收队列同时限制尚未获得持久确认的事件数和规范化 JSON 字节数，不按 HTTP 请求数限制；发布批次也同时受事件数和字节数约束。请求进入队列后会等待当前批次由 Kafka 全部同步副本确认，或在 Kafka 失败时由本地 spool 原子提交；只有满足其中一项才返回 `202`，两者均失败则返回 `503`。客户端请求提前取消不会撤销已经入队的事件，客户端重试可能产生重复。队列已满、服务关闭或持久路径均不可用时，服务会通过 `503` 或 readiness 暴露背压。`/health/live` 只判断进程存活，`/health/ready` 表示服务最近一次确认仍能可靠转交或缓冲新事件；后台 Kafka 检查并行探测去重后的 broker，任一 broker 能访问目标 Topic 即成功，并可在空 spool 时恢复就绪状态。后续请求也会重新探测持久路径。`/metrics` 暴露有界标签的 Prometheus 指标，包括控制台副本的 `emitted`、`dropped`、`failed` 结果；`/health` 保留为存活检查兼容入口。
 
 ClickHouse sink 使用显式 consumer group，并要求独立 DLQ Topic。reader 只预取一条，消费批次同时受消息数和 Kafka key/value 总字节数约束；这些是 payload 预算而不是进程 RSS 硬上限，协议缓冲、解析和编码仍会产生临时分配。每批消息先严格解析：普通无效事件按 `dead-letter.schema.json` 编码，保留原 Topic、partition、offset、时间、key 和 Base64 原始载荷；超过源消息上限且不适合复制原始载荷的消息按 `dead-letter-v2.schema.json` 编码，只保留源坐标、长度和 SHA-256 摘要。只有 ClickHouse 插入、DLQ 发布和整批 offset 提交依次成功后，该批次才完成；任一步失败都保留整批重试。这样坏消息不会永久阻塞分区，但 ClickHouse 行和 DLQ 记录都可能因提交失败而重复，消费者必须按 at-least-once 处理。
 

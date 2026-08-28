@@ -183,7 +183,7 @@ CORS 未声明时不处理跨域。启用后必须显式提供 origin；method �
 | upstream 连接失败 | `502` |
 | upstream 超时 | `504` |
 
-`WithAccessLogEmitter` 直接调用现有 `logging.Emitter`，不会创建第二个队列或 worker。访问事件包含请求 ID、method、path、路由名、客户端 IP、鉴权与限流结果、upstream、状态和耗时；默认不记录 QueryString、Authorization 或身份凭据。成功的本地健康探针默认不写访问日志，可以通过 `HealthConfig.LogSuccessful` 开启。
+`WithAccessLogEmitter` 直接调用现有 `logging.Emitter`，不会创建第二个队列或 worker。传入的 service 必须非空且没有首尾空白，attribute 或请求内容不能覆盖该身份。访问事件包含请求 ID、method、path、路由名、客户端 IP、鉴权与限流结果、upstream、状态和耗时；默认不记录 QueryString、Authorization 或身份凭据。成功的本地健康探针默认不写访问日志，可以通过 `HealthConfig.LogSuccessful` 开启。
 
 `WithObserver` 接收请求完成、决策组件故障和访问日志失败三类低基数事件。Observer 和 AccessLogger 的错误或 panic 都不会改变业务响应。项目可以在 Observer 外部适配 Prometheus，标签只应使用路由名、upstream、状态和固定组件名，不应使用 path、用户 ID、请求 ID 或原始错误文本。
 

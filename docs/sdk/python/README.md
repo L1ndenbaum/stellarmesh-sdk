@@ -6,10 +6,10 @@
 
 ## 1. 安装固定版本
 
-包发布到团队内部 registry 后，业务项目应固定版本：
+包发布到 PyPI 后，业务项目应固定版本：
 
 ```sh
-python -m pip install stellarmesh-logging==0.1.0
+python -m pip install stellarmesh-logging==0.1.1
 ```
 
 使用 `requirements.txt`、锁文件或项目依赖管理器时，也应保留精确版本约束。生产镜像不要直接安装可变 Git 分支。
@@ -26,7 +26,7 @@ SDK 不读取业务项目的 settings 或 `.env`。业务配置层需要向初�
 
 - `base_url`：`logging-service` HTTP 根地址，不包含 API path；
 - `token`：通过 Secret 注入的服务 token；
-- `service`：稳定的业务服务名，必须与 token 授权一致；
+- `service`：稳定的业务服务名，必须与 token 授权一致、非空且没有首尾空白；
 - 可选的最低日志级别、队列和批量限制。
 
 ## 3. 初始化客户端
@@ -109,7 +109,7 @@ except RuntimeError:
 
 Handler 支持标准库的 `%s` 延迟格式化、`exc_info`、`stack_info` 和 `extra`。它会记录 logger 名称、模块、函数与行号，把 `CRITICAL` 映射为契约中的 `ERROR`，并把名称为 `AUDIT` 的自定义级别映射为 `AUDIT`。标准 logging 方法仍返回 `None`；级别过滤、队列已满、客户端已关闭或后台发送失败都不会从业务日志调用中抛出。
 
-metadata 会进行深度、数量、字符串长度和敏感字段处理，但业务代码仍不应把 token、密码、Cookie、Authorization 或其他 Secret 主动放入日志。
+metadata 会进行深度、数量、字符串长度和敏感字段处理。敏感 key 会先转小写并去除非字母数字字符，因此 `apiKey`、`api_key`、`api-key` 和大小写变体都会命中；异常对象会转成受限字符串。业务代码仍不应把 token、密码、Cookie、Authorization 或其他 Secret 主动放入日志。
 
 ## 5. 传播 trace ID
 
@@ -133,7 +133,7 @@ from stellarmesh_logging import shutdown_logging
 
 
 async def application_shutdown() -> None:
-    drained = await shutdown_logging(timeout=3.0)
+    drained = await shutdown_logging(timeout=10.0)
     if not drained:
         # 记录本地指标或标准错误，不能再次调用已经关闭的远端 logger。
         pass
@@ -144,7 +144,7 @@ async def application_shutdown() -> None:
 ```python
 from stellarmesh_logging import shutdown_logging_sync
 
-drained = shutdown_logging_sync(timeout=3.0)
+drained = shutdown_logging_sync(timeout=10.0)
 ```
 
 存在正在运行的 asyncio event loop 时，必须 `await shutdown_logging()`，不能调用同步包装器。也可以在没有设置默认客户端时直接保存 `Client`，分别调用 `client.close(timeout=...)` 或 `await client.aclose(timeout=...)`。
@@ -157,7 +157,7 @@ drained = shutdown_logging_sync(timeout=3.0)
 | --- | --- | --- |
 | `enabled` | `True` | 关闭后所有事件均不入队 |
 | `minimum_level` | `INFO` | SDK 本地最低级别 |
-| `timeout_seconds` | `2.0` | 单次 HTTP 请求超时 |
+| `timeout_seconds` | `7.0` | 单次 HTTP 请求超时 |
 | `queue_size` | `4096` | 本地事件队列容量 |
 | `queue_bytes` | `16MiB` | 尚未完成发送的规范化事件累计字节上限 |
 | `batch_size` | `128` | 单次发送目标事件数 |
@@ -166,10 +166,13 @@ drained = shutdown_logging_sync(timeout=3.0)
 | `max_attempts` | `3` | 单批总尝试次数，包含首次请求 |
 | `initial_backoff_seconds` | `0.1` | 首次重试的最大抖动退避 |
 | `max_backoff_seconds` | `1.0` | 指数退避上限 |
+| `max_retry_after_seconds` | `30.0` | 服务端 `Retry-After` 等待上限，最大允许 `3600.0` |
 | `trace_id_provider` | 空 | 从业务上下文读取 trace ID |
 | `drop_handler` | 空 | 无法入队或发送时的 callback |
 
-构造 `Client` 时会立即校验 URL、token、service、日志级别和所有正数限制。队列最多 `1000000` 条或 `1GiB`，批次最多 `10000` 条，尝试次数最多 `10`，时间参数最多一小时；配置错误应让应用启动失败，而不是延迟到后台线程。SDK 只重试网络异常和 `408`、`425`、`429`、`500`、`502`、`503`、`504`；其他 4xx 与格式异常的成功响应不会重试。请求结果不确定时可能已经被服务端接受，重试复用相同 `event_id`，下游仍须允许重复。
+构造 `Client` 时会立即校验 URL、token、service、日志级别和所有正数限制。队列最多 `1000000` 条或 `1GiB`，批次最多 `10000` 条，尝试次数最多 `10`，时间参数最多一小时；配置错误应让应用启动失败，而不是延迟到后台线程。SDK 只重试网络异常和 `408`、`425`、`429`、`500`、`502`、`503`、`504`；其他 4xx 与格式异常的成功响应不会重试。合法的 `Retry-After` 可以是整数秒或 HTTP-date，实际等待取本地抖动退避与服务端要求的较大值，再受 `max_retry_after_seconds` 限制；非法、负数和已过期值会被忽略。`close()` 或 `aclose()` 超时会中断这段等待。请求结果不确定时可能已经被服务端接受，重试复用相同 `event_id`，下游仍须允许重复。
+
+默认 `7s` 是按服务端默认 `500ms` 聚合等待和 `5s` Kafka 发布超时预留的客户端预算。如果部署提高 `STELLARMESH_LOGGING_BATCH_FLUSH_INTERVAL` 或 `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT`，必须同步提高 `timeout_seconds`，否则客户端可能在服务端完成持久确认前超时并重试。
 
 ## 8. 使用结构化日志门面
 

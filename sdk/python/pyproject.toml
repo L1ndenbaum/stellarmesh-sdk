@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "stellarmesh-logging"
 version = "0.1.1"
 description = "Stellarmesh logging contract and asynchronous HTTP client"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.27,<1",
