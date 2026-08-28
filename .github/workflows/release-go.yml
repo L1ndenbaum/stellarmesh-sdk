@@ -1,9 +1,10 @@
-name: 验证已发布 Go SDK
+name: 验证已发布 Go Module
 
 on:
   push:
     tags:
       - "sdk/go/v*.*.*"
+      - "sdk/go/mq/kafka/v*.*.*"
 
 permissions:
   contents: read
@@ -18,19 +19,41 @@ jobs:
         with:
           go-version: "1.24.x"
 
-      - name: 等待公共代理收录子模块
+      - name: 解析允许发布的组件
+        id: component
         shell: bash
         run: |
-          module="github.com/L1ndenbaum/stellarmesh-sdk/sdk/go"
-          version="${GITHUB_REF_NAME#sdk/go/}"
+          case "$GITHUB_REF_NAME" in
+            sdk/go/mq/kafka/v*.*.*)
+              echo "name=kafka" >> "$GITHUB_OUTPUT"
+              echo "module=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka" >> "$GITHUB_OUTPUT"
+              echo "version=${GITHUB_REF_NAME#sdk/go/mq/kafka/}" >> "$GITHUB_OUTPUT"
+              ;;
+            sdk/go/v*.*.*)
+              echo "name=parent" >> "$GITHUB_OUTPUT"
+              echo "module=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go" >> "$GITHUB_OUTPUT"
+              echo "version=${GITHUB_REF_NAME#sdk/go/}" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "不允许的 Go module tag: $GITHUB_REF_NAME" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: 等待公共代理收录 Module
+        shell: bash
+        env:
+          MODULE_PATH: ${{ steps.component.outputs.module }}
+          MODULE_VERSION: ${{ steps.component.outputs.version }}
+        run: |
           for attempt in {1..20}; do
             if env GOWORK=off GOPRIVATE= GONOPROXY= GONOSUMDB= \
               GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
-              go mod download "${module}@${version}"; then
+              go mod download "${MODULE_PATH}@${MODULE_VERSION}"; then
               exit 0
             fi
             if [[ "$attempt" -eq 20 ]]; then
-              echo "公共 Go 代理未在限定时间内收录 ${module}@${version}" >&2
+              echo "公共 Go 代理未在限定时间内收录 ${MODULE_PATH}@${MODULE_VERSION}" >&2
               exit 1
             fi
             sleep 15
@@ -38,15 +61,20 @@ jobs:
 
       - name: 从公共代理构建外部消费者
         shell: bash
+        env:
+          COMPONENT_NAME: ${{ steps.component.outputs.name }}
+          MODULE_PATH: ${{ steps.component.outputs.module }}
+          MODULE_VERSION: ${{ steps.component.outputs.version }}
         run: |
           workdir="$(mktemp -d)"
           trap 'rm -rf "$workdir"' EXIT
           cd "$workdir"
           go mod init example.com/stellarmesh-public-consumer
           go mod edit -go=1.24
-          version="${GITHUB_REF_NAME#sdk/go/}"
-          go mod edit -require="github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@${version}"
-          cat > main.go <<'EOF'
+          go mod edit -require="${MODULE_PATH}@${MODULE_VERSION}"
+          case "$COMPONENT_NAME" in
+            parent)
+              cat > main.go <<'EOF'
           package main
 
           import (
@@ -73,9 +101,67 @@ jobs:
               var _ objectstorage.Reader = (*s3store.Client)(nil)
           }
           EOF
+              ;;
+            kafka)
+              cat > main.go <<'EOF'
+          package main
+
+          import (
+              "context"
+
+              stellarkafka "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka"
+          )
+
+          func main() {
+              for _, mechanism := range []stellarkafka.SASLMechanism{
+                  stellarkafka.SASLMechanismPlain,
+                  stellarkafka.SASLMechanismSCRAMSHA256,
+                  stellarkafka.SASLMechanismSCRAMSHA512,
+              } {
+                  connection, err := stellarkafka.NewConnection(stellarkafka.ConnectionConfig{
+                      SecurityProtocol: stellarkafka.SecurityProtocolSASLPlaintext,
+                      SASLMechanism: mechanism,
+                      Username: "consumer",
+                      Password: "secret",
+                  })
+                  if err != nil {
+                      panic(err)
+                  }
+                  _ = connection.Dialer()
+                  _ = connection.Transport()
+              }
+              publisher, err := stellarkafka.NewPublisher(stellarkafka.Config{})
+              if err != nil {
+                  panic(err)
+              }
+              _ = publisher.Publish(context.Background(), nil)
+              _ = publisher.Check
+              _ = publisher.Close()
+              _ = stellarkafka.CheckTopic
+              _ = stellarkafka.IsMessageTooLarge
+          }
+          EOF
+              ;;
+            *)
+              echo "不允许的 Go module 组件: $COMPONENT_NAME" >&2
+              exit 1
+              ;;
+          esac
           env GOWORK=off GOPRIVATE= GONOPROXY= GONOSUMDB= \
             GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
             go mod tidy
           env GOWORK=off GOPRIVATE= GONOPROXY= GONOSUMDB= \
             GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
             go run .
+          if [[ "$COMPONENT_NAME" == "kafka" ]]; then
+            consumer_graph="$(env GOWORK=off GOPRIVATE= GONOPROXY= GONOSUMDB= \
+              GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org go list -m all)"
+            if grep -Eq 'aws-sdk-go-v2|go-chi/chi|golang-jwt|redis/go-redis' <<< "$consumer_graph"; then
+              echo "Kafka-only 公共消费者引入了非 Kafka 依赖" >&2
+              exit 1
+            fi
+            if grep -q '^github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v' <<< "$consumer_graph"; then
+              echo "Kafka-only 公共消费者引入了父 SDK" >&2
+              exit 1
+            fi
+          fi
