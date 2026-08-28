@@ -212,7 +212,8 @@ func TestServiceQueueCapacityCountsSerializedBytes(t *testing.T) {
 
 func TestServiceMarksNotReadyWhenKafkaAndFallbackFail(t *testing.T) {
 	observer := &recordingObserver{ready: true}
-	service := New(Config{Observer: observer}, nil, failingSink{}, failingPublisher{})
+	accepted := &successfulSink{}
+	service := New(Config{Observer: observer}, []BatchSink{accepted}, failingSink{}, failingPublisher{})
 	err := service.writeBatch(context.Background(), []sharedlogging.Event{validApplicationEvent(t, "event")})
 	if !errors.Is(err, ErrDurabilityUnavailable) {
 		t.Fatalf("error = %v", err)
@@ -224,6 +225,11 @@ func TestServiceMarksNotReadyWhenKafkaAndFallbackFail(t *testing.T) {
 	}
 	if observer.results["kafka:failed"] != 1 {
 		t.Fatalf("results = %v", observer.results)
+	}
+	accepted.mu.Lock()
+	defer accepted.mu.Unlock()
+	if len(accepted.events) != 0 {
+		t.Fatalf("accepted sink received non-durable events: %#v", accepted.events)
 	}
 }
 
@@ -252,7 +258,8 @@ func TestServiceWaitsForDurablePublish(t *testing.T) {
 
 func TestServiceAcceptsDurableFallback(t *testing.T) {
 	fallback := &successfulSink{}
-	service := New(Config{MaxBatchSize: 1}, nil, fallback, failingPublisher{})
+	accepted := &successfulSink{}
+	service := New(Config{MaxBatchSize: 1}, []BatchSink{accepted}, fallback, failingPublisher{})
 	service.Start(context.Background())
 	if err := service.Ingest(context.Background(), []sharedlogging.Event{validApplicationEvent(t, "event")}); err != nil {
 		t.Fatal(err)
@@ -264,6 +271,24 @@ func TestServiceAcceptsDurableFallback(t *testing.T) {
 	defer fallback.mu.Unlock()
 	if len(fallback.events) != 1 {
 		t.Fatalf("fallback events = %#v", fallback.events)
+	}
+	accepted.mu.Lock()
+	defer accepted.mu.Unlock()
+	if len(accepted.events) != 1 {
+		t.Fatalf("accepted sink events = %#v", accepted.events)
+	}
+}
+
+func TestServiceWritesAcceptedSinkAfterKafkaSuccess(t *testing.T) {
+	accepted := &successfulSink{}
+	service := New(Config{}, []BatchSink{accepted}, nil, &recordingPublisher{})
+	if err := service.writeBatch(context.Background(), []sharedlogging.Event{validApplicationEvent(t, "event")}); err != nil {
+		t.Fatal(err)
+	}
+	accepted.mu.Lock()
+	defer accepted.mu.Unlock()
+	if len(accepted.events) != 1 {
+		t.Fatalf("accepted sink events = %#v", accepted.events)
 	}
 }
 

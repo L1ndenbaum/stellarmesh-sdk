@@ -28,7 +28,6 @@ type Config struct {
 	Addr                 string
 	AuthFile             string
 	DataDir              string
-	ConsoleColor         bool
 	ReadHeaderTimeout    time.Duration
 	ReadTimeout          time.Duration
 	WriteTimeout         time.Duration
@@ -59,7 +58,6 @@ func Load() (Config, error) {
 		Addr:                 envconfig.String("STELLARMESH_LOGGING_ADDR", ":8091"),
 		AuthFile:             envconfig.String("STELLARMESH_LOGGING_AUTH_FILE", ""),
 		DataDir:              dataDir,
-		ConsoleColor:         loader.Bool("STELLARMESH_LOGGING_CONSOLE_COLOR", true),
 		ReadHeaderTimeout:    loader.Duration("STELLARMESH_LOGGING_READ_HEADER_TIMEOUT", 5*time.Second),
 		ReadTimeout:          loader.Duration("STELLARMESH_LOGGING_READ_TIMEOUT", 10*time.Second),
 		WriteTimeout:         loader.Duration("STELLARMESH_LOGGING_WRITE_TIMEOUT", 10*time.Second),

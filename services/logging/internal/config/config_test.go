@@ -46,6 +46,14 @@ func TestLoadReadsPublishTimeout(t *testing.T) {
 	}
 }
 
+func TestLoadIgnoresRemovedConsoleColorSetting(t *testing.T) {
+	t.Setenv("STELLARMESH_LOGGING_AUTH_FILE", "/run/secrets/logging-auth.json")
+	t.Setenv("STELLARMESH_LOGGING_CONSOLE_COLOR", "legacy-value")
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() rejected removed console color setting: %v", err)
+	}
+}
+
 func TestLoadReadsEventQueueAndSpoolByteSizes(t *testing.T) {
 	t.Setenv("STELLARMESH_LOGGING_AUTH_FILE", "/run/secrets/logging-auth.json")
 	t.Setenv("STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS", "23")
@@ -70,7 +78,6 @@ func TestLoadRejectsInvalidAndOutOfBoundsValues(t *testing.T) {
 		value string
 	}{
 		{name: "invalid duration", key: "STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT", value: "forever"},
-		{name: "invalid boolean", key: "STELLARMESH_LOGGING_CONSOLE_COLOR", value: "sometimes"},
 		{name: "queue event upper bound", key: "STELLARMESH_LOGGING_QUEUE_CAPACITY_EVENTS", value: "1000001"},
 		{name: "queue byte upper bound", key: "STELLARMESH_LOGGING_QUEUE_CAPACITY_BYTES", value: "2GiB"},
 		{name: "spool byte upper bound", key: "STELLARMESH_LOGGING_SPOOL_MAX_BYTES", value: "2TiB"},

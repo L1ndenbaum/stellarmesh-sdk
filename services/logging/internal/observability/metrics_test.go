@@ -18,6 +18,7 @@ func TestMetricsExposeBoundedLabelsAndReadiness(t *testing.T) {
 	metrics.SetQueueDepth(2)
 	metrics.SetQueueBytes(256)
 	metrics.ObserveKafkaPublish("success", 2)
+	metrics.ObserveConsole("emitted", 2)
 	metrics.SetSpoolBytes("regular", 128)
 	metrics.ObserveSpoolWrite("regular", "stored", 2)
 	metrics.ObserveSpoolReplay("regular", "published", 2)
@@ -32,6 +33,7 @@ func TestMetricsExposeBoundedLabelsAndReadiness(t *testing.T) {
 		"stellarmesh_logging_ingester_ingest_events_total",
 		"stellarmesh_logging_ingester_queue_events",
 		"stellarmesh_logging_ingester_queue_bytes",
+		"stellarmesh_logging_ingester_console_events_total",
 		"stellarmesh_logging_ingester_spool_bytes",
 	} {
 		if !strings.Contains(recorder.Body.String(), name) {

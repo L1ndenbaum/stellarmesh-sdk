@@ -78,12 +78,16 @@ func run() (result error) {
 			metrics.SetReady(true)
 		}
 	})
+	consoleSink, err := console.NewSink(os.Stdout, metrics)
+	if err != nil {
+		return err
+	}
 	service := application.New(application.Config{
 		FlushInterval: cfg.FlushInterval, PublishTimeout: cfg.PublishTimeout,
 		QueueCapacityEvents: cfg.QueueCapacityEvents, QueueCapacityBytes: cfg.QueueCapacityBytes,
 		MaxBatchSize: cfg.MaxBatchSize, MaxBatchBytes: cfg.MaxBatchBytes,
 		MaxRequestEvents: cfg.MaxRequestEvents, Observer: metrics,
-	}, []application.BatchSink{&console.Sink{Writer: os.Stdout, Color: cfg.ConsoleColor}}, fallback, publisher)
+	}, []application.BatchSink{consoleSink}, fallback, publisher)
 	service.Start(runtimeCtx)
 	metrics.SetReady(kafkaCheckErr == nil || !fallback.Saturated())
 
@@ -109,6 +113,7 @@ func run() (result error) {
 	result = errors.Join(result, server.Shutdown(shutdownCtx))
 	serviceShutdownErr := service.Shutdown(shutdownCtx)
 	result = errors.Join(result, serviceShutdownErr)
+	result = errors.Join(result, consoleSink.Close(shutdownCtx))
 	cancelRuntime()
 	if serviceShutdownErr != nil {
 		closePublisher = false

@@ -12,16 +12,17 @@ import (
 
 // Metrics 为日志接收服务持有独立 registry。
 type Metrics struct {
-	registry     *prometheus.Registry
-	ready        atomic.Bool
-	httpRequests *prometheus.CounterVec
-	ingestEvents *prometheus.CounterVec
-	queueDepth   prometheus.Gauge
-	queueBytes   prometheus.Gauge
-	kafkaPublish *prometheus.CounterVec
-	spoolBytes   *prometheus.GaugeVec
-	spoolEvents  *prometheus.CounterVec
-	spoolReplay  *prometheus.CounterVec
+	registry      *prometheus.Registry
+	ready         atomic.Bool
+	httpRequests  *prometheus.CounterVec
+	ingestEvents  *prometheus.CounterVec
+	queueDepth    prometheus.Gauge
+	queueBytes    prometheus.Gauge
+	kafkaPublish  *prometheus.CounterVec
+	consoleEvents *prometheus.CounterVec
+	spoolBytes    *prometheus.GaugeVec
+	spoolEvents   *prometheus.CounterVec
+	spoolReplay   *prometheus.CounterVec
 }
 
 // NewMetrics 创建并注册日志接收服务指标。
@@ -48,6 +49,10 @@ func NewMetrics() *Metrics {
 			Namespace: "stellarmesh", Subsystem: "logging_ingester", Name: "kafka_publish_events_total",
 			Help: "Events passed to Kafka publishing attempts.",
 		}, []string{"result"}),
+		consoleEvents: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "stellarmesh", Subsystem: "logging_ingester", Name: "console_events_total",
+			Help: "Durably accepted event copies processed by the asynchronous console sink.",
+		}, []string{"result"}),
 		spoolBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "stellarmesh", Subsystem: "logging_ingester", Name: "spool_bytes",
 			Help: "Bytes retained in regular, priority, and quarantine spool storage.",
@@ -63,7 +68,7 @@ func NewMetrics() *Metrics {
 	}
 	metrics.registry.MustRegister(
 		metrics.httpRequests, metrics.ingestEvents, metrics.queueDepth, metrics.queueBytes, metrics.kafkaPublish,
-		metrics.spoolBytes, metrics.spoolEvents, metrics.spoolReplay,
+		metrics.consoleEvents, metrics.spoolBytes, metrics.spoolEvents, metrics.spoolReplay,
 	)
 	metrics.spoolBytes.WithLabelValues("regular").Set(0)
 	metrics.spoolBytes.WithLabelValues("priority").Set(0)
@@ -109,6 +114,11 @@ func (metrics *Metrics) SetQueueBytes(size int64) {
 // ObserveKafkaPublish 按事件数记录 Kafka 批次结果。
 func (metrics *Metrics) ObserveKafkaPublish(result string, count int) {
 	metrics.kafkaPublish.WithLabelValues(result).Add(float64(count))
+}
+
+// ObserveConsole 记录异步控制台副本的有限结果。
+func (metrics *Metrics) ObserveConsole(result string, count int) {
+	metrics.consoleEvents.WithLabelValues(result).Add(float64(count))
 }
 
 // SetSpoolBytes 记录一个优先级类别保留的分段字节数。

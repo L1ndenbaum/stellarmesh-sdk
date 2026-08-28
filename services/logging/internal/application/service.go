@@ -292,11 +292,6 @@ func (service *Service) run(ctx context.Context) {
 }
 
 func (service *Service) writeBatch(ctx context.Context, events []sharedlogging.Event) error {
-	for _, sink := range service.sinks {
-		if err := sink.WriteBatch(ctx, events); err != nil {
-			log.Printf("logging sink write failed: %v", err)
-		}
-	}
 	var publishErr error
 	if service.publisher == nil {
 		publishErr = errors.New("Kafka publisher is unavailable")
@@ -322,11 +317,21 @@ func (service *Service) writeBatch(ctx context.Context, events []sharedlogging.E
 			service.setReady(false)
 			return ErrDurabilityUnavailable
 		}
+		service.writeAcceptedSinks(ctx, events)
 		return nil
 	}
 	service.observeKafkaPublish("success", len(events))
 	service.setReady(true)
+	service.writeAcceptedSinks(ctx, events)
 	return nil
+}
+
+func (service *Service) writeAcceptedSinks(ctx context.Context, events []sharedlogging.Event) {
+	for _, sink := range service.sinks {
+		if err := sink.WriteBatch(ctx, events); err != nil {
+			log.Printf("logging accepted-event sink failed: %v", err)
+		}
+	}
 }
 
 func (service *Service) markFlushed(count int, size int64) {
