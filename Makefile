@@ -14,7 +14,7 @@ export GOWORK := $(ROOT)/go.work
 export GOCACHE ?= $(ROOT)/.cache/go-build
 export GOMODCACHE ?= $(ROOT)/.cache/go-mod
 
-.PHONY: bootstrap format check test race verify images integration integration-aws
+.PHONY: bootstrap format check test race verify go-module-consumer images integration integration-aws
 
 bootstrap:
 	python3 -m venv $(VENV)
@@ -45,12 +45,17 @@ check:
 	sh -n services/logging/docker-entrypoint.sh
 	sh -n tests/integration/logging-pipeline.sh
 	sh -n tests/integration/storage-minio.sh
+	sh -n tests/go-module-consumer.sh
 	git diff --check
 
 test:
 	go test $(GO_PACKAGES)
 	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/pytest
 	cd $(PYTHON_STORAGE_DIR) && $(VENV)/bin/pytest
+	$(MAKE) go-module-consumer
+
+go-module-consumer:
+	./tests/go-module-consumer.sh
 
 race:
 	go test -race $(GO_PACKAGES)

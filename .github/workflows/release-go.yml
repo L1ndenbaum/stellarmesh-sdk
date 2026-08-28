@@ -1,0 +1,81 @@
+name: 验证已发布 Go SDK
+
+on:
+  push:
+    tags:
+      - "sdk/go/v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  public-consumer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: 等待公共代理收录子模块
+        shell: bash
+        run: |
+          module="github.com/L1ndenbaum/stellarmesh-sdk/sdk/go"
+          version="${GITHUB_REF_NAME#sdk/go/}"
+          for attempt in {1..20}; do
+            if env GOWORK=off GOPRIVATE= GONOPROXY= GONOSUMDB= \
+              GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
+              go mod download "${module}@${version}"; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 20 ]]; then
+              echo "公共 Go 代理未在限定时间内收录 ${module}@${version}" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: 从公共代理构建外部消费者
+        shell: bash
+        run: |
+          workdir="$(mktemp -d)"
+          trap 'rm -rf "$workdir"' EXIT
+          cd "$workdir"
+          go mod init example.com/stellarmesh-public-consumer
+          go mod edit -go=1.24
+          version="${GITHUB_REF_NAME#sdk/go/}"
+          go mod edit -require="github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@${version}"
+          cat > main.go <<'EOF'
+          package main
+
+          import (
+              "context"
+              "log/slog"
+
+              "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway"
+              sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
+              "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage"
+              "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage/s3store"
+          )
+
+          type emitter struct{}
+
+          func (emitter) Emit(context.Context, sharedlogging.Event) bool { return true }
+
+          func main() {
+              handler, err := sharedlogging.NewSlogHandler(emitter{}, sharedlogging.SlogHandlerConfig{Service: "consumer"})
+              if err != nil {
+                  panic(err)
+              }
+              _ = slog.New(handler)
+              _ = gateway.WithAccessLogEmitter("consumer", emitter{})
+              var _ objectstorage.Reader = (*s3store.Client)(nil)
+          }
+          EOF
+          env GOWORK=off GOPRIVATE= GONOPROXY= GONOSUMDB= \
+            GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
+            go mod tidy
+          env GOWORK=off GOPRIVATE= GONOPROXY= GONOSUMDB= \
+            GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
+            go run .
