@@ -1,13 +1,13 @@
 # Go SDK 接入教程
 
-本教程对应 Go module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.24 及以上版本。业务日志接入使用 `logging` package；需要复用路由、鉴权、限流和反向代理时，阅读[Go 网关 SDK 接入教程](gateway.md)；需要进程内访问 AWS S3 或 MinIO 时，阅读[Go 对象存储 SDK 接入教程](object-storage.md)。
+本教程对应 Go module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.24 及以上版本。业务日志接入使用 `logging` package；需要复用路由、鉴权、限流和反向代理时，阅读[Go 网关 SDK 接入教程](gateway.md)；需要进程内访问 AWS S3 或 MinIO 时，阅读[Go 对象存储 SDK 接入教程](object-storage.md)。Kafka 已从父 SDK拆为独立 Module，接入方式见[Go Kafka SDK 接入教程](kafka.md)。
 
 ## 1. 安装固定版本
 
 正式接入应使用 `sdk/go/vX.Y.Z` 子模块 tag：
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.1.1
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.2.0
 go mod tidy
 ```
 

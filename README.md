@@ -7,13 +7,14 @@
 - `contracts/logging/v1/`：日志事件、DLQ v1/v2 记录、尺寸限制与 HTTP OpenAPI 契约。
 - `contracts/storage/v1/`：Storage 控制面 OpenAPI、访问配置 Schema、共享限制与测试数据。
 - `sdk/go/`：Go 公共基础能力、fail-close 网关、异步日志客户端和 namespace 绑定对象存储 SDK。
+- `sdk/go/mq/kafka/`：独立发布的轻量 Kafka Go Module，提供 PLAIN、SCRAM、TLS/mTLS、Publisher 和 Topic 检查。
 - `sdk/python/`：独立发布的 `stellarmesh-logging` 日志包。
 - `sdk/python/storage/`：独立发布的 `stellarmesh-storage` 同步与异步对象存储客户端。
 - `services/logging/`：接收 HTTP 日志并发布到 Kafka 的常驻服务。
 - `services/storage/`：签发 S3/MinIO 预签名请求的项目级控制面服务，不代理对象字节。
 - `sinks/clickhouse/`：消费 Kafka 并写入 ClickHouse 的常驻服务，以及独立迁移镜像。
 
-详细说明见[SDK 内容](docs/sdk-content.md)，语言 SDK 的使用方法见[SDK 接入教程](docs/sdk/README.md)，网关接入见[Go 网关 SDK](docs/sdk/go/gateway.md)，对象存储服务部署见[storage-service 部署与权限边界](docs/storage-service.md)，平台服务与业务项目的整体接入步骤见[接入 SDK](docs/sdk-integration.md)，版本与不可变制品规则见[发布与版本引用](docs/release.md)。
+详细说明见[SDK 内容](docs/sdk-content.md)，语言 SDK 的使用方法见[SDK 接入教程](docs/sdk/README.md)，Kafka 接入见[Go Kafka SDK](docs/sdk/go/kafka.md)，网关接入见[Go 网关 SDK](docs/sdk/go/gateway.md)，对象存储服务部署见[storage-service 部署与权限边界](docs/storage-service.md)，平台服务与业务项目的整体接入步骤见[接入 SDK](docs/sdk-integration.md)，版本与不可变制品规则见[发布与版本引用](docs/release.md)。
 
 ## 本地验证
 
