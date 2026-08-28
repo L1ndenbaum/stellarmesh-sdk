@@ -32,7 +32,7 @@ func TestIsMessageTooLargeRecognizesKafkaErrors(t *testing.T) {
 }
 
 func TestNewPublisherConfiguresMaximumBatchBytes(t *testing.T) {
-	publisher, err := NewPublisher(Config{BatchBytes: 2 << 20})
+	publisher, err := NewPublisher(Config{BatchBytes: 2 << 20, BatchTimeout: 250 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,8 +43,30 @@ func TestNewPublisherConfiguresMaximumBatchBytes(t *testing.T) {
 	if publisher.writer.RequiredAcks != segmentio.RequireAll {
 		t.Fatalf("required acks = %d", publisher.writer.RequiredAcks)
 	}
+	if _, ok := publisher.writer.Balancer.(*segmentio.Hash); !ok {
+		t.Fatalf("balancer = %T", publisher.writer.Balancer)
+	}
+	if publisher.writer.BatchTimeout != 250*time.Millisecond {
+		t.Fatalf("batch timeout = %s", publisher.writer.BatchTimeout)
+	}
 	if _, err := NewPublisher(Config{BatchBytes: -1}); err == nil {
 		t.Fatal("NewPublisher() accepted negative batch bytes")
+	}
+}
+
+func TestPublisherHonorsCanceledContextAndCloses(t *testing.T) {
+	publisher, err := NewPublisher(Config{Brokers: []string{"127.0.0.1:1"}, Topic: "events"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = publisher.Publish(ctx, []Message{{Key: []byte("event"), Value: []byte("payload")}})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Publish() error = %v", err)
+	}
+	if err := publisher.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
 	}
 }
 
