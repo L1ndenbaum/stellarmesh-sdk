@@ -29,11 +29,13 @@ jobs:
               package_path="sdk/python"
               distribution="stellarmesh-logging"
               tag_version="${GITHUB_REF_NAME#sdk/python/logging/v}"
+              check_paths="src tests"
               ;;
             sdk/python/storage/v*.*.*)
               package_path="sdk/python/storage"
               distribution="stellarmesh-storage"
               tag_version="${GITHUB_REF_NAME#sdk/python/storage/v}"
+              check_paths="."
               ;;
             *)
               echo "不支持的 Python 组件 tag：$GITHUB_REF_NAME" >&2
@@ -43,6 +45,7 @@ jobs:
           echo "package_path=$package_path" >> "$GITHUB_OUTPUT"
           echo "distribution=$distribution" >> "$GITHUB_OUTPUT"
           echo "tag_version=$tag_version" >> "$GITHUB_OUTPUT"
+          echo "check_paths=$check_paths" >> "$GITHUB_OUTPUT"
           echo "artifact=${distribution}-distributions" >> "$GITHUB_OUTPUT"
 
       - name: 安装 Python
@@ -84,10 +87,13 @@ jobs:
 
       - name: 验证 Python 包
         working-directory: ${{ steps.component.outputs.package_path }}
+        env:
+          CHECK_PATHS: ${{ steps.component.outputs.check_paths }}
         run: |
-          python -m ruff check .
-          python -m ruff format --check .
-          python -m mypy .
+          read -r -a check_paths <<< "$CHECK_PATHS"
+          python -m ruff check "${check_paths[@]}"
+          python -m ruff format --check "${check_paths[@]}"
+          python -m mypy "${check_paths[@]}"
           python -m pytest
 
       - name: 构建发布制品

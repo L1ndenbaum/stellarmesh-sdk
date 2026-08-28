@@ -3,7 +3,7 @@
 `stellarmesh-logging` 为 Python 3.11 及以上项目提供 Logging v1 严格模型、标准库 `logging.Handler`、结构化日志门面和有界异步批量 HTTP 客户端。
 
 ```sh
-python -m pip install stellarmesh-logging==0.1.1
+python -m pip install stellarmesh-logging==0.1.2
 ```
 
 ```python

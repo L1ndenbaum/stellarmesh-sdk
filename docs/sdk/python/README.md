@@ -9,7 +9,7 @@
 包发布到 PyPI 后，业务项目应固定版本：
 
 ```sh
-python -m pip install stellarmesh-logging==0.1.1
+python -m pip install stellarmesh-logging==0.1.2
 ```
 
 使用 `requirements.txt`、锁文件或项目依赖管理器时，也应保留精确版本约束。生产镜像不要直接安装可变 Git 分支。

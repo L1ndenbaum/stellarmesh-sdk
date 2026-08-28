@@ -10,7 +10,7 @@
 - Python Storage 组件 tag `sdk/python/storage/vX.Y.Z` 只构建并发布 `stellarmesh-storage`；
 - `contracts/logging/v1/` 与 `contracts/storage/v1/` 随源码版本发布，SDK、服务、sink 和迁移制品必须来自经过完整验证的 commit。
 
-不同组件可以有不同版本。例如 `0.1.1` 发布只提升 Go SDK、`stellarmesh-logging` 和四个镜像，`stellarmesh-storage` 继续保持 `0.1.0`。发布前必须先让 `main` 或 `dev` 分支的持续验证通过，不得用 tag 绕过格式、静态检查、测试、镜像构建或集成测试。已经推送的 tag 不得移动、删除、覆盖或强推；制品内容需要修改时必须提升 patch 版本。
+不同组件可以有不同版本。例如 Go SDK 和四个镜像可以保持 `0.1.1`，Python 日志包可以独立提升到 `0.1.2`，`stellarmesh-storage` 继续保持 `0.1.0`。发布前必须先让 `main` 或 `dev` 分支的持续验证通过，不得用 tag 绕过格式、静态检查、测试、镜像构建或集成测试。已经推送的 tag 不得移动、删除、覆盖或强推；制品内容需要修改时必须提升 patch 版本。
 
 ## 镜像发布
 
@@ -49,11 +49,11 @@ go mod tidy
 
 `.github/workflows/release-python.yml` 只接受两个显式组件 tag，并通过硬编码白名单选择包路径和 distribution。根版本 tag 不触发 Python 发布，未知前缀不能注入任意构建路径。
 
-以日志包 `0.1.1` 为例：
+以日志包 `0.1.2` 为例：
 
 ```sh
-git tag -a sdk/python/logging/v0.1.1 -m '发布 stellarmesh-logging v0.1.1'
-git push origin sdk/python/logging/v0.1.1
+git tag -a sdk/python/logging/v0.1.2 -m '发布 stellarmesh-logging v0.1.2'
+git push origin sdk/python/logging/v0.1.2
 ```
 
 build job 会校验 tag 版本与对应 `pyproject.toml` 一致，运行 Ruff、mypy、pytest，构建一次 wheel 与 sdist，并执行 `twine check`。后续发布任务不检出源码，只下载同一份 Actions artifact：
@@ -77,32 +77,33 @@ TestPyPI 验证时应先从正式 PyPI 安装第三方依赖，再单独安装�
 python -m pip install 'httpx>=0.27,<1' 'pydantic>=2.7,<3'
 python -m pip install --no-deps \
   --index-url https://test.pypi.org/simple \
-  stellarmesh-logging==0.1.1
+  stellarmesh-logging==0.1.2
 ```
 
 正式发布完成后，生产项目只使用默认 PyPI 或团队批准的内部索引，不把 TestPyPI 当作长期依赖源。
 
-## `0.1.1` 发布顺序
+## `0.1.1` 与 Python `0.1.2` 发布顺序
 
-同一已验证 commit 按以下顺序创建 annotated tag：
+Go SDK 和四个镜像使用 `0.1.1`。Python 日志包的 `sdk/python/logging/v0.1.1` 在发布前构建检查阶段失败，未上传到 TestPyPI 或 PyPI；该 tag 保持不可变。修复发布检查后，Python 日志包单独提升为 `0.1.2`：
 
 ```sh
-git tag -a sdk/python/logging/v0.1.1 -m '发布 stellarmesh-logging v0.1.1'
 git tag -a sdk/go/v0.1.1 -m '发布 Go SDK v0.1.1'
 git tag -a v0.1.1 -m '发布 Stellarmesh 镜像 v0.1.1'
-git push origin sdk/python/logging/v0.1.1
 git push origin sdk/go/v0.1.1
 git push origin v0.1.1
+
+git tag -a sdk/python/logging/v0.1.2 -m '发布 stellarmesh-logging v0.1.2'
+git push origin sdk/python/logging/v0.1.2
 ```
 
-创建前必须用远端查询确认三个 tag 均不存在，并确认 `dev` 的“持续验证”工作流已经成功。Python 外部发布配置尚未完成时不能先推送 Python 组件 tag；否则 OIDC 失败后只能修复外部配置并重跑同一 commit 的 workflow，不能改写 tag。
+创建前必须用远端查询确认目标 tag 不存在，并确认 `dev` 的“持续验证”工作流已经成功。Python 外部发布配置尚未完成时不能先推送 Python 组件 tag；否则 OIDC 失败后只能修复外部配置并重跑同一不可变 commit 的 workflow，不能改写 tag。若必须修改 workflow、源码或制品内容，则提升 Python 包 patch 版本并创建新 tag。
 
 ## 发布后验证
 
 发布完成后至少确认：
 
-1. 三个 `0.1.1` tag 指向同一已验证 commit，`stellarmesh-storage` 仍为 `0.1.0`；
-2. 从 TestPyPI 和正式 PyPI 的全新 Python 3.11 环境安装 `stellarmesh-logging==0.1.1`，验证 import、版本元数据、严格 service 校验与标准 `logging.Handler`；
+1. Go SDK 与四个镜像的 `0.1.1` tag 已发布，失败的 Python `0.1.1` tag 保持不可变，`stellarmesh-storage` 仍为 `0.1.0`；
+2. 从 TestPyPI 和正式 PyPI 的全新 Python 3.11 环境安装 `stellarmesh-logging==0.1.2`，验证 import、版本元数据、严格 service 校验与标准 `logging.Handler`；
 3. 从公共 `GOPROXY` 和 `GOSUMDB` 获取 `sdk/go/v0.1.1`，不使用 `replace` 编译 logging、`slog.Handler`、gateway 与 objectstorage；
 4. 使用空临时 `DOCKER_CONFIG` 匿名拉取四个 `0.1.1` 镜像，确认双架构 manifest、provenance 和 SBOM，并记录不可变 digest；
 5. 使用临时合法认证文件启动 `logging-service:0.1.1`，在 Kafka 不可用但 spool 可写时确认服务可以降级接收；

@@ -107,7 +107,7 @@ pip install ./sdk/python
 发布到 PyPI 后，应固定包版本：
 
 ```sh
-pip install stellarmesh-logging==0.1.1
+pip install stellarmesh-logging==0.1.2
 ```
 
 在应用生命周期入口显式配置客户端：
