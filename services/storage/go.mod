@@ -3,7 +3,7 @@ module github.com/L1ndenbaum/stellarmesh-sdk/services/storage
 go 1.24
 
 require (
-	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.1.0
+	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.1.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.37
 	github.com/prometheus/client_golang v1.20.5
 )
