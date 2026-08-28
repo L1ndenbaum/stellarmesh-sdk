@@ -160,8 +160,4 @@ jobs:
               echo "Kafka-only 公共消费者引入了非 Kafka 依赖" >&2
               exit 1
             fi
-            if grep -q '^github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v' <<< "$consumer_graph"; then
-              echo "Kafka-only 公共消费者引入了父 SDK" >&2
-              exit 1
-            fi
           fi

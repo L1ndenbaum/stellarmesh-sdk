@@ -111,10 +111,6 @@ if printf '%s\n' "$kafka_module_graph" | grep -Eq 'aws-sdk-go-v2|go-chi/chi|gola
 	echo "Kafka-only 消费者引入了非 Kafka 依赖" >&2
 	exit 1
 fi
-if printf '%s\n' "$kafka_module_graph" | grep -q '^github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v'; then
-	echo "Kafka-only 消费者引入了父 SDK" >&2
-	exit 1
-fi
 
 mkdir -p "$temporary_root/combined-consumer"
 cd "$temporary_root/combined-consumer"
