@@ -1,3 +1,7 @@
+github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.2.0 h1:/OmxlrdejdkShjZDTaCv2j2Rrguuv5F3/Aj6qYaMhBI=
+github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.2.0/go.mod h1:MVuIKwT6v/i9l55ka8BnXMDRx5l2O23VXiXSnWD/d60=
+github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka v0.1.0 h1:mfK6H2PPKkcalzrVd5sFld5X5wb9cYIW8fSWgkyI4Ms=
+github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka v0.1.0/go.mod h1:0JRHLCqVRz0hCsry0RDANn+Ule3RUo8LWRzfRwqx0co=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
