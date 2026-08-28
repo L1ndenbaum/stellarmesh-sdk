@@ -14,8 +14,9 @@ ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
 
 COPY sdk/go ./sdk/go
 COPY sinks/clickhouse ./sinks/clickhouse
-RUN go work init ./sdk/go ./sinks/clickhouse \
-    && go work edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.1.1=./sdk/go
+RUN go work init ./sdk/go ./sdk/go/mq/kafka ./sinks/clickhouse \
+    && go work edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.2.0=./sdk/go \
+    && go work edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0=./sdk/go/mq/kafka
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build -o /out/stellarmesh-logging-clickhouse-sink ./sinks/clickhouse/cmd/writer

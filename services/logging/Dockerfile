@@ -14,8 +14,9 @@ ENV GOPROXY=${GOPROXY} GOSUMDB=${GOSUMDB}
 
 COPY sdk/go ./sdk/go
 COPY services/logging ./services/logging
-RUN go work init ./sdk/go ./services/logging \
-    && go work edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.1.1=./sdk/go
+RUN go work init ./sdk/go ./sdk/go/mq/kafka ./services/logging \
+    && go work edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.2.0=./sdk/go \
+    && go work edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0=./sdk/go/mq/kafka
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux go build -o /out/stellarmesh-logging-service ./services/logging/cmd/ingester
