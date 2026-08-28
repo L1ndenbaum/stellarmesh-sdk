@@ -546,6 +546,59 @@ func TestClientAndLoggerRejectInvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestClientCloseDeadlineCancelsTransportAndDropsUnsentEvents(t *testing.T) {
+	started := make(chan struct{})
+	dropped := make(chan error, 2)
+	attempts := 0
+	client, err := NewClient(ClientConfig{
+		BaseURL: "http://logging-service", Token: "token", QueueSize: 2, BatchSize: 1,
+		MaxAttempts: 3, InitialBackoff: time.Second, MaxBackoff: time.Second,
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				close(started)
+			}
+			<-request.Context().Done()
+			return nil, request.Context().Err()
+		})},
+		OnDrop: func(_ Event, err error) { dropped <- err },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, message := range []string{"in-flight", "queued"} {
+		if !client.Enqueue(Event{Level: LevelInfo, Service: "test", Message: message}) {
+			t.Fatalf("Enqueue(%q) = false", message)
+		}
+		if message == "in-flight" {
+			<-started
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := client.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Close() error = %v", err)
+	}
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), time.Second)
+	defer waitCancel()
+	if err := client.Close(waitCtx); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	for range 2 {
+		select {
+		case dropErr := <-dropped:
+			if !errors.Is(dropErr, ErrClientClosed) {
+				t.Fatalf("drop error = %v", dropErr)
+			}
+		default:
+			t.Fatal("missing deterministic drop callback")
+		}
+	}
+	if attempts != 1 {
+		t.Fatalf("transport attempts = %d", attempts)
+	}
+}
+
 func TestEventRejectsUntrimmedServiceButPreservesMessageWhitespace(t *testing.T) {
 	event := Event{
 		EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", Timestamp: time.Now(), Level: LevelInfo,

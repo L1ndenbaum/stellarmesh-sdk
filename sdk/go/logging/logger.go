@@ -21,6 +21,7 @@ type LoggerConfig struct {
 	Emitter         Emitter
 	Now             func() time.Time
 	TraceIDProvider TraceIDProvider
+	MinimumLevel    Level
 }
 
 // Logger 为单个服务构造结构化事件。
@@ -29,6 +30,7 @@ type Logger struct {
 	emitter         Emitter
 	now             func() time.Time
 	traceIDProvider TraceIDProvider
+	minimumLevel    Level
 }
 
 // NewLogger 创建结构化日志门面。
@@ -43,7 +45,17 @@ func NewLogger(config LoggerConfig) (*Logger, error) {
 	if now == nil {
 		now = time.Now
 	}
-	return &Logger{service: config.Service, emitter: config.Emitter, now: now, traceIDProvider: config.TraceIDProvider}, nil
+	minimumLevel := config.MinimumLevel
+	if minimumLevel == "" {
+		minimumLevel = LevelDebug
+	}
+	if err := minimumLevel.Validate(); err != nil {
+		return nil, err
+	}
+	return &Logger{
+		service: config.Service, emitter: config.Emitter, now: now,
+		traceIDProvider: config.TraceIDProvider, minimumLevel: minimumLevel,
+	}, nil
 }
 
 func (logger *Logger) Debug(ctx context.Context, message, traceID string, metadata map[string]any) bool {
@@ -70,6 +82,9 @@ func (logger *Logger) emit(ctx context.Context, level Level, message, traceID st
 	if logger.emitter == nil {
 		return false
 	}
+	if !levelEnabled(level, logger.minimumLevel) {
+		return false
+	}
 	if traceID == "" && logger.traceIDProvider != nil {
 		traceID = logger.traceIDProvider(ctx)
 	}
@@ -78,4 +93,25 @@ func (logger *Logger) emit(ctx context.Context, level Level, message, traceID st
 		Level:     level, Service: logger.service, Message: message, TraceID: traceID,
 		Metadata: SanitizeMetadata(metadata),
 	})
+}
+
+func levelEnabled(level, minimum Level) bool {
+	return levelOrder(level) >= levelOrder(minimum)
+}
+
+func levelOrder(level Level) int {
+	switch level {
+	case LevelDebug:
+		return 0
+	case LevelInfo:
+		return 1
+	case LevelWarning:
+		return 2
+	case LevelError:
+		return 3
+	case LevelAudit:
+		return 4
+	default:
+		return -1
+	}
 }

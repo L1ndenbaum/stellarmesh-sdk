@@ -180,6 +180,33 @@ def test_client_retries_transient_status_with_stable_event_id() -> None:
     assert len(set(event_ids)) == 1
 
 
+def test_close_timeout_interrupts_retry_after_wait() -> None:
+    attempted = threading.Event()
+    attempts = 0
+
+    def handle(_: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        attempted.set()
+        return httpx.Response(503, headers={"Retry-After": "30"})
+
+    client = Client(
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            batch_size=1,
+            max_attempts=3,
+        ),
+        transport=httpx.MockTransport(handle),
+    )
+    assert client.emit_event(Level.INFO, message="event")
+    assert attempted.wait(timeout=1)
+    assert not client.close(timeout=0.01)
+    assert client.close(timeout=1)
+    assert attempts == 1
+
+
 def test_client_does_not_retry_permanent_status() -> None:
     attempts = 0
     dropped: list[Exception] = []

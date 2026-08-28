@@ -86,6 +86,8 @@ type Client struct {
 	queuedEvents        int
 	queuedBytes         int64
 	done                chan struct{}
+	lifecycleCtx        context.Context
+	cancelLifecycle     context.CancelFunc
 	mu                  sync.RWMutex
 	closed              bool
 	closeOnce           sync.Once
@@ -150,6 +152,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: timeout}
 	}
+	lifecycleCtx, cancelLifecycle := context.WithCancel(context.Background())
 	client := &Client{
 		baseURL: strings.TrimRight(config.BaseURL, "/"), token: config.Token, timeout: timeout,
 		batchSize: batchSize, flushInterval: flushInterval, maxBodyBytes: maxBodyBytes,
@@ -158,6 +161,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		httpClient:    httpClient, onDrop: config.OnDrop, fallbackWriter: config.FallbackWriter,
 		queue: make(chan queuedEvent, queueSize), queueCapacityEvents: queueSize,
 		queueCapacityBytes: queueBytes, done: make(chan struct{}),
+		lifecycleCtx: lifecycleCtx, cancelLifecycle: cancelLifecycle,
 	}
 	if client.fallbackWriter == nil {
 		client.fallbackWriter = os.Stderr
@@ -199,8 +203,13 @@ func validateClientConfig(config ClientConfig) error {
 	return nil
 }
 
-// Emit 规范化并入队一个事件，不等待网络投递。
+// Emit 保持 Emitter 兼容，并把事件交给独立生命周期管理的异步队列。
 func (client *Client) Emit(_ context.Context, event Event) bool {
+	return client.Enqueue(event)
+}
+
+// Enqueue 规范化并入队一个事件，不等待网络投递。
+func (client *Client) Enqueue(event Event) bool {
 	if event.EventID == "" {
 		id, err := NewEventID()
 		if err != nil {
@@ -266,12 +275,14 @@ func (client *Client) Close(ctx context.Context) error {
 	case <-client.done:
 		return nil
 	case <-ctx.Done():
+		client.cancelLifecycle()
 		return ctx.Err()
 	}
 }
 
 func (client *Client) run() {
 	defer close(client.done)
+	defer client.cancelLifecycle()
 	ticker := time.NewTicker(client.flushInterval)
 	defer ticker.Stop()
 	pending := make([]queuedEvent, 0, client.batchSize)
@@ -281,11 +292,15 @@ func (client *Client) run() {
 		}
 		batch := append([]queuedEvent(nil), pending...)
 		pending = pending[:0]
-		client.sendBatch(batch)
+		client.sendBatch(client.lifecycleCtx, batch)
 		client.release(batch)
 	}
 	for {
 		select {
+		case <-client.lifecycleCtx.Done():
+			flush()
+			client.dropQueued(client.lifecycleCtx.Err())
+			return
 		case event, ok := <-client.queue:
 			if !ok {
 				flush()
@@ -301,7 +316,7 @@ func (client *Client) run() {
 	}
 }
 
-func (client *Client) sendBatch(queued []queuedEvent) {
+func (client *Client) sendBatch(ctx context.Context, queued []queuedEvent) {
 	events := make([]Event, 0, len(queued))
 	for _, item := range queued {
 		events = append(events, item.event)
@@ -317,27 +332,38 @@ func (client *Client) sendBatch(queued []queuedEvent) {
 			return
 		}
 		midpoint := len(events) / 2
-		client.sendBatch(queued[:midpoint])
-		client.sendBatch(queued[midpoint:])
+		client.sendBatch(ctx, queued[:midpoint])
+		client.sendBatch(ctx, queued[midpoint:])
+		return
+	}
+	if err := ctx.Err(); err != nil {
+		client.dropBatch(events, errors.Join(ErrClientClosed, err))
 		return
 	}
 	var lastErr error
 	for attempt := 1; attempt <= client.maxAttempts; attempt++ {
-		retryable, retryAfter, err := client.sendOnce(events, payload)
+		retryable, retryAfter, err := client.sendOnce(ctx, events, payload)
 		if err == nil {
 			return
 		}
 		lastErr = err
+		if ctx.Err() != nil {
+			lastErr = errors.Join(ErrClientClosed, ctx.Err())
+			break
+		}
 		if !retryable || attempt == client.maxAttempts {
 			break
 		}
-		time.Sleep(client.retryDelay(attempt, retryAfter))
+		if !waitForRetry(ctx, client.retryDelay(attempt, retryAfter)) {
+			lastErr = errors.Join(ErrClientClosed, ctx.Err())
+			break
+		}
 	}
 	client.dropBatch(events, lastErr)
 }
 
-func (client *Client) sendOnce(events []Event, payload []byte) (bool, time.Duration, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), client.timeout)
+func (client *Client) sendOnce(ctx context.Context, events []Event, payload []byte) (bool, time.Duration, error) {
+	ctx, cancel := context.WithTimeout(ctx, client.timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.baseURL+"/v1/log-events/batch", bytes.NewReader(payload))
 	if err != nil {
@@ -365,6 +391,24 @@ func (client *Client) sendOnce(events []Event, payload []byte) (bool, time.Durat
 		return false, 0, fmt.Errorf("invalid accepted count: code=%d accepted=%d expected=%d", envelope.Code, envelope.Data.Accepted, len(events))
 	}
 	return false, 0, nil
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func (client *Client) dropQueued(cause error) {
+	for queued := range client.queue {
+		client.drop(queued.event, errors.Join(ErrClientClosed, cause))
+		client.release([]queuedEvent{queued})
+	}
 }
 
 func retryableStatus(status int) bool {

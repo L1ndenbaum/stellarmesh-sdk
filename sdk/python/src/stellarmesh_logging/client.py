@@ -198,6 +198,7 @@ class Client:
             return self._state_snapshot() is not _ClientState.FAILED
         worker.join(timeout=max(timeout, 0.0))
         if worker.is_alive():
+            self._abort_requested.set()
             self._fallback_warning(
                 f"logging client drain timed out; remaining={self._pending_count()}"
             )
@@ -214,6 +215,7 @@ class Client:
         while worker.is_alive():
             remaining = deadline - loop.time()
             if remaining <= 0:
+                self._abort_requested.set()
                 self._fallback_warning(
                     f"logging client drain timed out; remaining={self._pending_count()}"
                 )
