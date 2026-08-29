@@ -17,6 +17,7 @@ type healthPolicy struct {
 	checkTimeout  time.Duration
 	readiness     ReadinessChecker
 	logSuccessful bool
+	responder     HealthResponder
 }
 
 func newHealthPolicy(config *HealthConfig) (*healthPolicy, error) {
@@ -49,9 +50,16 @@ func newHealthPolicy(config *HealthConfig) (*healthPolicy, error) {
 	if isNilInterface(readiness) {
 		readiness = nil
 	}
+	responder := config.Responder
+	if responder == nil {
+		responder = defaultHealthResponder{}
+	} else if isNilInterface(responder) {
+		return nil, errors.New("gateway health responder is nil")
+	}
 	return &healthPolicy{
 		service: service, livePath: livePath, readyPath: readyPath,
 		checkTimeout: checkTimeout, readiness: readiness, logSuccessful: config.LogSuccessful,
+		responder: responder,
 	}, nil
 }
 
@@ -80,6 +88,10 @@ func (policy *healthPolicy) handle(w http.ResponseWriter, r *http.Request, gatew
 		}
 	}
 	state.SkipSuccessful = !policy.logSuccessful
-	writeSuccessJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": policy.service})
+	kind := HealthKindLive
+	if r.URL.Path == policy.readyPath {
+		kind = HealthKindReady
+	}
+	policy.responder.RespondHealth(w, r, HealthResult{Kind: kind, Service: policy.service})
 	return true
 }

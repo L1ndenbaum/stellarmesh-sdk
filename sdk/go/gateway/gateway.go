@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const defaultRequestIDMaxLength = 128
@@ -73,6 +72,7 @@ func New(options ...Option) (*Gateway, error) {
 	if config.errorResponder == nil {
 		config.errorResponder = defaultErrorResponder{}
 	}
+	config.errorResponder = protocolErrorResponder{next: config.errorResponder}
 	if len(config.upstreamSpecs) > 0 {
 		resolver, err := newReverseProxyResolver(config.upstreamSpecs, config.transport, config.errorResponder)
 		if err != nil {
@@ -478,17 +478,4 @@ func IdentityFromContext(ctx context.Context) (Identity, bool) {
 func ClientIPFromContext(ctx context.Context) (string, bool) {
 	clientIP, ok := ctx.Value(clientIPContextKey).(string)
 	return clientIP, ok
-}
-
-type defaultErrorResponder struct{}
-
-func (defaultErrorResponder) Respond(w http.ResponseWriter, _ *http.Request, gatewayError GatewayError) {
-	if gatewayError.RetryAfter > 0 {
-		seconds := int64((gatewayError.RetryAfter + 999999999) / 1000000000)
-		w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
-	}
-	writeEnvelope(w, gatewayError.Status, apiEnvelope{
-		Code: gatewayError.Status, Message: gatewayError.Message, Data: nil,
-		Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ErrorReason: gatewayError.Code,
-	})
 }

@@ -283,9 +283,40 @@ type HealthConfig struct {
 	CheckTimeout  time.Duration
 	Readiness     ReadinessChecker
 	LogSuccessful bool
+	Responder     HealthResponder
 }
 
-// GatewayError 是错误响应器可安全暴露的网关错误。
+// HealthKind 标识通过检查的健康端点类型。
+type HealthKind string
+
+const (
+	// HealthKindLive 表示进程存活检查。
+	HealthKindLive HealthKind = "live"
+	// HealthKindReady 表示流量就绪检查。
+	HealthKindReady HealthKind = "ready"
+)
+
+// HealthResult 描述已经通过检查的健康端点。
+type HealthResult struct {
+	Kind    HealthKind
+	Service string
+}
+
+// HealthResponder 编码健康检查成功响应；失败响应仍由 ErrorResponder 处理。
+type HealthResponder interface {
+	RespondHealth(http.ResponseWriter, *http.Request, HealthResult)
+}
+
+// HealthResponderFunc 让函数直接实现 HealthResponder。
+type HealthResponderFunc func(http.ResponseWriter, *http.Request, HealthResult)
+
+// RespondHealth 调用健康响应函数。
+func (responder HealthResponderFunc) RespondHealth(w http.ResponseWriter, r *http.Request, result HealthResult) {
+	responder(w, r, result)
+}
+
+// GatewayError 描述网关确定的 HTTP 错误语义。
+// Cause 只供内部诊断，响应器不得把它直接返回给客户端。
 type GatewayError struct {
 	Status     int
 	Code       string

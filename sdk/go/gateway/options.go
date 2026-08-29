@@ -152,10 +152,10 @@ func WithUpstreamRateLimiter(limiter RateLimiter) Option {
 	})
 }
 
-// WithErrorResponder 覆盖默认的 Stellarmesh JSON 错误响应。
+// WithErrorResponder 使用项目定义的错误响应格式。
 func WithErrorResponder(responder ErrorResponder) Option {
 	return componentOption("error_responder", func(config *config) error {
-		if responder == nil {
+		if isNilInterface(responder) {
 			return errors.New("gateway error responder is nil")
 		}
 		config.errorResponder = responder

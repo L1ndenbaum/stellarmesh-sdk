@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -80,11 +79,8 @@ func TestGatewayFailsClosedWhenLimiterFails(t *testing.T) {
 	if proxied {
 		t.Fatal("request reached upstream after limiter failure")
 	}
-	var envelope struct {
-		ErrorReason string `json:"error_reason"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil || envelope.ErrorReason != "rate_limiter_unavailable" {
-		t.Fatalf("error envelope = %#v, %v", envelope, err)
+	if response.Body.String() != "service unavailable\n" {
+		t.Fatalf("body = %q", response.Body.String())
 	}
 }
 
