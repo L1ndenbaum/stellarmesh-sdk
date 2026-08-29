@@ -199,6 +199,12 @@ Gateway `0.2.0` 删除内置的 Stellarmesh `ApiEnvelope`，默认错误和健�
 
 依赖 `v0.1.0` 默认 JSON 正文的项目必须先在业务仓库实现 `ErrorResponder` 和 `HealthResponder`，再升级到 `v0.2.0`。如果必须修改已经推送 tag 的源码或发布内容，应提升到 `v0.2.1`；不得移动、删除或复用 `v0.2.0`。
 
+## 未发布的 Gateway 访问日志边界
+
+当前本地 `dev` 源码已把 Gateway Core 的默认访问日志改为标准库 `slog`，并新增独立嵌套 Module `sdk/go/gateway/loggingadapter` 适配 Stellarmesh Logging。Gateway Core 不再依赖 Logging；Adapter 只依赖通用 `gateway.AccessLogger` 和轻量 `logging.Emitter`，不拥有远程客户端、Sink 或持久化语义。
+
+这组改动仍在继续评估，本轮只形成本地提交，不推送远程、不创建 tag、不修改 `release-go.yml`，也不更新“发布后验证”中的已发布版本集合。正式发布前需要重新确定 Gateway 与 Adapter 版本、兼容边界、公共代理 fixture 和业务仓库迁移方式。
+
 ## 发布后验证
 
 发布完成后至少确认：

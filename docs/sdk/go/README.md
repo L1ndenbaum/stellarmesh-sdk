@@ -11,7 +11,7 @@ go mod tidy
 
 按需阅读对应教程：
 
-- [Go 网关 SDK](gateway.md)：独立 `sdk/go/gateway` Module，提供声明式 Gateway、JWT 认证和 Redis 限流；
+- [Go 网关 SDK](gateway.md)：独立 `sdk/go/gateway` Module，提供声明式 Gateway、JWT 认证和 Redis 限流；本地 `dev` 源码还包含尚未发布的独立 Logging Adapter；
 - [Go Logging SDK](logging.md)：独立 `sdk/go/logging` Module，提供 Logging v1 契约、异步客户端和 `slog.Handler`；
 - [Go Kafka SDK](kafka.md)：独立 `sdk/go/mq/kafka` Module，提供连接、认证、Publisher 和 Topic 检查；
 - [Go 对象存储 SDK](object-storage.md)：父 Module中的 S3/MinIO 进程内客户端。

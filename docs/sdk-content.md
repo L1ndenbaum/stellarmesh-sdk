@@ -24,6 +24,7 @@
 | `contracts/storage/v1/` | 对象存储控制面 OpenAPI、访问配置 Schema、统一限制和共享测试数据 | 随仓库版本发布 |
 | `sdk/go/` | Go 公共 HTTP、环境配置、Storage 契约和对象存储客户端 | Go module |
 | `sdk/go/gateway/` | 声明式 Gateway、JWT 认证、Redis 限流和旁路观测 | 独立 Go module |
+| `sdk/go/gateway/loggingadapter/` | Gateway 到 Stellarmesh Logging 的可选访问日志适配器 | 开发中，尚未发布 |
 | `sdk/go/logging/` | Logging v1 模型、校验、异步客户端和 `slog.Handler` | 独立 Go module |
 | `sdk/go/mq/kafka/` | Kafka 连接、Publisher、Topic 检查与 TLS/SASL 配置 | 独立 Go module |
 | `sdk/python/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | `stellarmesh-logging` Python package |
@@ -76,7 +77,9 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 - `storagecontract`：Storage v1 的统一限制、严格访问配置和 capability 校验；
 - `envconfig`：不依赖业务 settings 的基础环境变量解析，并提供显式错误的严格 loader。
 
-`sdk/go/gateway` 是独立 Gateway Module，包含固定安全顺序的声明式网关、静态路由、可信代理、CORS、反向代理、健康检查、旁路观测、HS256 JWT 认证和 Redis 原子令牌桶。它依赖独立 Logging Module、JWT 和 Redis，但不引入父 SDK、AWS SDK、对象存储、Chi 或 Kafka。完整接入方式见[Go 网关 SDK](sdk/go/gateway.md)。
+`sdk/go/gateway` 是独立 Gateway Module，包含固定安全顺序的声明式网关、静态路由、可信代理、CORS、反向代理、健康检查、旁路观测、HS256 JWT 认证和 Redis 原子令牌桶。当前本地 `dev` 源码只直接依赖 JWT 和 Redis，不依赖父 SDK、Logging、AWS SDK、对象存储、Chi 或 Kafka。Gateway 默认把通用访问记录交给标准库 `slog`，项目可以关闭默认日志或注入自己的 `AccessLogger`。完整接入方式见[Go 网关 SDK](sdk/go/gateway.md)。
+
+`sdk/go/gateway/loggingadapter` 是开发中的独立嵌套 Module，只依赖 Gateway 和轻量 Logging Module。它把 `gateway.AccessLog` 转成 Stellarmesh Logging Event，但不创建远程客户端、不拥有 Emitter 生命周期，也不定义 logging-service、Kafka、spool、ClickHouse 或 Sink 行为。本 Module 尚未发布，不能作为正式项目依赖引用。
 
 `sdk/go/logging` 是只依赖 Go 标准库的独立轻量 Module，提供 Logging v1 协议模型、严格校验、元数据清洗、异步批量 HTTP 客户端、标准 `slog.Handler` 和兼容日志门面。只使用日志能力的项目不需要引入父 SDK及其 Gateway、AWS 或 Redis 依赖。完整接入方式见 [Go Logging SDK](sdk/go/logging.md)。
 

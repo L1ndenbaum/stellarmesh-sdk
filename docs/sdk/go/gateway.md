@@ -2,6 +2,8 @@
 
 网关 SDK 是独立 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway`，适用于 Go 1.24 及以上版本。它返回标准 `http.Handler`，业务项目继续拥有 `main.go`、环境变量解析、路由表、upstream 地址和部署配置。SDK 不启动监听端口，也不提供可直接部署的公共 gateway 进程。
 
+> 版本说明：公开版本 `v0.2.0` 仍包含原来的 `WithAccessLogEmitter`，且没有默认访问日志。当前本地 `dev` 源码已经把 Stellarmesh Logging 拆到独立 `loggingadapter` Module，并改为默认使用标准库 `slog`；这部分尚未发布，以下章节会明确标记，不能把开发中 API 当作公开固定版本使用。
+
 ## 安装固定版本
 
 只使用网关能力的项目直接安装独立 Module：
@@ -11,7 +13,7 @@ go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0
 go mod tidy
 ```
 
-该 Module 同时包含基础 Gateway、`gateway/jwtauth` 和 `gateway/redislimit`，直接依赖 Logging `v0.1.0`、JWT 和 Redis，但不会引入父 SDK、AWS SDK、对象存储、Chi 或 Kafka。未导入的适配器不会链接进最终二进制。
+公开 `v0.2.0` 同时包含基础 Gateway、`gateway/jwtauth` 和 `gateway/redislimit`，并直接依赖 Logging `v0.1.0`、JWT 和 Redis。当前本地 `dev` 源码已移除 Gateway Core 对 Logging 的依赖，只保留 JWT 和 Redis；两种状态都不会引入父 SDK、AWS SDK、对象存储、Chi 或 Kafka。
 
 如果项目还使用父 SDK，必须把父 SDK 原子升级到已经移除旧 Gateway package 的 `v0.4.0`：
 
@@ -116,7 +118,6 @@ import (
     "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway"
     "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/jwtauth"
     "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/redislimit"
-    sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
     "github.com/redis/go-redis/v9"
 )
 
@@ -133,7 +134,6 @@ type Config struct {
 func NewHandler(
     config Config,
     redisClient *redis.Client,
-    logEmitter sharedlogging.Emitter,
 ) (http.Handler, error) {
     authenticator, err := jwtauth.New(jwtauth.Config{
         Secret:   config.JWTSecret,
@@ -204,7 +204,6 @@ func NewHandler(
         gateway.WithUserRateLimiter(userLimiter),
         gateway.WithUpstreamRateLimiter(upstreamLimiter),
         gateway.WithErrorResponder(projectErrorResponder),
-        gateway.WithAccessLogEmitter("example-gateway", logEmitter),
         gateway.WithHealth(gateway.HealthConfig{
             Service: "example-gateway",
             Responder: projectHealthResponder,
@@ -215,6 +214,8 @@ func NewHandler(
     )
 }
 ```
+
+上面的组装代码同时兼容公开 `v0.2.0` 和当前开发源码，但访问日志默认值不同：`v0.2.0` 省略日志组件表示不记录，当前开发源码省略日志组件表示使用 `slog.Default()`。项目升级未来版本前应把这一行为变化纳入容量和日志等级评估。
 
 `redislimit` 的 `RatePerSecond`、`Burst` 和 `KeyPrefix` 必须显式且大于零。禁用某个限流维度时，不要构造一个零速率 limiter，而是省略对应的 `With...RateLimiter`。
 
@@ -258,7 +259,62 @@ CORS 未声明时不处理跨域。启用后必须显式提供 origin；method �
 | upstream 连接失败 | `502` |
 | upstream 超时 | `504` |
 
-`WithAccessLogEmitter` 直接调用现有 `logging.Emitter`，不会创建第二个队列或 worker。传入的 service 必须非空且没有首尾空白，attribute 或请求内容不能覆盖该身份。访问事件包含请求 ID、method、path、路由名、客户端 IP、鉴权与限流结果、upstream、状态和耗时；默认不记录 QueryString、Authorization 或身份凭据。成功的本地健康探针默认不写访问日志，可以通过 `HealthConfig.LogSuccessful` 开启。
+### 开发中：默认标准库访问日志
+
+当前本地 `dev` 源码默认通过请求完成时读取的 `slog.Default()` 输出一条 `gateway request completed`。Go 默认 Logger 写到进程 `stderr`，因此无需 Sink 或远程服务即可在 CLI 查看。项目可以统一替换默认 Logger：
+
+```go
+slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+    Level: slog.LevelInfo,
+})))
+
+handler, err := gateway.New(
+    gateway.WithRoutes(routes...),
+    gateway.WithUpstreams(upstreams...),
+)
+```
+
+也可以给 Gateway 使用独立 Logger，或显式关闭：
+
+```go
+gateway.WithSlogAccessLogger(gateway.SlogAccessLoggerConfig{
+    Logger: projectLogger,
+    IncludeIdentity: false,
+})
+
+gateway.WithoutAccessLog()
+```
+
+小于 `400` 的状态使用 `INFO`，`4xx` 使用 `WARN`，`5xx` 使用 `ERROR`。默认字段包括请求 ID、method、path、路由名、可信解析后的客户端 IP、鉴权结果、upstream、状态、耗时、错误代码和限流结果；默认不包含 QueryString、请求头、Cookie、请求体、响应体、用户 ID 或角色。只有显式设置 `IncludeIdentity` 才加入用户身份。成功的本地健康探针默认跳过，可通过 `HealthConfig.LogSuccessful` 开启。
+
+`WithAccessLogger` 继续允许项目注入自己的通用实现。三种配置入口占用同一组件槽位，不能同时声明，避免 Option 顺序决定日志行为。
+
+### 开发中：Stellarmesh Logging Adapter
+
+需要把访问记录发送到 Stellarmesh Logging 时，使用独立路径 `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter`。该 Module 当前只存在于仓库本地 `dev` 源码，尚未发布，因此下面是本地开发示例，不是可用于生产依赖的 `go get` 指南：
+
+```go
+accessLogger, err := loggingadapter.NewStellarmesh(loggingadapter.StellarmeshConfig{
+    Service: "example-gateway",
+    Emitter: logEmitter,
+    TraceIDProvider: func(ctx context.Context, record gateway.AccessLog) string {
+        return traceIDFromContext(ctx)
+    },
+})
+if err != nil {
+    return nil, err
+}
+
+handler, err := gateway.New(
+    gateway.WithRoutes(routes...),
+    gateway.WithUpstreams(upstreams...),
+    gateway.WithAccessLogger(accessLogger),
+)
+```
+
+Adapter 只调用已有 `logging.Emitter`，不创建 Client、队列、worker 或重试，也不拥有 Emitter 的关闭生命周期。logging-service、Kafka、spool、ClickHouse 和 Sink 都是 Emitter 背后可选 Logging 实现的语义，不属于 Gateway Core 或 Adapter。
+
+Adapter 默认不写用户 ID 和角色；需要时显式设置 `IncludeIdentity`。请求 ID 始终保留在 metadata 中，不能默认冒充分布式链路 `trace_id`；只有 `TraceIDProvider` 返回的真实链路标识才写入 Event 的 `trace_id`。Emitter 拒绝事件只产生访问日志旁路失败，不改变 HTTP 响应。
 
 `WithObserver` 接收请求完成、决策组件故障和访问日志失败三类低基数事件。Observer 和 AccessLogger 的错误或 panic 都不会改变业务响应。项目可以在 Observer 外部适配 Prometheus，标签只应使用路由名、upstream、状态和固定组件名，不应使用 path、用户 ID、请求 ID 或原始错误文本。
 

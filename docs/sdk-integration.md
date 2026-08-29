@@ -92,7 +92,9 @@ func traceIDFromProjectContext(context.Context) string {
 
 项目不再复制 gateway 内部目录，而是在自己的 `main.go` 中通过 `gateway.New` 组装路由、upstream、JWT、Redis 限流、CORS、健康检查和访问日志。业务仓库继续拥有配置读取、路由表、监听端口、优雅关闭、Compose 和环境变量；本仓库只提供普通 `http.Handler` 和可注入组件。
 
-生产配置应明确可信代理 CIDR。没有可信代理配置时，SDK 只使用 `RemoteAddr`，不会读取 `X-Forwarded-For`。所有静态受保护路由必须配置 Authenticator；Redis 限流器或其他安全决策依赖发生错误时返回 `503`，不会退化为放行。访问日志可以直接复用当前进程的 Go logging Client，它的投递失败不影响网关响应。
+生产配置应明确可信代理 CIDR。没有可信代理配置时，SDK 只使用 `RemoteAddr`，不会读取 `X-Forwarded-For`。所有静态受保护路由必须配置 Authenticator；Redis 限流器或其他安全决策依赖发生错误时返回 `503`，不会退化为放行。
+
+当前本地 `dev` 源码默认通过标准库 `slog.Default()` 输出访问日志，项目可以用 `slog.SetDefault` 统一格式、等级和 CLI 输出，也可以通过 `WithoutAccessLog` 关闭。Gateway Core 不知道远程日志、Sink 或持久化语义；需要 Stellarmesh Logging 时，使用开发中的独立 `loggingadapter` 把访问记录交给项目已经管理的 `logging.Emitter`。Adapter 的失败仍属于旁路失败，不改变网关响应。该 Adapter 尚未发布，正式业务仓库暂时应继续固定已发布 Gateway 行为。
 
 完整构造示例、Option 列表、错误状态和验证要求见[Go 网关 SDK 接入教程](sdk/go/gateway.md)。
 

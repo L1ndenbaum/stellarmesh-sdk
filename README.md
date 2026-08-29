@@ -8,6 +8,7 @@
 - `contracts/storage/v1/`：Storage 控制面 OpenAPI、访问配置 Schema、共享限制与测试数据。
 - `sdk/go/`：Go 公共 HTTP、环境配置、Storage 契约和 namespace 绑定对象存储 SDK。
 - `sdk/go/gateway/`：独立发布的 fail-close 声明式 Gateway、JWT 认证与 Redis 限流 Module。
+- `sdk/go/gateway/loggingadapter/`：开发中的可选 Stellarmesh Logging 访问日志适配器，当前尚未发布。
 - `sdk/go/logging/`：独立发布、仅依赖标准库的 Logging v1 契约、异步客户端与 `slog.Handler`。
 - `sdk/go/mq/kafka/`：独立发布的轻量 Kafka Go Module，提供 PLAIN、SCRAM、TLS/mTLS、Publisher 和 Topic 检查。
 - `sdk/python/`：独立发布的 `stellarmesh-logging` 日志包。
