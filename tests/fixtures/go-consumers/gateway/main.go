@@ -23,6 +23,17 @@ func (scriptRunner) Eval(ctx context.Context, _ string, _ []string, _ ...interfa
 }
 
 func main() {
+	defaultHandler, err := gateway.New(
+		gateway.WithRoutes(gateway.Route{
+			Name: "default", Match: gateway.RouteMatch{ExactPath: "/default"},
+			Upstream: "backend", Access: gateway.AccessPublic,
+		}),
+		gateway.WithUpstreams(gateway.Upstream{Name: "backend", URL: "http://127.0.0.1:8080"}),
+	)
+	if err != nil {
+		panic(err)
+	}
+
 	authenticator, err := jwtauth.New(jwtauth.Config{
 		Secret:   []byte(strings.Repeat("s", 32)),
 		Issuer:   "consumer",
@@ -47,9 +58,22 @@ func main() {
 		gateway.WithAuthenticator(authenticator),
 		gateway.WithClientIPRateLimiter(limiter),
 		gateway.WithAccessLogEmitter("consumer-gateway", emitter{}),
+		gateway.WithErrorResponder(gateway.ErrorResponderFunc(func(w http.ResponseWriter, _ *http.Request, gatewayError gateway.GatewayError) {
+			http.Error(w, gatewayError.Code, gatewayError.Status)
+		})),
+		gateway.WithHealth(gateway.HealthConfig{
+			Service: "consumer-gateway",
+			Responder: gateway.HealthResponderFunc(func(w http.ResponseWriter, _ *http.Request, result gateway.HealthResult) {
+				if result.Kind != gateway.HealthKindLive && result.Kind != gateway.HealthKindReady {
+					panic("unknown health kind")
+				}
+				w.WriteHeader(http.StatusOK)
+			}),
+		}),
 	)
 	if err != nil {
 		panic(err)
 	}
+	var _ http.Handler = defaultHandler
 	var _ http.Handler = handler
 }
