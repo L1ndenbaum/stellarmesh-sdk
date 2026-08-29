@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	sharedapi "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
 )
 
 const defaultReadinessTimeout = 2 * time.Second
@@ -82,6 +80,6 @@ func (policy *healthPolicy) handle(w http.ResponseWriter, r *http.Request, gatew
 		}
 	}
 	state.SkipSuccessful = !policy.logSuccessful
-	sharedapi.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": policy.service})
+	writeSuccessJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": policy.service})
 	return true
 }

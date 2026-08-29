@@ -3,15 +3,12 @@ module github.com/L1ndenbaum/stellarmesh-sdk/sdk/go
 go 1.24
 
 require (
-	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.1.0
 	github.com/aws/aws-sdk-go-v2 v1.43.6
 	github.com/aws/aws-sdk-go-v2/config v1.32.37
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.36
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.107.2
 	github.com/aws/smithy-go v1.27.8
 	github.com/go-chi/chi/v5 v5.2.3
-	github.com/golang-jwt/jwt/v5 v5.2.1
-	github.com/redis/go-redis/v9 v9.17.0
 )
 
 require (
@@ -28,6 +25,4 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.33.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.6 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.6 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 )

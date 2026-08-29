@@ -4,16 +4,12 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	sharedapi "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
-	sharedheaders "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/headers"
 )
 
 const defaultRequestIDMaxLength = 128
@@ -384,7 +380,7 @@ func resolveRemoteAddr(r *http.Request) (string, error) {
 func normalizeRequestIDConfig(config RequestIDConfig) (RequestIDConfig, error) {
 	config.Header = strings.TrimSpace(config.Header)
 	if config.Header == "" {
-		config.Header = sharedheaders.HeaderXRequestID
+		config.Header = headerXRequestID
 	}
 	if !isHTTPToken(config.Header) {
 		return RequestIDConfig{}, errors.New("gateway request ID header is invalid")
@@ -437,14 +433,14 @@ func generateRequestID() (string, error) {
 }
 
 func stripAndInjectIdentity(header http.Header, identity *Identity) {
-	header.Del(sharedheaders.HeaderXUserID)
-	header.Del(sharedheaders.HeaderXUserRoles)
+	header.Del(headerXUserID)
+	header.Del(headerXUserRoles)
 	if identity == nil {
 		return
 	}
-	header.Set(sharedheaders.HeaderXUserID, identity.UserID)
+	header.Set(headerXUserID, identity.UserID)
 	if len(identity.Roles) > 0 {
-		header.Set(sharedheaders.HeaderXUserRoles, strings.Join(identity.Roles, ","))
+		header.Set(headerXUserRoles, strings.Join(identity.Roles, ","))
 	}
 }
 
@@ -491,9 +487,7 @@ func (defaultErrorResponder) Respond(w http.ResponseWriter, _ *http.Request, gat
 		seconds := int64((gatewayError.RetryAfter + 999999999) / 1000000000)
 		w.Header().Set("Retry-After", strconv.FormatInt(seconds, 10))
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(gatewayError.Status)
-	_ = json.NewEncoder(w).Encode(sharedapi.Envelope{
+	writeEnvelope(w, gatewayError.Status, apiEnvelope{
 		Code: gatewayError.Status, Message: gatewayError.Message, Data: nil,
 		Timestamp: time.Now().UTC().Format(time.RFC3339Nano), ErrorReason: gatewayError.Code,
 	})
