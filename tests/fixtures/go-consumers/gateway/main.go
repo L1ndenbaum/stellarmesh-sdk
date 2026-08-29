@@ -2,19 +2,16 @@ package main
 
 import (
 	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/jwtauth"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/redislimit"
-	stellarlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
 	"github.com/redis/go-redis/v9"
 )
-
-type emitter struct{}
-
-func (emitter) Emit(context.Context, stellarlogging.Event) bool { return true }
 
 type scriptRunner struct{}
 
@@ -57,7 +54,9 @@ func main() {
 		gateway.WithUpstreams(gateway.Upstream{Name: "backend", URL: "http://127.0.0.1:8080"}),
 		gateway.WithAuthenticator(authenticator),
 		gateway.WithClientIPRateLimiter(limiter),
-		gateway.WithAccessLogEmitter("consumer-gateway", emitter{}),
+		gateway.WithSlogAccessLogger(gateway.SlogAccessLoggerConfig{
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}),
 		gateway.WithErrorResponder(gateway.ErrorResponderFunc(func(w http.ResponseWriter, _ *http.Request, gatewayError gateway.GatewayError) {
 			http.Error(w, gatewayError.Code, gatewayError.Status)
 		})),
@@ -74,6 +73,32 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	withoutAccessLog, err := gateway.New(
+		gateway.WithRoutes(gateway.Route{
+			Name: "quiet", Match: gateway.RouteMatch{ExactPath: "/quiet"},
+			Upstream: "backend", Access: gateway.AccessPublic,
+		}),
+		gateway.WithUpstreams(gateway.Upstream{Name: "backend", URL: "http://127.0.0.1:8080"}),
+		gateway.WithoutAccessLog(),
+	)
+	if err != nil {
+		panic(err)
+	}
+	customAccessLog, err := gateway.New(
+		gateway.WithRoutes(gateway.Route{
+			Name: "custom", Match: gateway.RouteMatch{ExactPath: "/custom"},
+			Upstream: "backend", Access: gateway.AccessPublic,
+		}),
+		gateway.WithUpstreams(gateway.Upstream{Name: "backend", URL: "http://127.0.0.1:8080"}),
+		gateway.WithAccessLogger(gateway.AccessLoggerFunc(func(context.Context, gateway.AccessLog) error {
+			return nil
+		})),
+	)
+	if err != nil {
+		panic(err)
+	}
 	var _ http.Handler = defaultHandler
 	var _ http.Handler = handler
+	var _ http.Handler = withoutAccessLog
+	var _ http.Handler = customAccessLog
 }

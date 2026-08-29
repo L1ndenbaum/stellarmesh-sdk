@@ -38,6 +38,11 @@ run_local_consumer() {
 			gateway)
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.0.0
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway=../gateway-sdk
+				;;
+			loggingadapter)
+				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter@v0.0.0
+				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter=../loggingadapter-sdk
+				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway=../gateway-sdk
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging=../logging-sdk
 				;;
 			logging)
@@ -55,10 +60,12 @@ run_local_consumer() {
 			combined)
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.0.0
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.0.0
+				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter@v0.0.0
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.0.0
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.0.0
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go=../sdk-go
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway=../gateway-sdk
+				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter=../loggingadapter-sdk
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging=../logging-sdk
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka=../kafka-sdk
 				;;
@@ -77,6 +84,22 @@ run_local_consumer() {
 				exit 1
 			fi
 		fi
+		if [ "$component" = "gateway" ]; then
+			module_graph=$(GOWORK=off go list -m all)
+			if printf '%s\n' "$module_graph" | grep -Eq \
+				'^github\.com/L1ndenbaum/stellarmesh-sdk/sdk/go v|sdk/go/logging|sdk/go/mq/kafka|aws-sdk-go-v2|go-chi/chi|segmentio/kafka-go'; then
+				echo "Gateway-only 消费者引入了父 SDK、Logging、对象存储、Chi 或 Kafka 依赖" >&2
+				exit 1
+			fi
+		fi
+		if [ "$component" = "loggingadapter" ]; then
+			module_graph=$(GOWORK=off go list -m all)
+			if printf '%s\n' "$module_graph" | grep -Eq \
+				'^github\.com/L1ndenbaum/stellarmesh-sdk/sdk/go v|sdk/go/mq/kafka|aws-sdk-go-v2|go-chi/chi|segmentio/kafka-go'; then
+				echo "Logging Adapter 消费者引入了父 SDK、对象存储、Chi 或 Kafka 依赖" >&2
+				exit 1
+			fi
+		fi
 	)
 }
 
@@ -86,17 +109,29 @@ run_local() {
 
 	cp -R "$repository_root/sdk/go" "$temporary_root/sdk-go"
 	mv "$temporary_root/sdk-go/gateway" "$temporary_root/gateway-sdk"
+	mv "$temporary_root/gateway-sdk/loggingadapter" "$temporary_root/loggingadapter-sdk"
 	mv "$temporary_root/sdk-go/logging" "$temporary_root/logging-sdk"
 	mv "$temporary_root/sdk-go/mq/kafka" "$temporary_root/kafka-sdk"
 
 	(
 		cd "$temporary_root/gateway-sdk"
+		GOWORK=off go test ./...
+		module_graph=$(GOWORK=off go list -m all)
+		if printf '%s\n' "$module_graph" | grep -Eq \
+			'^github\.com/L1ndenbaum/stellarmesh-sdk/sdk/go v|sdk/go/logging|sdk/go/mq/kafka|aws-sdk-go-v2|go-chi/chi|segmentio/kafka-go'; then
+			echo "Gateway Module 引入了父 SDK、Logging、对象存储、Chi 或 Kafka 依赖" >&2
+			exit 1
+		fi
+	)
+	(
+		cd "$temporary_root/loggingadapter-sdk"
+		GOWORK=off go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway=../gateway-sdk
 		GOWORK=off go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging=../logging-sdk
 		GOWORK=off go test ./...
 		module_graph=$(GOWORK=off go list -m all)
 		if printf '%s\n' "$module_graph" | grep -Eq \
 			'^github\.com/L1ndenbaum/stellarmesh-sdk/sdk/go v|sdk/go/mq/kafka|aws-sdk-go-v2|go-chi/chi|segmentio/kafka-go'; then
-			echo "Gateway-only 消费者引入了父 SDK、对象存储、Chi 或 Kafka 依赖" >&2
+			echo "Logging Adapter Module 引入了父 SDK、对象存储、Chi 或 Kafka 依赖" >&2
 			exit 1
 		fi
 	)
@@ -123,6 +158,7 @@ run_local() {
 	)
 
 	run_local_consumer gateway "$temporary_root"
+	run_local_consumer loggingadapter "$temporary_root"
 	run_local_consumer logging "$temporary_root"
 	run_local_consumer parent "$temporary_root"
 	run_local_consumer kafka "$temporary_root"

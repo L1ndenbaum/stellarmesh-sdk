@@ -25,6 +25,7 @@ jobs:
           cache-dependency-path: |
             sdk/go/go.sum
             sdk/go/gateway/go.sum
+            sdk/go/gateway/loggingadapter/go.sum
             sdk/go/mq/kafka/go.sum
             services/logging/go.sum
             services/storage/go.sum
