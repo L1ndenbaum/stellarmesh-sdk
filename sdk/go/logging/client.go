@@ -15,8 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	sharedapi "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
 )
 
 const (
@@ -98,6 +96,11 @@ type Client struct {
 type queuedEvent struct {
 	event Event
 	bytes int64
+}
+
+type ingestEnvelope struct {
+	Code int          `json:"code"`
+	Data IngestResult `json:"data"`
 }
 
 // NewClient 创建并启动异步日志客户端。
@@ -380,10 +383,7 @@ func (client *Client) sendOnce(ctx context.Context, events []Event, payload []by
 		_, _ = io.Copy(io.Discard, response.Body)
 		return retryableStatus(response.StatusCode), parseRetryAfter(response.Header.Get("Retry-After"), time.Now(), client.maxRetryAfter), fmt.Errorf("logging service returned %d", response.StatusCode)
 	}
-	var envelope struct {
-		sharedapi.Envelope
-		Data IngestResult `json:"data"`
-	}
+	var envelope ingestEnvelope
 	if err := json.NewDecoder(response.Body).Decode(&envelope); err != nil {
 		return false, 0, err
 	}

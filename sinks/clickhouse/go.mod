@@ -3,7 +3,8 @@ module github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse
 go 1.24
 
 require (
-	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.2.0
+	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.3.0
+	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.1.0
 	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka v0.1.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/segmentio/kafka-go v0.4.47
