@@ -13,7 +13,7 @@
 - Python Storage 组件 tag `sdk/python/storage/vX.Y.Z` 只构建并发布 `stellarmesh-storage`；
 - `contracts/logging/v1/` 与 `contracts/storage/v1/` 随源码版本发布，SDK、服务、sink 和迁移制品必须来自经过完整验证的 commit。
 
-不同组件可以有不同版本。例如四个镜像可以保持 `0.1.1`，父 Go SDK 提升到 `0.4.0`，Gateway、Logging 与 Kafka Module分别使用 `0.1.0`，Python 日志包保持 `0.1.2`，`stellarmesh-storage` 继续保持 `0.1.0`。发布前必须先让 `main` 或 `dev` 分支的持续验证通过，不得用 tag 绕过格式、静态检查、测试、镜像构建或集成测试。已经推送的 tag 不得移动、删除、覆盖或强推；制品内容需要修改时必须提升 patch 版本。
+不同组件可以有不同版本。例如四个镜像可以保持 `0.1.1`，父 Go SDK 保持 `0.4.0`，Gateway 使用 `0.2.0`，Logging 与 Kafka Module 使用 `0.1.0`，Python 日志包保持 `0.1.2`，`stellarmesh-storage` 继续保持 `0.1.0`。发布前必须先让 `main` 或 `dev` 分支的持续验证通过，不得用 tag 绕过格式、静态检查、测试、镜像构建或集成测试。已经推送的 tag 不得移动、删除、覆盖或强推；制品内容需要修改时必须提升 patch 版本。
 
 ## 镜像发布
 
@@ -39,8 +39,8 @@ git push origin sdk/go/mq/kafka/v0.1.0
 git tag -a sdk/go/logging/v0.1.0 -m '发布 Logging Go SDK v0.1.0'
 git push origin sdk/go/logging/v0.1.0
 
-git tag -a sdk/go/gateway/v0.1.0 -m '发布 Gateway Go SDK v0.1.0'
-git push origin sdk/go/gateway/v0.1.0
+git tag -a sdk/go/gateway/v0.2.0 -m '发布 Gateway Go SDK v0.2.0'
+git push origin sdk/go/gateway/v0.2.0
 
 git tag -a sdk/go/v0.4.0 -m '发布 Go SDK v0.4.0'
 git push origin sdk/go/v0.4.0
@@ -53,7 +53,7 @@ git push origin sdk/go/v0.4.0
 只需要 Gateway 的业务项目固定引入：
 
 ```sh
-GOWORK=off go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.1.0
+GOWORK=off go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0
 go mod tidy
 ```
 
@@ -76,13 +76,13 @@ go mod tidy
 ```sh
 GOWORK=off go get \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.1.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0 \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0 \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0
 go mod tidy
 ```
 
-`sdk/go/v0.3.0` 仍不可变地包含旧 `gateway` package，不能与新 Gateway Module同时使用；`sdk/go/v0.2.0` 仍包含旧 `logging` package；`sdk/go/v0.1.1` 仍包含旧 `mq/kafka` package。错误组合可能产生 `ambiguous import`，正确迁移方式是把父 SDK升级到 `v0.4.0`。公共消费验证不得添加本地 `replace`，并应确保 `GOPRIVATE`、`GONOPROXY` 和 `GONOSUMDB` 没有把公开 Module排除在公共代理或校验数据库以外。
+`sdk/go/v0.3.0` 仍不可变地包含旧 `gateway` package，不能与独立 Gateway Module同时使用；`sdk/go/v0.2.0` 仍包含旧 `logging` package；`sdk/go/v0.1.1` 仍包含旧 `mq/kafka` package。错误组合可能产生 `ambiguous import`，正确迁移方式是把父 SDK升级到 `v0.4.0`。公共消费验证不得添加本地 `replace`，并应确保 `GOPRIVATE`、`GONOPROXY` 和 `GONOSUMDB` 没有把公开 Module排除在公共代理或校验数据库以外。
 
 ## Python SDK 发布
 
@@ -185,13 +185,27 @@ Gateway Module从父 `sdk/go` 拆出后，父 SDK使用 `0.4.0` 表达新的 Mod
 
 如果必须修改 Gateway Module源码或发布 workflow，Gateway版本提升到 `v0.1.1`；如果必须修改父 SDK内容，父版本提升到 `v0.4.1`。临时网络或 runner故障可以重跑同一不可变 commit的 workflow，但任何已经推送的 tag都不能移动、删除或复用。
 
+## Gateway `0.2.0` 响应协议解耦发布
+
+Gateway `0.2.0` 删除内置的 Stellarmesh `ApiEnvelope`，默认错误和健康成功响应改为协议中立的纯文本，并新增项目级 `HealthResponder`。这是可观察响应格式的破坏性变化，但不改变 Module 边界，因此父 SDK 继续保持 `0.4.0`，其他 Go Module、Python 包和四个镜像也不重新发布。
+
+发布步骤：
+
+1. 完成 Gateway 实现、消费者 fixture 和中文迁移文档，推送 `dev` 并等待持续验证成功；
+2. 确认远端不存在 `sdk/go/gateway/v0.2.0`，在已验证 commit 创建并推送带注释的 tag；
+3. 等待公共 Proxy、checksum database 和 Gateway 公开消费验证成功；
+4. 在无 `replace` 的全新 Module 中消费 Gateway `v0.2.0`，编译默认响应器、项目错误响应器和健康响应器；
+5. 不创建父 SDK、根镜像或 Python tag。
+
+依赖 `v0.1.0` 默认 JSON 正文的项目必须先在业务仓库实现 `ErrorResponder` 和 `HealthResponder`，再升级到 `v0.2.0`。如果必须修改已经推送 tag 的源码或发布内容，应提升到 `v0.2.1`；不得移动、删除或复用 `v0.2.0`。
+
 ## 发布后验证
 
 发布完成后至少确认：
 
-1. 父 Go SDK `0.4.0`、Gateway Module `0.1.0`、Logging Module `0.1.0`、Kafka Module `0.1.0` 已发布；四个镜像保持 `0.1.1`，Python Logging 保持 `0.1.2`，`stellarmesh-storage` 仍为 `0.1.0`；
+1. 父 Go SDK `0.4.0`、Gateway Module `0.2.0`、Logging Module `0.1.0`、Kafka Module `0.1.0` 已发布；四个镜像保持 `0.1.1`，Python Logging 保持 `0.1.2`，`stellarmesh-storage` 仍为 `0.1.0`；
 2. 从 TestPyPI 和正式 PyPI 的全新 Python 3.11 环境安装 `stellarmesh-logging==0.1.2`，验证 import、版本元数据、严格 service 校验与标准 `logging.Handler`；
-3. 从公共 `GOPROXY` 和 `GOSUMDB` 获取父 `sdk/go/v0.4.0`、Gateway `sdk/go/gateway/v0.1.0`、Logging `sdk/go/logging/v0.1.0` 与 Kafka `sdk/go/mq/kafka/v0.1.0`，不使用 `replace`，分别完成独立和组合消费测试；
+3. 从公共 `GOPROXY` 和 `GOSUMDB` 获取父 `sdk/go/v0.4.0`、Gateway `sdk/go/gateway/v0.2.0`、Logging `sdk/go/logging/v0.1.0` 与 Kafka `sdk/go/mq/kafka/v0.1.0`，不使用 `replace`，分别完成独立和组合消费测试；
 4. 使用空临时 `DOCKER_CONFIG` 匿名拉取四个 `0.1.1` 镜像，确认双架构 manifest、provenance 和 SBOM，并记录不可变 digest；
 5. 使用临时合法认证文件启动 `logging-service:0.1.1`，在 Kafka 不可用但 spool 可写时确认服务可以降级接收；
 6. 业务环境已预先创建源 Topic、DLQ Topic、ClickHouse database、对象存储 Bucket 和最小权限身份；

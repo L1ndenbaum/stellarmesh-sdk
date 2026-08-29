@@ -7,7 +7,7 @@
 只使用网关能力的项目直接安装独立 Module：
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.1.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0
 go mod tidy
 ```
 
@@ -18,11 +18,11 @@ go mod tidy
 ```sh
 go get \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.1.0
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0
 go mod tidy
 ```
 
-`sdk/go/v0.3.0` 仍不可变地包含旧 Gateway package，不能与独立 Gateway `v0.1.0` 同时进入一个 build list，否则可能产生 `ambiguous import`。业务仓库不应通过长期 `replace` 绕过这一版本边界。
+`sdk/go/v0.3.0` 仍不可变地包含旧 Gateway package，不能与独立 Gateway Module 同时进入一个 build list，否则可能产生 `ambiguous import`。业务仓库不应通过长期 `replace` 绕过这一版本边界。
 
 ## 设计语义
 
@@ -49,9 +49,60 @@ go mod tidy
 
 静态路由的零值 `Access` 是 `AccessProtected`。公开接口必须显式设置 `AccessPublic`；未匹配路径返回 `404`，不会隐式转发到默认后端。静态受保护路由没有 Authenticator 时，`gateway.New` 直接返回错误。
 
+## 响应协议归项目所有
+
+Gateway 只确定 HTTP 状态、稳定错误代码、通用错误消息、`Retry-After` 和健康检查结果，不规定业务 JSON Schema。`v0.2.0` 的默认错误响应是 `text/plain; charset=utf-8`，正文为通用错误消息；健康检查成功同样返回纯文本 `ok`。默认响应不会包含 `error_reason`、时间戳或 Stellarmesh `ApiEnvelope`。
+
+项目需要统一 JSON 时，在业务仓库实现 `ErrorResponder` 和 `HealthResponder`。下面只是项目自己的协议示例，不属于 SDK 契约：
+
+```go
+type apiEnvelope struct {
+    Code        int    `json:"code"`
+    Message     string `json:"message"`
+    Data        any    `json:"data"`
+    ErrorReason string `json:"error_reason,omitempty"`
+}
+
+func writeProjectJSON(w http.ResponseWriter, status int, envelope apiEnvelope) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(status)
+    _ = json.NewEncoder(w).Encode(envelope)
+}
+
+var projectErrorResponder = gateway.ErrorResponderFunc(func(
+    w http.ResponseWriter,
+    _ *http.Request,
+    gatewayError gateway.GatewayError,
+) {
+    writeProjectJSON(w, gatewayError.Status, apiEnvelope{
+        Code:        gatewayError.Status,
+        Message:     gatewayError.Message,
+        ErrorReason: gatewayError.Code,
+    })
+})
+
+var projectHealthResponder = gateway.HealthResponderFunc(func(
+    w http.ResponseWriter,
+    _ *http.Request,
+    result gateway.HealthResult,
+) {
+    writeProjectJSON(w, http.StatusOK, apiEnvelope{
+        Code:    http.StatusOK,
+        Message: "操作成功",
+        Data: map[string]string{
+            "status":  "ok",
+            "service": result.Service,
+            "kind":    string(result.Kind),
+        },
+    })
+})
+```
+
+Gateway 会在调用项目错误响应器前设置 `Retry-After`。`GatewayError.Cause` 只用于内部诊断，不能序列化给客户端；如果项目响应器在写入响应前 panic，SDK 会使用中立的 `500 internal server error` 兜底。响应器开始写入后无法撤回已经发送的状态和正文，因此实现应保持简单、无外部 I/O，并在业务仓库中单独测试。
+
 ## 完整组装示例
 
-下面的函数展示一个项目如何从自己的配置层注入依赖。真实地址、Secret、速率和 origin 仍由业务项目管理。
+下面的函数展示一个项目如何从自己的配置层注入依赖，并沿用上一节由业务仓库定义的两个响应器。真实地址、Secret、速率和 origin 仍由业务项目管理。
 
 ```go
 package appgateway
@@ -152,9 +203,11 @@ func NewHandler(
         gateway.WithClientIPRateLimiter(clientLimiter),
         gateway.WithUserRateLimiter(userLimiter),
         gateway.WithUpstreamRateLimiter(upstreamLimiter),
+        gateway.WithErrorResponder(projectErrorResponder),
         gateway.WithAccessLogEmitter("example-gateway", logEmitter),
         gateway.WithHealth(gateway.HealthConfig{
             Service: "example-gateway",
+            Responder: projectHealthResponder,
             Readiness: gateway.ReadinessCheckerFunc(func(ctx context.Context) error {
                 return redisClient.Ping(ctx).Err()
             }),
@@ -191,7 +244,7 @@ CORS 未声明时不处理跨域。启用后必须显式提供 origin；method �
 
 ## 错误、日志和观测
 
-默认错误响应使用共享 `Envelope`，HTTP 状态同时写入 `code`，稳定错误标识写入 `error_reason`。主要行为如下：
+默认错误响应使用纯文本；项目可以通过 `WithErrorResponder` 把稳定错误代码映射到自己的 JSON 字段。状态和错误分类如下：
 
 | 场景 | 状态 |
 | --- | --- |
@@ -211,7 +264,7 @@ CORS 未声明时不处理跨域。启用后必须显式提供 origin；method �
 
 ## 健康检查和测试
 
-`WithHealth` 默认提供 `GET /health/live` 和 `GET /health/ready`。存活检查只表示进程能够响应；就绪检查可以注入 `ReadinessChecker`，默认超时为 `2s`，错误或超时返回 `503`。健康路径由网关本地处理，不需要出现在业务路由表中。
+`WithHealth` 默认提供 `GET /health/live` 和 `GET /health/ready`。存活检查只表示进程能够响应；就绪检查可以注入 `ReadinessChecker`，默认超时为 `2s`，错误或超时返回 `503`。健康路径由网关本地处理，不需要出现在业务路由表中。成功时默认返回 `ok`；项目响应器通过 `HealthKindLive` 和 `HealthKindReady` 区分端点，通过 `HealthResult.Service` 读取规范化后的服务名。失败仍统一交给 `ErrorResponder`。
 
 业务项目接入时至少应验证：
 
@@ -222,5 +275,9 @@ CORS 未声明时不处理跨域。启用后必须显式提供 origin；method �
 5. SSE、流式响应和 WebSocket 不被响应包装器破坏；
 6. 访问日志失败不会改变上游已经产生的状态码；
 7. `/health/ready` 能反映项目声明的关键依赖状态。
+
+## 从 `v0.1.0` 升级到 `v0.2.0`
+
+`v0.1.0` 默认返回带 `code`、`message`、`data`、`timestamp` 和 `error_reason` 的 Stellarmesh JSON envelope；`v0.2.0` 改为协议中立的纯文本。升级前应检查调用方、探针和前端是否解析默认错误正文或健康响应。需要保留原结构时，先在项目仓库实现上面的两个响应器并完成契约测试，再升级 Module。已经显式配置 `WithErrorResponder` 的项目继续保留自己的错误正文，并会在响应器执行前获得 SDK 设置的 `Retry-After`。
 
 本次 SDK 不包含共享 gateway 可执行程序，也不包含服务发现、动态配置、配置热更新、自动重试、熔断、WAF、缓存、灰度路由或管理控制面。这些能力应在出现明确的跨项目需求后独立设计。

@@ -18,14 +18,14 @@ go mod tidy
 
 ## 版本兼容
 
-`sdk/go/v0.3.0` 仍不可变地包含旧 `sdk/go/gateway` package，不能与独立 Gateway `v0.1.0` 同时进入一个 build list。`sdk/go/v0.2.0` 仍包含旧 Logging package，`sdk/go/v0.1.1` 仍包含旧 Kafka package。错误组合可能产生 `ambiguous import`，不能通过长期 `replace` 绕过。
+`sdk/go/v0.3.0` 仍不可变地包含旧 `sdk/go/gateway` package，不能与独立 Gateway Module 同时进入一个 build list。`sdk/go/v0.2.0` 仍包含旧 Logging package，`sdk/go/v0.1.1` 仍包含旧 Kafka package。错误组合可能产生 `ambiguous import`，不能通过长期 `replace` 绕过。
 
 同时使用父 SDK 与 Gateway 的项目必须原子升级：
 
 ```sh
 go get \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.1.0
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0
 go mod tidy
 ```
 
@@ -34,7 +34,7 @@ go mod tidy
 ```sh
 go get \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.1.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0 \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0 \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0
 go mod tidy
