@@ -9,7 +9,7 @@ Namespace 是防误用边界，不是权限边界。生产权限仍必须由 AWS
 业务项目固定 Go module 版本：
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.3.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0
 go mod tidy
 ```
 

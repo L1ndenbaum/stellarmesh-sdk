@@ -1,6 +1,28 @@
 # Go 网关 SDK 接入教程
 
-网关 SDK 位于 `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway`。它返回标准 `http.Handler`，业务项目继续拥有 `main.go`、环境变量解析、路由表、upstream 地址和部署配置。SDK 不启动监听端口，也不提供可直接部署的公共 gateway 进程。
+网关 SDK 是独立 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway`，适用于 Go 1.24 及以上版本。它返回标准 `http.Handler`，业务项目继续拥有 `main.go`、环境变量解析、路由表、upstream 地址和部署配置。SDK 不启动监听端口，也不提供可直接部署的公共 gateway 进程。
+
+## 安装固定版本
+
+只使用网关能力的项目直接安装独立 Module：
+
+```sh
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.1.0
+go mod tidy
+```
+
+该 Module 同时包含基础 Gateway、`gateway/jwtauth` 和 `gateway/redislimit`，直接依赖 Logging `v0.1.0`、JWT 和 Redis，但不会引入父 SDK、AWS SDK、对象存储、Chi 或 Kafka。未导入的适配器不会链接进最终二进制。
+
+如果项目还使用父 SDK，必须把父 SDK 原子升级到已经移除旧 Gateway package 的 `v0.4.0`：
+
+```sh
+go get \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.1.0
+go mod tidy
+```
+
+`sdk/go/v0.3.0` 仍不可变地包含旧 Gateway package，不能与独立 Gateway `v0.1.0` 同时进入一个 build list，否则可能产生 `ambiguous import`。业务仓库不应通过长期 `replace` 绕过这一版本边界。
 
 ## 设计语义
 
