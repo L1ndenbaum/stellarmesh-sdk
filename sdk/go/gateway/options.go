@@ -33,6 +33,7 @@ type config struct {
 	transport            http.RoundTripper
 	cors                 *CORSConfig
 	accessLogger         AccessLogger
+	accessLogDisabled    bool
 	observer             Observer
 	health               *HealthConfig
 	configuredComponents map[string]struct{}

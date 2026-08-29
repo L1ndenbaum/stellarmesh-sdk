@@ -103,6 +103,9 @@ func New(options ...Option) (*Gateway, error) {
 	if err != nil {
 		return nil, err
 	}
+	if config.accessLogger == nil && !config.accessLogDisabled {
+		config.accessLogger = NewSlogAccessLogger(SlogAccessLoggerConfig{})
+	}
 	if err := validateStaticUpstreams(config.staticRoutes, config.upstreamResolver); err != nil {
 		return nil, err
 	}

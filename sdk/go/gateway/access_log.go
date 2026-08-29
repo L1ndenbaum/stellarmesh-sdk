@@ -5,78 +5,14 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
-	"strings"
 	"time"
-
-	sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
 )
-
-var errAccessLogRejected = errors.New("gateway access log emitter rejected event")
 
 type accessLogState struct {
 	AccessLog
 	StartedAt        time.Time
 	FailureComponent string
 	SkipSuccessful   bool
-}
-
-type emitterAccessLogger struct {
-	service string
-	emitter sharedlogging.Emitter
-}
-
-// WithAccessLogEmitter 把网关访问日志直接适配到已有异步日志客户端。
-func WithAccessLogEmitter(service string, emitter sharedlogging.Emitter) Option {
-	return componentOption("access_logger", func(config *config) error {
-		if strings.TrimSpace(service) == "" || service != strings.TrimSpace(service) {
-			return errors.New("gateway access log service must be non-empty and trimmed")
-		}
-		if isNilInterface(emitter) {
-			return errors.New("gateway access log emitter is nil")
-		}
-		config.accessLogger = &emitterAccessLogger{service: service, emitter: emitter}
-		return nil
-	})
-}
-
-func (logger *emitterAccessLogger) Log(ctx context.Context, accessLog AccessLog) error {
-	level := sharedlogging.LevelInfo
-	if accessLog.Status >= http.StatusInternalServerError {
-		level = sharedlogging.LevelError
-	} else if accessLog.Status >= http.StatusBadRequest {
-		level = sharedlogging.LevelWarning
-	}
-	metadata := map[string]any{
-		"request_id":           accessLog.RequestID,
-		"method":               accessLog.Method,
-		"path":                 accessLog.Path,
-		"route":                accessLog.Route,
-		"client_ip":            accessLog.ClientIP,
-		"auth_result":          accessLog.AuthResult,
-		"user_id":              accessLog.UserID,
-		"roles":                append([]string(nil), accessLog.Roles...),
-		"upstream":             accessLog.Upstream,
-		"status":               accessLog.Status,
-		"elapsed_milliseconds": accessLog.Elapsed.Milliseconds(),
-		"error_code":           accessLog.ErrorCode,
-	}
-	rateResults := make(map[string]string, len(accessLog.RateLimitResult))
-	for scope, result := range accessLog.RateLimitResult {
-		rateResults[string(scope)] = result
-	}
-	metadata["rate_limit_result"] = rateResults
-	accepted := logger.emitter.Emit(ctx, sharedlogging.Event{
-		Timestamp: accessLog.Timestamp.UTC(),
-		Level:     level,
-		Service:   logger.service,
-		Message:   "gateway request",
-		TraceID:   accessLog.RequestID,
-		Metadata:  sharedlogging.SanitizeMetadata(metadata),
-	})
-	if !accepted {
-		return errAccessLogRejected
-	}
-	return nil
 }
 
 func newAccessLogState(r *http.Request) *accessLogState {

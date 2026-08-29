@@ -3,7 +3,6 @@ module github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway
 go 1.24
 
 require (
-	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.1.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/redis/go-redis/v9 v9.17.0
 )
