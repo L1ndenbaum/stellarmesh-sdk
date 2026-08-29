@@ -3,6 +3,7 @@ go 1.24
 use (
 	./sdk/go
 	./sdk/go/gateway
+	./sdk/go/gateway/loggingadapter
 	./sdk/go/logging
 	./sdk/go/mq/kafka
 	./services/logging
