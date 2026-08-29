@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "sdk/go/v*.*.*"
+      - "sdk/go/gateway/v*.*.*"
       - "sdk/go/logging/v*.*.*"
       - "sdk/go/mq/kafka/v*.*.*"
 
