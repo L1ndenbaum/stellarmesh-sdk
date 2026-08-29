@@ -17,16 +17,17 @@ go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0
 go mod tidy
 ```
 
-如果项目同时使用 logging、gateway、objectstorage 等父 SDK package，必须原子升级两个 Module：
+如果项目同时使用父 SDK和独立 Logging Module，必须在同一次变更中固定三个版本：
 
 ```sh
 go get \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.2.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.3.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0 \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0
 go mod tidy
 ```
 
-`sdk/go/v0.1.1` 仍包含旧的 `mq/kafka` package。它不能与新的 Kafka Module 同时使用，否则同一个 import path 会同时由两个 Module 提供，Go 可能报告 `ambiguous import`。已有 tag 保持不可变；正确迁移方式是把父 SDK 升级到已经移除 Kafka package 的 `v0.2.0`，而不是为任一 Module 添加长期 `replace`。
+`sdk/go/v0.1.1` 仍包含旧的 `mq/kafka` package。它不能与新的 Kafka Module 同时使用，否则同一个 import path 会同时由两个 Module 提供，Go 可能报告 `ambiguous import`。已有 tag 保持不可变；新项目应使用已经同时移除 Kafka 和 Logging package 的父 SDK `v0.3.0`，而不是为任一 Module添加长期 `replace`。
 
 ## 2. 能力和责任边界
 
@@ -180,4 +181,4 @@ if stellarkafka.IsMessageTooLarge(err) {
 4. 错误用户名、密码、ACL 或 Topic 能让 readiness fail-close，而不是退化为匿名访问；
 5. Consumer 只在业务处理达到约定持久点后提交 offset；
 6. Publisher 超时、消息过大和关闭路径均有明确指标或日志；
-7. 如果项目还依赖父 SDK，`go.mod` 同时固定父 `v0.2.0` 和 Kafka `v0.1.0`，且没有 `ambiguous import`。
+7. 如果项目还依赖父 SDK或 Logging，`go.mod` 同时固定父 `v0.3.0`、Logging `v0.1.0` 和 Kafka `v0.1.0`，且没有 `ambiguous import`。

@@ -1,6 +1,6 @@
 # 接入 SDK
 
-本文件说明业务项目接入 SDK、日志接收服务、对象存储服务、ClickHouse sink 和迁移制品的完整流程。只接入语言客户端时，可直接阅读 [Go SDK 接入教程](sdk/go/README.md) 或 [Python SDK 接入教程](sdk/python/README.md)；Go 项目的 Kafka 基础能力见 [Go Kafka SDK](sdk/go/kafka.md)，网关能力见 [Go 网关 SDK](sdk/go/gateway.md)，对象存储接入分别阅读 [Go 对象存储 SDK](sdk/go/object-storage.md)、[Python 对象存储 SDK](sdk/python/storage.md) 和 [storage-service 部署文档](storage-service.md)。
+本文件说明业务项目接入 SDK、日志接收服务、对象存储服务、ClickHouse sink 和迁移制品的完整流程。只接入日志客户端时，可直接阅读 [Go Logging SDK](sdk/go/logging.md) 或 [Python SDK 接入教程](sdk/python/README.md)；父 Go SDK见[Go 父 SDK 接入教程](sdk/go/README.md)，Kafka 基础能力见 [Go Kafka SDK](sdk/go/kafka.md)，网关能力见 [Go 网关 SDK](sdk/go/gateway.md)，对象存储接入分别阅读 [Go 对象存储 SDK](sdk/go/object-storage.md)、[Python 对象存储 SDK](sdk/python/storage.md) 和 [storage-service 部署文档](storage-service.md)。
 
 ## 接入前准备
 
@@ -23,7 +23,7 @@
 安装固定版本：
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.2.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0
 ```
 
 在应用启动时构造一个进程级客户端，并优先接入标准库 `log/slog`：

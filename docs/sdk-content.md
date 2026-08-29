@@ -22,7 +22,8 @@
 | --- | --- | --- |
 | `contracts/logging/v1/` | 日志事件、DLQ v1/v2、尺寸限制、OpenAPI 和共享测试数据 | 随仓库版本发布 |
 | `contracts/storage/v1/` | 对象存储控制面 OpenAPI、访问配置 Schema、统一限制和共享测试数据 | 随仓库版本发布 |
-| `sdk/go/` | Go 公共 HTTP、声明式网关、日志和对象存储客户端 | Go module |
+| `sdk/go/` | Go 公共 HTTP、声明式网关和对象存储客户端 | Go module |
+| `sdk/go/logging/` | Logging v1 模型、校验、异步客户端和 `slog.Handler` | 独立 Go module |
 | `sdk/go/mq/kafka/` | Kafka 连接、Publisher、Topic 检查与 TLS/SASL 配置 | 独立 Go module |
 | `sdk/python/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | `stellarmesh-logging` Python package |
 | `sdk/python/storage/` | Python 对象存储同步与异步客户端 | `stellarmesh-storage` Python package |
@@ -66,7 +67,6 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 
 父 Module `sdk/go` 包含以下可复用包：
 
-- `logging`：协议模型、校验、元数据清洗、异步批量 HTTP 客户端、标准 `slog.Handler` 和兼容日志门面；
 - `gateway`：固定安全顺序的声明式网关、静态路由、可信代理、CORS、反向代理、健康检查和旁路观测；
 - `gateway/jwtauth`：严格校验 HS256、issuer、audience、expiration 和 subject 的 JWT 认证组件；
 - `gateway/redislimit`：按客户端 IP、用户或 upstream 作用域运行的 Redis 原子令牌桶；
@@ -77,6 +77,8 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 - `objectstorage/s3store`：基于 AWS SDK for Go v2 的 AWS S3 与 S3-compatible 适配器；
 - `storagecontract`：Storage v1 的统一限制、严格访问配置和 capability 校验；
 - `envconfig`：不依赖业务 settings 的基础环境变量解析，并提供显式错误的严格 loader。
+
+`sdk/go/logging` 是只依赖 Go 标准库的独立轻量 Module，提供 Logging v1 协议模型、严格校验、元数据清洗、异步批量 HTTP 客户端、标准 `slog.Handler` 和兼容日志门面。只使用日志能力的项目不需要引入父 SDK及其 Gateway、AWS 或 Redis 依赖。完整接入方式见 [Go Logging SDK](sdk/go/logging.md)。
 
 `sdk/go/mq/kafka` 是独立的轻量 Module，提供显式 Topic、并行 Topic 检查、Hash 分区且要求全副本确认的 Publisher，以及 `PLAINTEXT`、TLS、mTLS、SASL/PLAIN、SCRAM-SHA-256 和 SCRAM-SHA-512 配置。Consumer 继续由业务项目通过 `Connection.Dialer()` 构造 `kafka-go.Reader`，自行拥有 consumer group、offset、提交和重试语义。完整接入方式见 [Go Kafka SDK](sdk/go/kafka.md)。
 

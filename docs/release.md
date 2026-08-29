@@ -5,13 +5,14 @@
 同一个 Git commit 可以产生多类制品，但每类制品使用独立 tag，避免无关组件的版本互相阻断：
 
 - 根 tag `vX.Y.Z` 只触发四个容器镜像构建并推送到 GHCR；
-- 父 Go Module tag `sdk/go/vX.Y.Z` 触发 logging、gateway 和 objectstorage 的公共 Go proxy 消费验证；
-- Kafka Go Module tag `sdk/go/mq/kafka/vX.Y.Z` 触发 Kafka-only 公共消费与依赖边界验证；
+- 父 Go Module tag `sdk/go/vX.Y.Z` 触发 Gateway、HTTP 和 Object Storage 的公共 Go proxy 消费验证；
+- Logging Go Module tag `sdk/go/logging/vX.Y.Z` 触发独立日志契约与客户端的公共消费验证；
+- Kafka Go Module tag `sdk/go/mq/kafka/vX.Y.Z` 触发 Kafka公共消费验证；
 - Python 日志组件 tag `sdk/python/logging/vX.Y.Z` 只构建并发布 `stellarmesh-logging`；
 - Python Storage 组件 tag `sdk/python/storage/vX.Y.Z` 只构建并发布 `stellarmesh-storage`；
 - `contracts/logging/v1/` 与 `contracts/storage/v1/` 随源码版本发布，SDK、服务、sink 和迁移制品必须来自经过完整验证的 commit。
 
-不同组件可以有不同版本。例如四个镜像可以保持 `0.1.1`，父 Go SDK 提升到 `0.2.0`，Kafka Module 独立从 `0.1.0` 开始，Python 日志包保持 `0.1.2`，`stellarmesh-storage` 继续保持 `0.1.0`。发布前必须先让 `main` 或 `dev` 分支的持续验证通过，不得用 tag 绕过格式、静态检查、测试、镜像构建或集成测试。已经推送的 tag 不得移动、删除、覆盖或强推；制品内容需要修改时必须提升 patch 版本。
+不同组件可以有不同版本。例如四个镜像可以保持 `0.1.1`，父 Go SDK 提升到 `0.3.0`，Logging 与 Kafka Module分别使用 `0.1.0`，Python 日志包保持 `0.1.2`，`stellarmesh-storage` 继续保持 `0.1.0`。发布前必须先让 `main` 或 `dev` 分支的持续验证通过，不得用 tag 绕过格式、静态检查、测试、镜像构建或集成测试。已经推送的 tag 不得移动、删除、覆盖或强推；制品内容需要修改时必须提升 patch 版本。
 
 ## 镜像发布
 
@@ -28,19 +29,29 @@
 
 ## Go Module 发布
 
-父 SDK 与 Kafka SDK 是两个独立 Module，都不能通过根 tag 发布。确认发布 commit 后分别创建与 Module 目录匹配的 tag：
+父 SDK、Logging 和 Kafka 是三个独立 Module，都不能通过根 tag 发布。确认发布 commit 后分别创建与 Module 目录匹配的 tag：
 
 ```sh
 git tag -a sdk/go/mq/kafka/v0.1.0 -m '发布 Kafka Go SDK v0.1.0'
 git push origin sdk/go/mq/kafka/v0.1.0
 
-git tag -a sdk/go/v0.2.0 -m '发布 Go SDK v0.2.0'
-git push origin sdk/go/v0.2.0
+git tag -a sdk/go/logging/v0.1.0 -m '发布 Logging Go SDK v0.1.0'
+git push origin sdk/go/logging/v0.1.0
+
+git tag -a sdk/go/v0.3.0 -m '发布 Go SDK v0.3.0'
+git push origin sdk/go/v0.3.0
 ```
 
-`.github/workflows/release-go.yml` 只接受上述两个硬编码 tag 前缀，不检出仓库源码。它会清除私有 Module 配置，在限定时间内等待 `proxy.golang.org` 收录，并使用官方 checksum database 从全新的外部 Module 执行对应验证：父 SDK 编译 logging、`slog.Handler`、gateway 和 objectstorage；Kafka Module 构造 PLAIN、SCRAM-256、SCRAM-512 连接，并编译 Publisher 与 Topic 检查 API。Kafka-only 消费者的依赖图不得出现 AWS SDK、Chi、JWT 或 Redis。
+`.github/workflows/release-go.yml` 只接受上述三个硬编码 tag 前缀。工作流检出 tag中的受版本控制 consumer fixture，再调用 `tests/go-module-consumer.sh public`；脚本会清除私有 Module 配置，在限定时间内等待 `proxy.golang.org` 收录，并使用官方 checksum database从全新的外部 Module构建对应 fixture。Workflow 不内嵌 Go 源码，也不执行公共消费者依赖图断言。
 
-仓库持续验证会把父 SDK 与 Kafka Module 移到物理隔离的临时目录，分别以 `GOWORK=off go test ./...` 测试，并另外编译 Kafka-only 与组合消费者。组合测试用于阻止父 SDK 旧版本和新 Kafka Module 同时提供相同 package。
+仓库持续验证会把父 SDK、Logging 与 Kafka Module移到物理隔离的临时目录，分别以 `GOWORK=off go test ./...` 测试，并复用同一套 fixture编译 logging-only、parent、Kafka 与组合消费者。Logging-only依赖图必须保持零第三方依赖；依赖边界检查属于持续集成，不放入发布 workflow。
+
+只需要 Logging 的业务项目固定引入：
+
+```sh
+GOWORK=off go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0
+go mod tidy
+```
 
 只需要 Kafka 的业务项目固定引入：
 
@@ -49,16 +60,17 @@ GOWORK=off go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0
 go mod tidy
 ```
 
-同时使用父 SDK 与 Kafka 的项目必须原子升级：
+同时使用父 SDK、Logging 与 Kafka 的项目必须原子升级：
 
 ```sh
 GOWORK=off go get \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.2.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.3.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0 \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0
 go mod tidy
 ```
 
-`sdk/go/v0.1.1` 仍不可变地包含旧 `mq/kafka` package，不能与新 Kafka Module 同时使用，否则可能产生 `ambiguous import`。公共消费验证不得添加本地 `replace`，并应确保 `GOPRIVATE`、`GONOPROXY` 和 `GONOSUMDB` 没有把这两个公开 Module 排除在公共代理或校验数据库以外。
+`sdk/go/v0.2.0` 仍不可变地包含旧 `logging` package，不能与新 Logging Module同时使用；`sdk/go/v0.1.1` 仍不可变地包含旧 `mq/kafka` package，不能与新 Kafka Module同时使用。错误组合可能产生 `ambiguous import`，正确迁移方式是把父 SDK升级到 `v0.3.0`。公共消费验证不得添加本地 `replace`，并应确保 `GOPRIVATE`、`GONOPROXY` 和 `GONOSUMDB` 没有把公开 Module排除在公共代理或校验数据库以外。
 
 ## Python SDK 发布
 
@@ -128,13 +140,30 @@ Kafka Module 从父 `sdk/go` 拆出后，父 SDK 使用 `0.2.0` 表达 Module �
 
 如果必须修改 Kafka Module 源码或发布 workflow，Kafka 版本提升到 `v0.1.1`；如果必须修改父 SDK 内容，父版本提升到 `v0.2.1`。任何已经推送的 tag 都不能移动、删除或复用。
 
+## Logging `0.1.0` 与父 SDK `0.3.0` 发布顺序
+
+Logging Module从父 `sdk/go` 拆出后，父 SDK使用 `0.3.0` 表达新的 Module边界，Logging Module首次发布为 `0.1.0`。Python `stellarmesh-logging` 保持 `0.1.2`，四个镜像保持 `0.1.1`；本次不创建根 tag或 Python组件 tag。
+
+父 SDK的 Gateway访问日志适配器依赖 Logging Module，因此发布分两个经过验证的 commit进行：
+
+1. 完成 Module、测试、workflow和文档改造，推送 `dev` 并等待持续验证成功；
+2. 确认远端不存在 `sdk/go/logging/v0.1.0`，创建并推送该 tag；
+3. 等待公共 Proxy、checksum database和 Logging public smoke成功；
+4. 在父 `sdk/go` 中以 `GOWORK=off go mod tidy` 记录真实 Logging checksum，提交并再次等待持续验证；
+5. 确认远端不存在 `sdk/go/v0.3.0`，创建并推送父 SDK tag；
+6. 等待父 SDK public smoke成功；
+7. 更新三个内部服务 Module的父 SDK与 Logging checksum，再次完成全仓验证；
+8. 在无 `replace` 的全新 Module中分别消费 Logging、父 SDK和 Kafka，并验证组合消费者没有 `ambiguous import`。
+
+如果必须修改 Logging Module源码或发布 workflow，Logging版本提升到 `v0.1.1`；如果必须修改父 SDK内容，父版本提升到 `v0.3.1`。临时网络或 runner故障可以重跑同一不可变 commit的 workflow，但任何已经推送的 tag都不能移动、删除或复用。
+
 ## 发布后验证
 
 发布完成后至少确认：
 
-1. 父 Go SDK `0.2.0`、Kafka Module `0.1.0` 已发布；四个镜像保持 `0.1.1`，失败的 Python `0.1.1` tag 保持不可变，`stellarmesh-storage` 仍为 `0.1.0`；
+1. 父 Go SDK `0.3.0`、Logging Module `0.1.0`、Kafka Module `0.1.0` 已发布；四个镜像保持 `0.1.1`，Python Logging 保持 `0.1.2`，`stellarmesh-storage` 仍为 `0.1.0`；
 2. 从 TestPyPI 和正式 PyPI 的全新 Python 3.11 环境安装 `stellarmesh-logging==0.1.2`，验证 import、版本元数据、严格 service 校验与标准 `logging.Handler`；
-3. 从公共 `GOPROXY` 和 `GOSUMDB` 获取父 `sdk/go/v0.2.0` 与 Kafka `sdk/go/mq/kafka/v0.1.0`，不使用 `replace`，分别完成 Kafka-only、父 SDK 和组合消费测试；
+3. 从公共 `GOPROXY` 和 `GOSUMDB` 获取父 `sdk/go/v0.3.0`、Logging `sdk/go/logging/v0.1.0` 与 Kafka `sdk/go/mq/kafka/v0.1.0`，不使用 `replace`，分别完成独立和组合消费测试；
 4. 使用空临时 `DOCKER_CONFIG` 匿名拉取四个 `0.1.1` 镜像，确认双架构 manifest、provenance 和 SBOM，并记录不可变 digest；
 5. 使用临时合法认证文件启动 `logging-service:0.1.1`，在 Kafka 不可用但 spool 可写时确认服务可以降级接收；
 6. 业务环境已预先创建源 Topic、DLQ Topic、ClickHouse database、对象存储 Bucket 和最小权限身份；
