@@ -1,6 +1,6 @@
 # Go 对象存储 SDK 接入教程
 
-本教程对应 `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage` 与 `objectstorage/s3store`。SDK 适用于进程内 Go 服务访问 AWS S3 或 S3-compatible 存储，并把一个客户端固定到唯一 Bucket 和可选 Prefix。业务代码每次只提供逻辑 key，不能在请求中切换 Bucket。
+本教程对应独立 Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage` 与其中的 `objectstorage/s3store`。SDK 适用于进程内 Go 服务访问 AWS S3 或 S3-compatible 存储，并把一个客户端固定到唯一 Bucket 和可选 Prefix。业务代码每次只提供逻辑 key，不能在请求中切换 Bucket。
 
 Namespace 是防误用边界，不是权限边界。生产权限仍必须由 AWS IAM Role 或 MinIO Policy 限制到当前项目拥有的 Bucket 和 Prefix。
 
@@ -11,9 +11,11 @@ Namespace 是防误用边界，不是权限边界。生产权限仍必须由 AWS
 业务项目固定 Go module 版本：
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage@v0.1.0
 go mod tidy
 ```
+
+如果项目还使用父 SDK，父版本必须至少是已经移除旧 Object Storage package 的 `v0.5.0`；`sdk/go/v0.4.0` 与独立 Object Storage Module 同时存在会造成 `ambiguous import`。
 
 默认构造会调用 AWS SDK for Go v2 的标准配置链，支持环境变量、Web Identity、共享 Profile、ECS Role 和 EC2 Role。生产环境优先使用项目自己的 IAM Role 或工作负载身份，不要把长期 Access Key 写进源码、镜像或普通配置文件。
 

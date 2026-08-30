@@ -92,9 +92,13 @@ func traceIDFromProjectContext(context.Context) string {
 
 项目不再复制 gateway 内部目录，而是在自己的 `main.go` 中通过 `gateway.New` 组装路由、upstream、JWT、Redis 限流、CORS、健康检查和访问日志。业务仓库继续拥有配置读取、路由表、监听端口、优雅关闭、Compose 和环境变量；本仓库只提供普通 `http.Handler` 和可注入组件。
 
+```sh
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.0
+```
+
 生产配置应明确可信代理 CIDR。没有可信代理配置时，SDK 只使用 `RemoteAddr`，不会读取 `X-Forwarded-For`。所有静态受保护路由必须配置 Authenticator；Redis 限流器或其他安全决策依赖发生错误时返回 `503`，不会退化为放行。
 
-当前本地 `dev` 源码默认通过标准库 `slog.Default()` 输出访问日志，项目可以用 `slog.SetDefault` 统一格式、等级和 CLI 输出，也可以通过 `WithoutAccessLog` 关闭。Gateway Core 不知道远程日志、Sink 或持久化语义；需要 Stellarmesh Logging 时，使用开发中的独立 `loggingadapter` 把访问记录交给项目已经管理的 `logging.Emitter`。Adapter 的失败仍属于旁路失败，不改变网关响应。该 Adapter 尚未发布，正式业务仓库暂时应继续固定已发布 Gateway 行为。
+Gateway `v0.3.0` 默认通过标准库 `slog.Default()` 输出访问日志，项目可以用 `slog.SetDefault` 统一格式、等级和 CLI 输出，也可以通过 `WithoutAccessLog` 关闭。Gateway Core 不知道远程日志、Sink 或持久化语义；需要 Stellarmesh Logging 时，安装独立 `loggingadapter@v0.1.0`，把访问记录交给项目已经管理的 `logging.Emitter`。Adapter 的失败仍属于旁路失败，不改变网关响应。
 
 完整构造示例、Option 列表、错误状态和验证要求见[Go 网关 SDK 接入教程](sdk/go/gateway.md)。
 
@@ -165,6 +169,12 @@ async def application_shutdown() -> None:
 - Go 服务需要在进程内读取或写入对象时，直接使用 `objectstorage/s3store`，由应用启动配置把一个客户端绑定到一个 Bucket 与 Prefix；
 - Python 或其他不应持有对象存储凭据的客户端，通过项目自己的 `storage-service` 获取预签名请求，再直接与 S3 或 MinIO 传输对象字节。
 
+Go 进程内路径安装独立 Module：
+
+```sh
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage@v0.1.0
+```
+
 Go 进程内客户端使用标准 AWS 凭据链，不应把 Bucket 暴露为每次业务调用的参数。AWS 模式不设置自定义 Endpoint；MinIO 模式显式设置内部 Endpoint、客户端可访问的 `PresignEndpoint` 和 `UsePathStyle=true`。`Check` 只执行只读可访问性检查，不创建 Bucket。构造、Range、Checksum、错误映射和显式 Multipart 示例见 [Go 对象存储 SDK](sdk/go/object-storage.md)。
 
 `contracts/storage/v1` 是跨语言控制面协议的唯一来源。`storage-service` 内部的 Go DTO 与访问策略不属于公共 Go SDK；当前没有独立发布的 Go Storage v1 HTTP Client。Go 项目需要直接访问对象存储时使用 `objectstorage`，需要通过控制面访问时应按 OpenAPI 生成或实现项目客户端，不能导入 `services/storage/internal/storagev1`。
@@ -172,7 +182,7 @@ Go 进程内客户端使用标准 AWS 凭据链，不应把 Bucket 暴露为每�
 Python 包独立安装，不能用日志包替代：
 
 ```sh
-pip install stellarmesh-storage==0.1.0
+pip install stellarmesh-storage==0.1.1
 ```
 
 ```python
@@ -316,7 +326,7 @@ sink 会严格解析每条源消息。有效事件写入 ClickHouse；普通无�
 开发环境可以由业务项目用自己的连接信息执行同一制品，例如：
 
 ```sh
-docker run --rm ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-clickhouse-migrate:0.1.1 \
+docker run --rm ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-clickhouse-migrate:0.1.2 \
   -database 'clickhouse://clickhouse:9000?username=migrator&password=example&database=logging&x-multi-statement=true' \
   up
 ```

@@ -2,25 +2,25 @@
 
 网关 SDK 是独立 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway`，适用于 Go 1.24 及以上版本。它返回标准 `http.Handler`，业务项目继续拥有 `main.go`、环境变量解析、路由表、upstream 地址和部署配置。SDK 不启动监听端口，也不提供可直接部署的公共 gateway 进程。
 
-> 版本说明：公开版本 `v0.2.0` 仍包含原来的 `WithAccessLogEmitter`，且没有默认访问日志。当前本地 `dev` 源码已经把 Stellarmesh Logging 拆到独立 `loggingadapter` Module，并改为默认使用标准库 `slog`；这部分尚未发布，以下章节会明确标记，不能把开发中 API 当作公开固定版本使用。
+当前 `v0.3.0` 默认通过标准库 `slog` 输出通用访问日志，不直接依赖 Stellarmesh Logging。远程 Logging 通过独立 `loggingadapter@v0.1.0` 按需接入。
 
 ## 安装固定版本
 
 只使用网关能力的项目直接安装独立 Module：
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.0
 go mod tidy
 ```
 
-公开 `v0.2.0` 同时包含基础 Gateway、`gateway/jwtauth` 和 `gateway/redislimit`，并直接依赖 Logging `v0.1.0`、JWT 和 Redis。当前本地 `dev` 源码已移除 Gateway Core 对 Logging 的依赖，只保留 JWT 和 Redis；两种状态都不会引入父 SDK、AWS SDK、对象存储、Chi 或 Kafka。
+`v0.3.0` 同时包含基础 Gateway、`gateway/jwtauth` 和 `gateway/redislimit`，只直接依赖 JWT 和 Redis，不引入父 SDK、Logging、AWS SDK、对象存储、Chi 或 Kafka。
 
-如果项目还使用父 SDK，必须把父 SDK 原子升级到已经移除旧 Gateway package 的 `v0.4.0`：
+如果项目还使用父 SDK，建议固定当前已经移除所有嵌套能力的 `v0.5.0`：
 
 ```sh
 go get \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.5.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.0
 go mod tidy
 ```
 
@@ -53,7 +53,7 @@ go mod tidy
 
 ## 响应协议归项目所有
 
-Gateway 只确定 HTTP 状态、稳定错误代码、通用错误消息、`Retry-After` 和健康检查结果，不规定业务 JSON Schema。`v0.2.0` 的默认错误响应是 `text/plain; charset=utf-8`，正文为通用错误消息；健康检查成功同样返回纯文本 `ok`。默认响应不会包含 `error_reason`、时间戳或 Stellarmesh `ApiEnvelope`。
+Gateway 只确定 HTTP 状态、稳定错误代码、通用错误消息、`Retry-After` 和健康检查结果，不规定业务 JSON Schema。`v0.3.0` 的默认错误响应是 `text/plain; charset=utf-8`，正文为通用错误消息；健康检查成功同样返回纯文本 `ok`。默认响应不会包含 `error_reason`、时间戳或 Stellarmesh `ApiEnvelope`。
 
 项目需要统一 JSON 时，在业务仓库实现 `ErrorResponder` 和 `HealthResponder`。下面只是项目自己的协议示例，不属于 SDK 契约：
 
@@ -215,7 +215,7 @@ func NewHandler(
 }
 ```
 
-上面的组装代码同时兼容公开 `v0.2.0` 和当前开发源码，但访问日志默认值不同：`v0.2.0` 省略日志组件表示不记录，当前开发源码省略日志组件表示使用 `slog.Default()`。项目升级未来版本前应把这一行为变化纳入容量和日志等级评估。
+上面的组装代码在 `v0.3.0` 中省略日志组件时使用 `slog.Default()`。项目从 `v0.2.0` 升级前应把默认访问日志带来的输出量纳入容量和日志等级评估；不需要访问日志时显式使用 `WithoutAccessLog()`。
 
 `redislimit` 的 `RatePerSecond`、`Burst` 和 `KeyPrefix` 必须显式且大于零。禁用某个限流维度时，不要构造一个零速率 limiter，而是省略对应的 `With...RateLimiter`。
 
@@ -259,9 +259,9 @@ CORS 未声明时不处理跨域。启用后必须显式提供 origin；method �
 | upstream 连接失败 | `502` |
 | upstream 超时 | `504` |
 
-### 开发中：默认标准库访问日志
+### 默认标准库访问日志
 
-当前本地 `dev` 源码默认通过请求完成时读取的 `slog.Default()` 输出一条 `gateway request completed`。Go 默认 Logger 写到进程 `stderr`，因此无需 Sink 或远程服务即可在 CLI 查看。项目可以统一替换默认 Logger：
+Gateway `v0.3.0` 默认通过请求完成时读取的 `slog.Default()` 输出一条 `gateway request completed`。Go 默认 Logger 写到进程 `stderr`，因此无需 Sink 或远程服务即可在 CLI 查看。项目可以统一替换默认 Logger：
 
 ```go
 slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
@@ -289,9 +289,19 @@ gateway.WithoutAccessLog()
 
 `WithAccessLogger` 继续允许项目注入自己的通用实现。三种配置入口占用同一组件槽位，不能同时声明，避免 Option 顺序决定日志行为。
 
-### 开发中：Stellarmesh Logging Adapter
+### Stellarmesh Logging Adapter
 
-需要把访问记录发送到 Stellarmesh Logging 时，使用独立路径 `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter`。该 Module 当前只存在于仓库本地 `dev` 源码，尚未发布，因此下面是本地开发示例，不是可用于生产依赖的 `go get` 指南：
+需要把访问记录发送到 Stellarmesh Logging 时，额外安装独立 Module：
+
+```sh
+go get \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter@v0.1.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0
+go mod tidy
+```
+
+然后由项目创建并管理 `logging.Emitter`，Adapter 只负责转换访问记录：
 
 ```go
 accessLogger, err := loggingadapter.NewStellarmesh(loggingadapter.StellarmeshConfig{
@@ -335,5 +345,14 @@ Adapter 默认不写用户 ID 和角色；需要时显式设置 `IncludeIdentity
 ## 从 `v0.1.0` 升级到 `v0.2.0`
 
 `v0.1.0` 默认返回带 `code`、`message`、`data`、`timestamp` 和 `error_reason` 的 Stellarmesh JSON envelope；`v0.2.0` 改为协议中立的纯文本。升级前应检查调用方、探针和前端是否解析默认错误正文或健康响应。需要保留原结构时，先在项目仓库实现上面的两个响应器并完成契约测试，再升级 Module。已经显式配置 `WithErrorResponder` 的项目继续保留自己的错误正文，并会在响应器执行前获得 SDK 设置的 `Retry-After`。
+
+## 从 `v0.2.0` 升级到 `v0.3.0`
+
+`v0.3.0` 删除 Gateway Core 中的 `WithAccessLogEmitter` 和对 Stellarmesh Logging 的直接依赖，改为默认使用标准库 `slog`。升级项目需要：
+
+1. 检查默认 CLI 访问日志的容量与日志等级，或显式调用 `WithoutAccessLog()`；
+2. 把旧 `WithAccessLogEmitter` 替换为独立 `loggingadapter.NewStellarmesh` 与 `WithAccessLogger`；
+3. 只有确实需要远程 Stellarmesh Logging 的项目才增加 Adapter 与 Logging Module 依赖；
+4. 验证访问日志失败仍不会改变业务响应，身份字段仍默认关闭，`request_id` 不会冒充 `trace_id`。
 
 本次 SDK 不包含共享 gateway 可执行程序，也不包含服务发现、动态配置、配置热更新、自动重试、熔断、WAF、缓存、灰度路由或管理控制面。这些能力应在出现明确的跨项目需求后独立设计。

@@ -1,19 +1,21 @@
 # SDK 接入教程
 
-本目录按照仓库中可独立发布和被业务项目引用的 SDK 划分。当前已发布四个 Go Module 和两个独立 Python distribution；Gateway 的 Stellarmesh Logging Adapter 已拆成独立 Module，但仍处于本地开发阶段：
+本目录按照仓库中可独立发布和被业务项目引用的 SDK 划分。当前发布六个 Go Module 和两个独立 Python distribution：
 
-- [Go 父 SDK 接入教程](go/README.md)：对应 `sdk/go` Go Module，包含 HTTP、环境配置和进程内对象存储能力；
+- [Go 父 SDK 接入教程](go/README.md)：对应 `sdk/go` Go Module，只包含标准库 HTTP 与环境配置能力；
+- [Go 对象存储 SDK 接入教程](go/object-storage.md)：对应独立的 `sdk/go/objectstorage` Go Module；
 - [Go 网关 SDK 接入教程](go/gateway.md)：对应独立的 `sdk/go/gateway` Go Module，包含基础 Gateway、JWT 认证和 Redis 限流；
 - [Go Logging SDK 接入教程](go/logging.md)：对应独立的 `sdk/go/logging` Go Module，只依赖标准库；
 - [Go Kafka SDK 接入教程](go/kafka.md)：对应独立的 `sdk/go/mq/kafka` Go module，只引入 Kafka、压缩和 SCRAM 相关依赖；
+- [Gateway Logging Adapter](go/gateway.md#stellarmesh-logging-adapter)：对应独立的 `sdk/go/gateway/loggingadapter` Go Module；
 - [Python 日志 SDK 接入教程](python/README.md)：对应 `sdk/python/logging` 中发布的 `stellarmesh-logging` 包；
 - [Python 对象存储 SDK 接入教程](python/storage.md)：对应 `sdk/python/storage` 中发布的 `stellarmesh-storage` 包。
 
 Go 与 Python 日志 SDK 都能在业务进程内构造规范日志事件，通过有界异步队列批量发送到 `logging-service`。独立 Go Logging Module提供标准库 `log/slog.Handler`，Python 日志包提供标准库 `logging.Handler`；已有 SDK 日志门面继续保持兼容。独立 [Gateway Module](go/gateway.md) 允许项目通过 `WithXxx` 选择路由、鉴权、限流和观测能力，安全执行顺序由 SDK 固定。
 
-当前本地 `dev` 源码中的 Gateway 默认使用标准库 `slog` 写访问日志，不包含远程日志或 Sink 语义；可选的 `sdk/go/gateway/loggingadapter` 只把通用访问记录转换为 Stellarmesh Logging Event。该 Adapter 尚未发布，业务项目暂时不能把它作为公开固定版本安装。
+Gateway 默认使用标准库 `slog` 写访问日志，不包含远程日志或 Sink 语义；可选的 `sdk/go/gateway/loggingadapter` 只把通用访问记录转换为 Stellarmesh Logging Event。项目只在明确需要远程 Stellarmesh Logging 时才安装 Adapter。
 
-Go 对象存储包适合持有项目凭据的进程内服务直接访问 S3；Python 对象存储包通过项目级 `storage-service` 获取预签名请求，内容不经过 Go 控制面。Storage v1 的公开定义位于 `contracts/storage/v1`，Go 服务实现位于 `services/storage/internal/storagev1`，不是业务项目可导入的 SDK package。独立 Kafka Module 只提供连接、发布和 Topic 检查基础能力，不拥有业务 consumer group 或 offset 语义。SDK 不负责部署平台服务、创建 Bucket、配置 CORS/Policy/Lifecycle、创建 Kafka/ClickHouse 资源或执行迁移，也不读取业务项目的配置模块。
+独立 Go Object Storage Module适合持有项目凭据的进程内服务直接访问 S3；Python 对象存储包通过项目级 `storage-service` 获取预签名请求，内容不经过 Go 控制面。Storage v1 的公开定义位于 `contracts/storage/v1`，Go 服务实现位于 `services/storage/internal/storagev1`，不是业务项目可导入的 SDK package。独立 Kafka Module只提供连接、发布和 Topic 检查基础能力，不拥有业务 consumer group 或 offset 语义。SDK 不负责部署平台服务、创建 Bucket、配置 CORS/Policy/Lifecycle、创建 Kafka/ClickHouse 资源或执行迁移，也不读取业务项目的配置模块。
 
 ## 共同准备
 

@@ -1,45 +1,50 @@
 # Go 父 SDK 接入教程
 
-本教程对应 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.24 及以上版本。当前公开父 SDK `v0.4.0` 提供共享 HTTP、对象存储和环境变量解析；Gateway、Logging 与 Kafka 已分别拆为独立 Module。
-
-`v0.4.0` 的不可变源码中仍包含旧 `storagecontract` package，但它把 `storage-service` 的 HTTP DTO 和访问策略暴露成了通用 SDK。当前本地 `dev` 源码已移除该 package：语言无关的 Storage v1 定义继续由 `contracts/storage/v1` 管理，Go 实现归入 `services/storage/internal/storagev1`。业务项目不应新增对旧 package 的依赖；这一删除尚未发布，后续父 SDK 发版时必须按破坏性 Module 边界变化处理。
+本教程对应 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.24 及以上版本。`v0.5.0` 是标准库基础 Module，只提供环境配置、严格 JSON 请求解码和 HTTP server 构造，不再聚合 Gateway、Logging、Kafka 或 Object Storage 的第三方依赖。
 
 ## 安装固定版本
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.5.0
 go mod tidy
 ```
+
+父 Module 包含：
+
+- `envconfig`：基础环境变量解析与显式失败的严格 loader；
+- `http/jsonbody`：有大小上限、可拒绝未知字段且不写业务响应的 JSON 解码；
+- `http/server`：统一 HTTP timeout 与优雅关闭所需的 server 构造。
+
+父 Module 不再提供 `ApiEnvelope`、token 认证、通用 Router、可信客户端 IP 解析或对象存储。具体服务应拥有自己的响应协议与认证规则；业务 Gateway 应使用独立 Gateway Module；S3/MinIO 接入应使用独立 Object Storage Module。
 
 按需阅读对应教程：
 
-- [Go 网关 SDK](gateway.md)：独立 `sdk/go/gateway` Module，提供声明式 Gateway、JWT 认证和 Redis 限流；本地 `dev` 源码还包含尚未发布的独立 Logging Adapter；
-- [Go Logging SDK](logging.md)：独立 `sdk/go/logging` Module，提供 Logging v1 契约、异步客户端和 `slog.Handler`；
-- [Go Kafka SDK](kafka.md)：独立 `sdk/go/mq/kafka` Module，提供连接、认证、Publisher 和 Topic 检查；
-- [Go 对象存储 SDK](object-storage.md)：父 Module中的 S3/MinIO 进程内客户端。
+- [Go 网关 SDK](gateway.md)：`sdk/go/gateway@v0.3.0`，提供声明式 Gateway、JWT 认证、Redis 限流与标准库访问日志；
+- [Gateway Logging Adapter](gateway.md#stellarmesh-logging-adapter)：`sdk/go/gateway/loggingadapter@v0.1.0`，把通用访问记录交给 Stellarmesh Logging；
+- [Go Logging SDK](logging.md)：`sdk/go/logging@v0.1.0`，提供 Logging v1 契约、异步客户端和 `slog.Handler`；
+- [Go Kafka SDK](kafka.md)：`sdk/go/mq/kafka@v0.1.0`，提供连接、认证、Publisher 和 Topic 检查；
+- [Go 对象存储 SDK](object-storage.md)：`sdk/go/objectstorage@v0.1.0`，提供 S3/MinIO 进程内客户端。
 
 ## 版本兼容
 
-`sdk/go/v0.3.0` 仍不可变地包含旧 `sdk/go/gateway` package，不能与独立 Gateway Module 同时进入一个 build list。`sdk/go/v0.2.0` 仍包含旧 Logging package，`sdk/go/v0.1.1` 仍包含旧 Kafka package。错误组合可能产生 `ambiguous import`，不能通过长期 `replace` 绕过。`storagecontract` 的内部化只影响当前未发布源码，不改变这些历史 tag。
+历史父 SDK 包含后来拆出的相同 import path，错误组合会产生 `ambiguous import`：
 
-同时使用父 SDK 与 Gateway 的项目必须原子升级：
+- `sdk/go/v0.1.1` 包含旧 Kafka package；
+- `sdk/go/v0.2.0` 包含旧 Logging package；
+- `sdk/go/v0.3.0` 包含旧 Gateway package；
+- `sdk/go/v0.4.0` 包含旧 Object Storage 和 `storagecontract` package。
 
-```sh
-go get \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0
-go mod tidy
-```
-
-如果还直接使用 Logging 和 Kafka，在同一次升级中固定全部版本：
+同时使用父 SDK与任一独立 Module 时，必须把父 SDK原子升级到 `v0.5.0`，不能通过长期 `replace` 绕过边界：
 
 ```sh
 go get \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.4.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.2.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.5.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage@v0.1.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter@v0.1.0 \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0 \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0
 go mod tidy
 ```
 
-业务仓库不要引用可变分支。升级前应阅读[发布与版本引用](../../release.md)，并在业务仓库执行自身的格式、静态检查和测试。
+业务仓库只安装实际使用的 Module，不应因为需要一个小工具而复制上述完整命令。升级前阅读[发布与版本引用](../../release.md)，并在业务仓库执行自己的格式、静态检查、测试和部署契约验证。

@@ -5,7 +5,7 @@
 ## 1. 安装与配置
 
 ```sh
-pip install stellarmesh-storage==0.1.0
+pip install stellarmesh-storage==0.1.1
 ```
 
 ```python
