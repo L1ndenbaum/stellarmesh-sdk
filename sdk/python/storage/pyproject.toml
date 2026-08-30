@@ -13,7 +13,7 @@ dependencies = [
   "pydantic>=2.7,<3",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
   "build>=1,<2",
   "jsonschema>=4,<5",
@@ -25,6 +25,7 @@ dev = [
   "ruff>=0.6,<1",
   "types-jsonschema>=4,<5",
   "types-PyYAML>=6,<7",
+  "twine>=6,<7",
 ]
 
 [tool.setuptools.package-data]
