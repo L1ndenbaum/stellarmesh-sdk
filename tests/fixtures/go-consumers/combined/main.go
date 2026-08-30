@@ -20,7 +20,7 @@ func main() {
 		Service: "combined-gateway", Emitter: emitter{},
 	})
 	_ = gateway.WithAccessLogger(logger)
-	_ = stellarlogging.LevelInfo
+	_ = stellarlogging.Event{Kind: stellarlogging.EventKindAudit, Level: stellarlogging.LevelInfo}
 	_ = objectstorage.ErrNotFound
 	_, _ = stellarkafka.NewConnection(stellarkafka.ConnectionConfig{})
 }

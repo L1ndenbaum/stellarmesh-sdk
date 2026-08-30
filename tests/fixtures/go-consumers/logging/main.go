@@ -17,9 +17,14 @@ func main() {
 		panic(err)
 	}
 	_ = slog.New(handler)
-	if _, err := stellarlogging.NewLogger(stellarlogging.LoggerConfig{Service: "consumer", Emitter: emitter{}}); err != nil {
+	logger, err := stellarlogging.NewLogger(stellarlogging.LoggerConfig{Service: "consumer", Emitter: emitter{}})
+	if err != nil {
 		panic(err)
 	}
+	_ = logger.Audit(context.Background(), stellarlogging.LevelInfo, "role granted", "", map[string]any{
+		"action": "iam.role.grant", "outcome": "success",
+	})
+	_ = stellarlogging.Event{Kind: stellarlogging.EventKindLog, Level: stellarlogging.LevelInfo}
 	_ = stellarlogging.ClientConfig{}
 	_ = stellarlogging.NewClient
 	_ = stellarlogging.BatchIngestRequest{}

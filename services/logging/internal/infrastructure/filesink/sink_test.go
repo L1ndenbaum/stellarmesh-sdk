@@ -240,11 +240,7 @@ func TestFallbackStoreRejectsUnmarkedLiveSegmentsWithoutQuarantine(t *testing.T)
 	if err := os.MkdirAll(legacy, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	event := validEvent(t, sharedlogging.LevelInfo, "legacy")
-	payload, err := json.Marshal(event)
-	if err != nil {
-		t.Fatal(err)
-	}
+	payload := []byte(`{"event_id":"018f16b6-3f9f-7d98-a328-3eac70bd0542","timestamp":"2026-08-01T12:00:00Z","level":"AUDIT","service":"test","message":"legacy","trace_id":"","metadata":{}}`)
 	if err := os.WriteFile(filepath.Join(legacy, "legacy"+segmentSuffix), append(payload, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}

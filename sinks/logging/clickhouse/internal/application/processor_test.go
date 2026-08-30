@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -66,11 +67,12 @@ func TestProcessorInsertsValidDeadLettersInvalidThenCommitsAll(t *testing.T) {
 	messages := []Message{
 		validSourceMessage(payload, 10),
 		validSourceMessage([]byte(`{"unknown":true}`), 11),
+		validSourceMessage([]byte(`{"event_id":"018f16b6-3f9f-7d98-a328-3eac70bd0542","timestamp":"2026-08-01T12:00:00Z","level":"AUDIT","service":"test","message":"v1 audit","trace_id":"","metadata":{}}`), 12),
 	}
 	if err := processor.ProcessBatch(context.Background(), messages); err != nil {
 		t.Fatal(err)
 	}
-	if len(inserter.events) != 1 || len(deadLetters.records) != 1 || len(committer.messages) != 2 {
+	if len(inserter.events) != 1 || len(deadLetters.records) != 2 || len(committer.messages) != 3 {
 		t.Fatalf("events=%d dead_letters=%d committed=%d", len(inserter.events), len(deadLetters.records), len(committer.messages))
 	}
 	record := deadLetters.records[0]
@@ -80,6 +82,13 @@ func TestProcessorInsertsValidDeadLettersInvalidThenCommitsAll(t *testing.T) {
 	}
 	if string(decoded) != `{"unknown":true}` || record.SourceOffset != 11 {
 		t.Fatalf("dead letter = %#v", record)
+	}
+	legacy, err := base64.StdEncoding.DecodeString(deadLetters.records[1].PayloadBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(legacy), `"level":"AUDIT"`) || deadLetters.records[1].SourceOffset != 12 {
+		t.Fatalf("v1 dead letter = %#v", deadLetters.records[1])
 	}
 }
 
