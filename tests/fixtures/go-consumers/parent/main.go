@@ -1,9 +1,13 @@
 package main
 
 import (
-	sharedapi "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/envconfig"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/jsonbody"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/server"
 )
 
 func main() {
-	_ = sharedapi.Envelope{}
+	_ = envconfig.String
+	_ = jsonbody.Options{}
+	_ = server.Config{}
 }

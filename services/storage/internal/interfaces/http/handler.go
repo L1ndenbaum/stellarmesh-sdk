@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"strings"
 
-	sharedhttp "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/jsonbody"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/application"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/storagev1"
@@ -32,16 +32,16 @@ func NewHandler(registry *application.Registry, policy *storagev1.Policy, readin
 
 // HandleHealth 报告进程存活。
 func (handler *Handler) HandleHealth(w http.ResponseWriter, _ *http.Request) {
-	sharedhttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // HandleReady 报告全部 namespace 是否可访问。
 func (handler *Handler) HandleReady(w http.ResponseWriter, _ *http.Request) {
 	if handler.readiness == nil || !handler.readiness.Ready() {
-		sharedhttp.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 // HandleStat 读取对象元数据。
@@ -60,7 +60,7 @@ func (handler *Handler) HandleStat(w http.ResponseWriter, request *http.Request)
 		writeStoreError(w, err)
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, objectInfo(info))
+	writeJSON(w, http.StatusOK, objectInfo(info))
 }
 
 // HandleDelete 删除当前对象语义或指定版本。
@@ -77,7 +77,7 @@ func (handler *Handler) HandleDelete(w http.ResponseWriter, request *http.Reques
 		writeStoreError(w, err)
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, map[string]any{})
+	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 // HandlePresignGet 创建直接下载请求。
@@ -92,7 +92,7 @@ func (handler *Handler) HandlePresignGet(w http.ResponseWriter, request *http.Re
 	}
 	ttl, err := storagev1.PresignTTL(payload.ExpiresIn)
 	if err != nil {
-		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	presigned, err := store.PresignGet(request.Context(), objectstorage.PresignGetRequest{
@@ -102,7 +102,7 @@ func (handler *Handler) HandlePresignGet(w http.ResponseWriter, request *http.Re
 		writeStoreError(w, err)
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, presignedRequest(presigned))
+	writeJSON(w, http.StatusOK, presignedRequest(presigned))
 }
 
 // HandlePresignPut 创建直接上传请求。
@@ -114,18 +114,18 @@ func (handler *Handler) HandlePresignPut(w http.ResponseWriter, request *http.Re
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, "", payload.ContentType, payload.Metadata)
 	if !ok || payload.Size < 0 || payload.Size > objectstorage.MaxSinglePutBytes {
 		if ok {
-			sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+			writeError(w, http.StatusBadRequest, "invalid request")
 		}
 		return
 	}
 	checksum, valid := parseChecksum(payload.Checksum)
 	if !valid {
-		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	ttl, err := storagev1.PresignTTL(payload.ExpiresIn)
 	if err != nil {
-		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	presigned, err := store.PresignPut(request.Context(), objectstorage.PresignPutRequest{
@@ -136,7 +136,7 @@ func (handler *Handler) HandlePresignPut(w http.ResponseWriter, request *http.Re
 		writeStoreError(w, err)
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, presignedRequest(presigned))
+	writeJSON(w, http.StatusOK, presignedRequest(presigned))
 }
 
 // HandleMultipartCreate 初始化 Multipart。
@@ -151,7 +151,7 @@ func (handler *Handler) HandleMultipartCreate(w http.ResponseWriter, request *ht
 	}
 	checksum, valid := parseChecksum(payload.Checksum)
 	if !valid {
-		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	upload, err := store.CreateMultipart(request.Context(), objectstorage.CreateMultipartRequest{
@@ -161,7 +161,7 @@ func (handler *Handler) HandleMultipartCreate(w http.ResponseWriter, request *ht
 		writeStoreError(w, err)
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, storagev1.MultipartUpload{Key: upload.Key, UploadID: upload.UploadID})
+	writeJSON(w, http.StatusOK, storagev1.MultipartUpload{Key: upload.Key, UploadID: upload.UploadID})
 }
 
 // HandleMultipartPresignPart 为一个分片创建上传请求。
@@ -173,13 +173,13 @@ func (handler *Handler) HandleMultipartPresignPart(w http.ResponseWriter, reques
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, "", "", nil)
 	if !ok || payload.UploadID == "" || payload.PartNumber < storagev1.MinPartNumber || payload.PartNumber > storagev1.MaxPartNumber {
 		if ok {
-			sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+			writeError(w, http.StatusBadRequest, "invalid request")
 		}
 		return
 	}
 	ttl, err := storagev1.PresignTTL(payload.ExpiresIn)
 	if err != nil {
-		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	presigned, err := store.PresignPart(request.Context(), objectstorage.PresignPartRequest{
@@ -189,7 +189,7 @@ func (handler *Handler) HandleMultipartPresignPart(w http.ResponseWriter, reques
 		writeStoreError(w, err)
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, presignedRequest(presigned))
+	writeJSON(w, http.StatusOK, presignedRequest(presigned))
 }
 
 // HandleMultipartComplete 完成显式 Multipart。
@@ -201,7 +201,7 @@ func (handler *Handler) HandleMultipartComplete(w http.ResponseWriter, request *
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, "", "", nil)
 	if !ok || payload.UploadID == "" || len(payload.Parts) == 0 {
 		if ok {
-			sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+			writeError(w, http.StatusBadRequest, "invalid request")
 		}
 		return
 	}
@@ -214,7 +214,7 @@ func (handler *Handler) HandleMultipartComplete(w http.ResponseWriter, request *
 		writeStoreError(w, err)
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, objectInfo(info))
+	writeJSON(w, http.StatusOK, objectInfo(info))
 }
 
 // HandleMultipartAbort 中止显式 Multipart。
@@ -226,7 +226,7 @@ func (handler *Handler) HandleMultipartAbort(w http.ResponseWriter, request *htt
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, "", "", nil)
 	if !ok || payload.UploadID == "" {
 		if ok {
-			sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+			writeError(w, http.StatusBadRequest, "invalid request")
 		}
 		return
 	}
@@ -234,21 +234,21 @@ func (handler *Handler) HandleMultipartAbort(w http.ResponseWriter, request *htt
 		writeStoreError(w, err)
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, map[string]any{})
+	writeJSON(w, http.StatusOK, map[string]any{})
 }
 
 func (handler *Handler) authorize(w http.ResponseWriter, request *http.Request, namespace string, capability storagev1.Capability) bool {
 	if err := storagev1.ValidateNamespaceName(namespace); err != nil {
-		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return false
 	}
 	switch handler.policy.Authorize(request.Header.Get(storagev1.ServiceTokenHeader), namespace, capability) {
 	case storagev1.DecisionAllowed:
 		return true
 	case storagev1.DecisionUnauthenticated:
-		sharedhttp.WriteError(w, http.StatusUnauthorized, "invalid storage service token")
+		writeError(w, http.StatusUnauthorized, "invalid storage service token")
 	default:
-		sharedhttp.WriteError(w, http.StatusForbidden, "storage access forbidden")
+		writeError(w, http.StatusForbidden, "storage access forbidden")
 	}
 	return false
 }
@@ -257,18 +257,18 @@ func (handler *Handler) storeAndValidate(w http.ResponseWriter, namespaceName, k
 	store, exists := handler.registry.Store(namespaceName)
 	namespace, configured := handler.policy.Namespace(namespaceName)
 	if !exists || !configured {
-		sharedhttp.WriteError(w, http.StatusForbidden, "storage access forbidden")
+		writeError(w, http.StatusForbidden, "storage access forbidden")
 		return nil, objectstorage.Namespace{}, false
 	}
 	if err := storagev1.ValidateObjectInput(namespace, key, versionID, contentType, metadata); err != nil {
-		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return nil, objectstorage.Namespace{}, false
 	}
 	return store, namespace, true
 }
 
 func decode(w http.ResponseWriter, request *http.Request, target any) bool {
-	err := sharedhttp.DecodeJSONWithOptions(w, request, target, sharedhttp.DecodeJSONOptions{
+	err := jsonbody.Decode(w, request, target, jsonbody.Options{
 		MaxBytes: storagev1.MaxControlBodyBytes, DisallowUnknownFields: true,
 	})
 	if err == nil {
@@ -276,9 +276,9 @@ func decode(w http.ResponseWriter, request *http.Request, target any) bool {
 	}
 	var maxBytesError *http.MaxBytesError
 	if errors.As(err, &maxBytesError) {
-		sharedhttp.WriteError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
 	} else {
-		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
+		writeError(w, http.StatusBadRequest, "invalid request")
 	}
 	return false
 }
@@ -296,7 +296,7 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	case errors.Is(err, objectstorage.ErrPreconditionFailed):
 		status, message = http.StatusPreconditionFailed, "storage precondition failed"
 	}
-	sharedhttp.WriteError(w, status, message)
+	writeError(w, status, message)
 }
 
 func parseChecksum(checksum *storagev1.Checksum) (objectstorage.HeaderChecksum, bool) {

@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"sync/atomic"
 
-	sharedhttp "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -79,16 +78,16 @@ func (metrics *Metrics) ObserveOperation(operation, result string) {
 func NewRouter(metrics *Metrics) http.Handler {
 	mux := http.NewServeMux()
 	liveness := func(w http.ResponseWriter, _ *http.Request) {
-		sharedhttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	}
 	mux.HandleFunc("GET /health", liveness)
 	mux.HandleFunc("GET /health/live", liveness)
 	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, _ *http.Request) {
 		if metrics == nil || !metrics.Ready() {
-			sharedhttp.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "not_ready"})
 			return
 		}
-		sharedhttp.WriteJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 	})
 	if metrics != nil {
 		mux.Handle("GET /metrics", promhttp.HandlerFor(metrics.registry, promhttp.HandlerOpts{}))

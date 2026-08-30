@@ -3,8 +3,8 @@ package httpapi
 import (
 	"net/http"
 
-	sharedhttp "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/storagev1"
+	"github.com/go-chi/chi/v5"
 )
 
 // Monitoring 提供指标端点和有界请求计数器。
@@ -14,8 +14,8 @@ type Monitoring interface {
 }
 
 // NewRouter 连接健康端点和 fail-close 的受保护控制面路由。
-func NewRouter(handler *Handler, monitoring Monitoring) *sharedhttp.Router {
-	router := sharedhttp.NewRouter()
+func NewRouter(handler *Handler, monitoring Monitoring) *chi.Mux {
+	router := chi.NewRouter()
 	router.With(observe(monitoring, "/health")).Get("/health", handler.HandleHealth)
 	router.With(observe(monitoring, "/health/live")).Get("/health/live", handler.HandleHealth)
 	router.With(observe(monitoring, "/health/ready")).Get("/health/ready", handler.HandleReady)
@@ -44,7 +44,7 @@ func NewRouter(handler *Handler, monitoring Monitoring) *sharedhttp.Router {
 func (handler *Handler) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if handler.policy == nil || !handler.policy.Authenticate(request.Header.Get(storagev1.ServiceTokenHeader)) {
-			sharedhttp.WriteError(w, http.StatusUnauthorized, "invalid storage service token")
+			writeError(w, http.StatusUnauthorized, "invalid storage service token")
 			return
 		}
 		next.ServeHTTP(w, request)
@@ -54,7 +54,7 @@ func (handler *Handler) authenticate(next http.Handler) http.Handler {
 func (handler *Handler) requireReady(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if handler.readiness == nil || !handler.readiness.Ready() {
-			sharedhttp.WriteError(w, http.StatusServiceUnavailable, "storage unavailable")
+			writeError(w, http.StatusServiceUnavailable, "storage unavailable")
 			return
 		}
 		next.ServeHTTP(w, request)

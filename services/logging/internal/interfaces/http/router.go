@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	sharedhttp "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
+	"github.com/go-chi/chi/v5"
 )
 
 const serviceTokenHeader = "X-Logging-Service-Token"
@@ -18,8 +18,8 @@ type Monitoring interface {
 }
 
 // NewRouter 连接存活检查和带鉴权的日志接收路由。
-func NewRouter(handler *Handler, monitoring Monitoring) *sharedhttp.Router {
-	router := sharedhttp.NewRouter()
+func NewRouter(handler *Handler, monitoring Monitoring) *chi.Mux {
+	router := chi.NewRouter()
 	router.With(observe(monitoring, "/health")).Get("/health", handler.HandleHealth)
 	router.With(observe(monitoring, "/health/live")).Get("/health/live", handler.HandleHealth)
 	router.With(observe(monitoring, "/health/ready")).Get("/health/ready", handler.HandleReady)
@@ -72,12 +72,12 @@ func observe(monitoring Monitoring, route string) func(http.Handler) http.Handle
 func (handler *Handler) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if handler.authenticator == nil {
-			sharedhttp.WriteError(w, http.StatusUnauthorized, "invalid logging service token")
+			writeError(w, http.StatusUnauthorized, "invalid logging service token")
 			return
 		}
 		service, ok := handler.authenticator.Authenticate(r.Header.Get(serviceTokenHeader))
 		if !ok {
-			sharedhttp.WriteError(w, http.StatusUnauthorized, "invalid logging service token")
+			writeError(w, http.StatusUnauthorized, "invalid logging service token")
 			return
 		}
 		ctx := context.WithValue(r.Context(), authenticatedServiceKey{}, service)
