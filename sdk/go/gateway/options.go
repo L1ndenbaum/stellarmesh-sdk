@@ -50,7 +50,7 @@ func WithRoutes(routes ...Route) Option {
 // WithRouteResolver 使用项目提供的动态路由解析器。
 func WithRouteResolver(resolver RouteResolver) Option {
 	return componentOption("route_resolver", func(config *config) error {
-		if resolver == nil {
+		if isNilInterface(resolver) {
 			return errors.New("gateway route resolver is nil")
 		}
 		config.routeResolver = resolver
@@ -61,7 +61,7 @@ func WithRouteResolver(resolver RouteResolver) Option {
 // WithUpstreamResolver 使用项目提供的上游处理器解析器。
 func WithUpstreamResolver(resolver UpstreamResolver) Option {
 	return componentOption("upstream_resolver", func(config *config) error {
-		if resolver == nil {
+		if isNilInterface(resolver) {
 			return errors.New("gateway upstream resolver is nil")
 		}
 		config.upstreamResolver = resolver
@@ -80,7 +80,7 @@ func WithUpstreams(upstreams ...Upstream) Option {
 // WithTransport 覆盖内置反向代理的共享 HTTP Transport。
 func WithTransport(transport http.RoundTripper) Option {
 	return componentOption("transport", func(config *config) error {
-		if transport == nil {
+		if isNilInterface(transport) {
 			return errors.New("gateway transport is nil")
 		}
 		config.transport = transport
@@ -91,7 +91,7 @@ func WithTransport(transport http.RoundTripper) Option {
 // WithAuthenticator 启用受保护路由认证。
 func WithAuthenticator(authenticator Authenticator) Option {
 	return componentOption("authenticator", func(config *config) error {
-		if authenticator == nil {
+		if isNilInterface(authenticator) {
 			return errors.New("gateway authenticator is nil")
 		}
 		config.authenticator = authenticator
@@ -102,7 +102,7 @@ func WithAuthenticator(authenticator Authenticator) Option {
 // WithAuthorizer 启用认证后的项目授权策略。
 func WithAuthorizer(authorizer Authorizer) Option {
 	return componentOption("authorizer", func(config *config) error {
-		if authorizer == nil {
+		if isNilInterface(authorizer) {
 			return errors.New("gateway authorizer is nil")
 		}
 		config.authorizer = authorizer
@@ -113,7 +113,7 @@ func WithAuthorizer(authorizer Authorizer) Option {
 // WithBeforeProxyPolicy 启用转发前的项目策略检查。
 func WithBeforeProxyPolicy(policy BeforeProxyPolicy) Option {
 	return componentOption("before_proxy_policy", func(config *config) error {
-		if policy == nil {
+		if isNilInterface(policy) {
 			return errors.New("gateway before-proxy policy is nil")
 		}
 		config.beforeProxy = policy
@@ -124,7 +124,7 @@ func WithBeforeProxyPolicy(policy BeforeProxyPolicy) Option {
 // WithClientIPResolver 覆盖默认仅信任 RemoteAddr 的客户端地址解析器。
 func WithClientIPResolver(resolver ClientIPResolver) Option {
 	return componentOption("client_ip_resolver", func(config *config) error {
-		if resolver == nil {
+		if isNilInterface(resolver) {
 			return errors.New("gateway client IP resolver is nil")
 		}
 		config.clientIPResolver = resolver
@@ -227,7 +227,7 @@ func componentOption(name string, configure func(*config) error) Option {
 
 func rateLimiterOption(name string, limiter RateLimiter, assign func(*config, RateLimiter)) Option {
 	return componentOption(name, func(config *config) error {
-		if limiter == nil {
+		if isNilInterface(limiter) {
 			return errors.New("gateway rate limiter is nil")
 		}
 		assign(config, limiter)

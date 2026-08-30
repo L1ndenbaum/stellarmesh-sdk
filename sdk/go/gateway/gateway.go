@@ -46,7 +46,7 @@ type Gateway struct {
 func New(options ...Option) (*Gateway, error) {
 	config := config{configuredComponents: make(map[string]struct{})}
 	for index, option := range options {
-		if option == nil {
+		if isNilInterface(option) {
 			return nil, errors.New("gateway option at index " + strconv.Itoa(index) + " is nil")
 		}
 		if err := option.apply(&config); err != nil {
@@ -170,7 +170,7 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	accessState.Upstream = route.Upstream
 	r = r.WithContext(context.WithValue(r.Context(), routeContextKey, route))
 	upstream, err := gateway.upstreams.ResolveUpstream(route)
-	if err != nil || upstream == nil {
+	if err != nil || isNilInterface(upstream) {
 		if err == nil {
 			err = errors.New("gateway upstream handler is nil")
 		}
