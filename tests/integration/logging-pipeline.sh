@@ -109,7 +109,6 @@ docker run -d --name "$ingester" --network "$network" -p 127.0.0.1:0:8091 \
     -e STELLARMESH_LOGGING_KAFKA_TOPIC="$source_topic" \
     -e STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT=2s \
     -e STELLARMESH_LOGGING_KAFKA_REPLAY_INTERVAL=1s \
-    -e STELLARMESH_LOGGING_CONSOLE_COLOR=false \
     stellarmesh-logging-service:test >/dev/null
 port_mapping="$(docker port "$ingester" 8091/tcp)"
 ingester_port="${port_mapping##*:}"

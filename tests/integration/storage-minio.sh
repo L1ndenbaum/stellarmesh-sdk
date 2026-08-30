@@ -2,6 +2,7 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
+PYTHON=${STELLARMESH_STORAGE_TEST_PYTHON:-python3}
 MINIO_IMAGE='minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e'
 MC_IMAGE='minio/mc@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3'
 RUN_ID="$$"
@@ -77,7 +78,7 @@ MINIO_PORT=$(docker port "$MINIO_CONTAINER" 9000/tcp | sed -n 's/.*://p' | head 
 MINIO_PUBLIC="http://127.0.0.1:$MINIO_PORT"
 
 attempt=0
-until python3 - "$MINIO_PUBLIC" <<'PY'
+until "$PYTHON" - "$MINIO_PUBLIC" <<'PY'
 import sys
 import urllib.error
 import urllib.request
@@ -137,7 +138,7 @@ wait_ready() {
     expected=$1
     count=0
     while [ "$count" -lt 60 ]; do
-        status=$(python3 - "$SERVICE_URL" <<'PY'
+        status=$("$PYTHON" - "$SERVICE_URL" <<'PY'
 import sys
 import urllib.error
 import urllib.request
@@ -163,7 +164,7 @@ PY
 }
 
 wait_ready 200
-python3 "$ROOT/tests/integration/storage-pipeline.py" \
+"$PYTHON" "$ROOT/tests/integration/storage-pipeline.py" \
     --base-url "$SERVICE_URL" --token "$SERVICE_TOKEN" --reader-token "$READER_TOKEN"
 
 STELLARMESH_STORAGE_MINIO_INTEGRATION=1 \

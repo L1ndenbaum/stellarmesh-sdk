@@ -1,4 +1,4 @@
-FROM migrate/migrate:v4.17.1
+FROM migrate/migrate:v4.17.1@sha256:de154de4b7f9d0d751aacb1ec6023f5fc96f874eb88b65d050f761a33376aa4b
 
 COPY migrations /migrations
 
