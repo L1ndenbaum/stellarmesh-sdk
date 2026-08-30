@@ -22,7 +22,7 @@ go mod tidy
 ```sh
 go get \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.5.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.2.0 \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.1.0
 go mod tidy
 ```
@@ -181,4 +181,4 @@ if stellarkafka.IsMessageTooLarge(err) {
 4. 错误用户名、密码、ACL 或 Topic 能让 readiness fail-close，而不是退化为匿名访问；
 5. Consumer 只在业务处理达到约定持久点后提交 offset；
 6. Publisher 超时、消息过大和关闭路径均有明确指标或日志；
-7. 如果项目还依赖父 SDK或 Logging，`go.mod` 同时固定父 `v0.5.0`、Logging `v0.1.0` 和 Kafka `v0.1.0`，且没有 `ambiguous import`。
+7. 如果项目还依赖父 SDK或 Logging，`go.mod` 同时固定父 `v0.5.0`、Logging `v0.2.0` 和 Kafka `v0.1.0`，且没有 `ambiguous import`。

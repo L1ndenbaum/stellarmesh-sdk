@@ -9,7 +9,7 @@
 包发布到 PyPI 后，业务项目应固定版本：
 
 ```sh
-python -m pip install stellarmesh-logging==0.1.2
+python -m pip install stellarmesh-logging==0.2.0
 ```
 
 使用 `requirements.txt`、锁文件或项目依赖管理器时，也应保留精确版本约束。生产镜像不要直接安装可变 Git 分支。
@@ -107,11 +107,34 @@ except RuntimeError:
     logger.exception("job failed", extra={"job_id": "job-123"})
 ```
 
-Handler 支持标准库的 `%s` 延迟格式化、`exc_info`、`stack_info` 和 `extra`。它会记录 logger 名称、模块、函数与行号，把 `CRITICAL` 映射为契约中的 `ERROR`，并把名称为 `AUDIT` 的自定义级别映射为 `AUDIT`。标准 logging 方法仍返回 `None`；级别过滤、队列已满、客户端已关闭或后台发送失败都不会从业务日志调用中抛出。
+Handler 支持标准库的 `%s` 延迟格式化、`exc_info`、`stack_info` 和 `extra`。它会记录 logger 名称、模块、函数与行号，把 `CRITICAL` 映射为契约中的 `ERROR`，并且始终生成 `kind=LOG`。标准 logging 方法仍返回 `None`；级别过滤、队列已满、客户端已关闭或后台发送失败都不会从业务日志调用中抛出。
 
 metadata 会进行深度、数量、字符串长度和敏感字段处理。敏感 key 会先转小写并去除非字母数字字符，因此 `apiKey`、`api_key`、`api-key` 和大小写变体都会命中；异常对象会转成受限字符串。业务代码仍不应把 token、密码、Cookie、Authorization 或其他 Secret 主动放入日志。
 
-## 5. 传播 trace ID
+## 5. 发送审计事件
+
+审计是事件种类，不是比 `ERROR` 更高的严重级别。使用结构化门面显式生成 `kind=AUDIT`，并继续选择四个标准严重级别之一：
+
+```python
+from stellarmesh_logging import Level, get_logger
+
+audit_logger = get_logger("example.audit", client=client)
+accepted = audit_logger.audit(
+    "role granted",
+    level=Level.INFO,
+    action="iam.role.grant",
+    outcome="success",
+    actor_id="user-7",
+    resource_type="role",
+    resource_id="editor",
+)
+```
+
+`level` 是仅限关键字的参数，默认值为 `INFO`。客户端整体启用时，审计事件绕过 `minimum_level`；`enabled=False`、本地队列已满、关闭超时和远程发送失败仍会拒绝或丢弃事件。`action`、`outcome`、`actor_id`、`resource_type` 和 `resource_id` 是推荐 metadata，不是跨项目强制字段。
+
+标准库 `logging.Handler` 不会根据 logger 名称或自定义级别推断审计语义；`AUDIT` 作为 `Level` 或 `minimum_level` 都是配置错误。若项目要求业务事务与审计记录原子提交、不可变保留或 WORM 合规，本 SDK 的异步日志链路不能替代专门的事务性审计系统。
+
+## 6. 传播 trace ID
 
 `trace_id_provider` 是无参数 callable。同步项目可以从线程本地状态读取；asyncio 项目建议使用 `contextvars.ContextVar`。通过 `extra` 传入 `trace_id` 时优先使用显式值：
 
@@ -124,7 +147,7 @@ logger.info(
 
 业务 middleware 应在请求开始时设置 ContextVar，并在请求结束时 reset，避免不同请求复用错误的 trace ID。
 
-## 6. 在应用关闭时排空
+## 7. 在应用关闭时排空
 
 异步应用应在 lifespan 或 shutdown hook 中等待：
 
@@ -151,12 +174,12 @@ drained = shutdown_logging_sync(timeout=10.0)
 
 建议顺序是：停止接收请求、停止产生新日志的后台任务、排空日志客户端、退出进程。`atexit` 只提供一秒钟的最后保护，不应替代应用自己的关闭流程。
 
-## 7. 常用客户端参数
+## 8. 常用客户端参数
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
 | `enabled` | `True` | 关闭后所有事件均不入队 |
-| `minimum_level` | `INFO` | SDK 本地最低级别 |
+| `minimum_level` | `INFO` | 仅用于 `kind=LOG` 的本地最低级别；`AUDIT` 绕过该过滤 |
 | `timeout_seconds` | `7.0` | 单次 HTTP 请求超时 |
 | `queue_size` | `4096` | 本地事件队列容量 |
 | `queue_bytes` | `16MiB` | 尚未完成发送的规范化事件累计字节上限 |
@@ -174,23 +197,27 @@ drained = shutdown_logging_sync(timeout=10.0)
 
 默认 `7s` 是按服务端默认 `500ms` 聚合等待和 `5s` Kafka 发布超时预留的客户端预算。如果部署提高 `STELLARMESH_LOGGING_BATCH_FLUSH_INTERVAL` 或 `STELLARMESH_LOGGING_KAFKA_PUBLISH_TIMEOUT`，必须同步提高 `timeout_seconds`，否则客户端可能在服务端完成持久确认前超时并重试。
 
-## 8. 使用结构化日志门面
+## 9. 使用结构化日志门面
 
 需要 `audit`、`bind` 或检查事件是否成功入队时，可以继续使用 SDK 自带的结构化日志门面：
 
 ```python
-from stellarmesh_logging import get_logger
+from stellarmesh_logging import Level, get_logger
 
 structured_logger = get_logger("example.module", client=client).bind(
     component="scheduler"
 )
 accepted = structured_logger.info("isolated event", test_case="example")
-structured_logger.audit("job manually retried", operator_id="user-7")
+structured_logger.audit(
+    "job manually retried",
+    level=Level.WARNING,
+    operator_id="user-7",
+)
 ```
 
-日志门面提供 `debug`、`info`、`warning`、`error`、`audit` 和 `exception`，metadata 使用关键字参数传入，各方法返回是否成功进入本地队列。它不接收标准 logging 的 printf 风格位置参数。未设置默认客户端且没有显式传入 `client` 时，`get_logger` 会抛出 `RuntimeError`，防止配置缺失时静默丢日志。
+日志门面提供 `debug`、`info`、`warning`、`error`、`audit` 和 `exception`。普通方法生成 `kind=LOG` 并按最低级别过滤，`audit` 生成 `kind=AUDIT` 并绕过该过滤。metadata 使用关键字参数传入，各方法返回是否成功进入本地队列。它不接收标准 logging 的 printf 风格位置参数。未设置默认客户端且没有显式传入 `client` 时，`get_logger` 会抛出 `RuntimeError`，防止配置缺失时静默丢日志。
 
-## 9. 接入验证
+## 10. 接入验证
 
 在业务测试环境完成以下检查：
 
@@ -204,7 +231,13 @@ structured_logger.audit("job manually retried", operator_id="user-7")
 
 SDK 调用成功、本地队列排空、`logging-service` 持久确认和 ClickHouse 最终可查询是不同检查点，监控时不要合并为一个成功率。
 
-## 10. 升级注意事项
+## 11. 从 v1 升级到 v2
+
+`0.1.x → 0.2.0` 是不兼容升级：每个事件都新增 `kind`，删除 `Level.AUDIT`，HTTP 只使用 `/v2/log-events` 和 `/v2/log-events/batch`，Kafka 与服务端 spool 也只接受 v2。不能只升级 Python 包而继续连接 v1 服务。
+
+生产切换前必须停止 v1 producers，排空客户端、logging-service 队列、v1 Kafka lag 与 v1 spool，执行 ClickHouse `000002`，再按 sink、logging-service、producers 的顺序整体切换到 v2。回滚时也必须先排空 v2，再降级数据库并整体恢复 v1；完整操作顺序见[接入 SDK](../../sdk-integration.md)。
+
+## 12. 升级注意事项
 
 - 固定 `stellarmesh-logging` 版本并提交锁文件；
 - 升级后运行业务项目的 Ruff、mypy 和 pytest；

@@ -11,9 +11,9 @@
 - [Python 日志 SDK 接入教程](python/README.md)：对应 `sdk/python/logging` 中发布的 `stellarmesh-logging` 包；
 - [Python 对象存储 SDK 接入教程](python/storage.md)：对应 `sdk/python/storage` 中发布的 `stellarmesh-storage` 包。
 
-Go 与 Python 日志 SDK 都能在业务进程内构造规范日志事件，通过有界异步队列批量发送到 `logging-service`。独立 Go Logging Module提供标准库 `log/slog.Handler`，Python 日志包提供标准库 `logging.Handler`；已有 SDK 日志门面继续保持兼容。独立 [Gateway Module](go/gateway.md) 允许项目通过 `WithXxx` 选择路由、鉴权、限流和观测能力，安全执行顺序由 SDK 固定。
+Go 与 Python 日志 SDK 都能在业务进程内构造 Logging v2 事件，通过有界异步队列批量发送到 `logging-service`。v2 把 `kind=LOG|AUDIT` 与四个标准严重级别分开；独立 Go Logging Module提供标准库 `log/slog.Handler`，Python 日志包提供标准库 `logging.Handler`，两种标准库 Handler 都只生成普通日志，审计必须使用 SDK 的显式入口。独立 [Gateway Module](go/gateway.md) 允许项目通过 `WithXxx` 选择路由、鉴权、限流和观测能力，安全执行顺序由 SDK 固定。
 
-Gateway 默认使用标准库 `slog` 写访问日志，不包含远程日志或 Sink 语义；可选的 `sdk/go/gateway/loggingadapter` 只把通用访问记录转换为 Stellarmesh Logging Event。项目只在明确需要远程 Stellarmesh Logging 时才安装 Adapter。
+Gateway 默认使用标准库 `slog` 写访问日志，不包含远程日志或 Sink 语义；可选的 `sdk/go/gateway/loggingadapter` 只把通用访问记录转换为 `kind=LOG` 的 Stellarmesh Logging Event，不推断审计语义。项目只在明确需要远程 Stellarmesh Logging 时才安装 Adapter。
 
 独立 Go Object Storage Module适合持有项目凭据的进程内服务直接访问 S3；Python 对象存储包通过项目级 `storage-service` 获取预签名请求，内容不经过 Go 控制面。Storage v1 的公开定义位于 `contracts/storage/v1`，Go 服务实现位于 `services/storage/internal/storagev1`，不是业务项目可导入的 SDK package。独立 Kafka Module只提供连接、发布和 Topic 检查基础能力，不拥有业务 consumer group 或 offset 语义。SDK 不负责部署平台服务、创建 Bucket、配置 CORS/Policy/Lifecycle、创建 Kafka/ClickHouse 资源或执行迁移，也不读取业务项目的配置模块。
 

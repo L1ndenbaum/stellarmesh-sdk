@@ -2,6 +2,21 @@
 
 > 本文件保存旧版本拆分、失败处理和迁移背景。文中的“当前”“未发布”和版本矩阵均表示记录写入时的状态，不是现行发布指令；实际操作以[当前发布文档](../release.md)为准。
 
+## Logging v2 `0.2.0` 发布
+
+Logging v2 首次把事件用途与严重程度拆开：`kind` 只允许 `LOG`、`AUDIT`，`level` 只允许 `DEBUG`、`INFO`、`WARNING`、`ERROR`。运行时代码只支持 v2；`contracts/logging/v1` 保留为只读历史契约，不提供 HTTP、Kafka、spool 或 decoder 兼容。
+
+本次发布的制品为：
+
+- Go Logging `sdk/go/logging/v0.2.0`；
+- Gateway Logging Adapter `sdk/go/gateway/loggingadapter/v0.2.0`；
+- Python Logging `sdk/python/logging/v0.2.0`；
+- 根镜像 tag `v0.2.0`，统一生成 logging-service、storage-service、ClickHouse sink 和 migrate 四个镜像。
+
+发布顺序要求先发布 Go Logging，等待公共代理收录；再在 Adapter、logging-service 和 sink 中记录真实 checksum，提交并重新通过持续验证；随后发布 Adapter 与 Python 包，最后创建根镜像 tag。任何已经推送的 tag 都不能移动、删除或复用。
+
+业务环境迁移必须在维护窗口停止 v1 producers，排空客户端、service 队列、v1 Kafka lag 和 v1 spool，备份并执行 ClickHouse `000002`，再按 v2 sink、service、producers 的顺序切换。降级也必须先排空 v2 并整体恢复，不能只回滚单个组件。`AUDIT` 绕过客户端最低级别并优先回放，但仍可能因共享 spool 满、队列满或远程失败而丢弃，不代表合规级不可丢失审计。
+
 ## 发布边界
 
 同一个 Git commit 可以产生多类制品，但每类制品使用独立 tag，避免无关组件的版本互相阻断：

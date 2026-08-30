@@ -1,13 +1,13 @@
 # Go Logging SDK 接入教程
 
-本教程对应独立 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging`，适用于 Go 1.24 及以上版本。它包含 Logging v1 契约模型、异步 HTTP 客户端、兼容日志门面和标准库 `log/slog.Handler`，只依赖 Go 标准库，不会引入父 SDK、Gateway、AWS SDK、Redis 或 Kafka 依赖。
+本教程对应独立 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging`，适用于 Go 1.24 及以上版本。它包含 Logging v2 契约模型、异步 HTTP 客户端、结构化日志门面和标准库 `log/slog.Handler`，只依赖 Go 标准库，不会引入父 SDK、Gateway、AWS SDK、Redis 或 Kafka 依赖。
 
 ## 1. 安装固定版本
 
 正式接入应使用与 Module 目录匹配的 `sdk/go/logging/vX.Y.Z` tag：
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.2.0
 go mod tidy
 ```
 
@@ -32,13 +32,13 @@ type LoggingConfig struct {
 }
 ```
 
-- `BaseURL` 是 `logging-service` 的 HTTP 根地址，不包含 `/v1/log-events/batch`；
+- `BaseURL` 是 `logging-service` 的 HTTP 根地址，不包含 `/v2/log-events/batch`；
 - `Token` 必须来自 Secret，不得写入源码或日志；
 - `Service` 是当前进程发送日志时使用的稳定身份，必须与 token 的授权绑定一致、非空且没有首尾空白。
 
 ## 3. 创建进程级客户端和 `slog.Logger`
 
-一个业务进程通常只创建一个 `Client`。HTTP handler、后台 worker 和定时任务可以共享它，不要为每个请求创建新的后台发送线程。新项目推荐通过标准库 `log/slog` 接入；已有项目可以继续使用 SDK 原有的 `Logger`，公开 API 保持兼容。
+一个业务进程通常只创建一个 `Client`。HTTP handler、后台 worker 和定时任务可以共享它，不要为每个请求创建新的后台发送线程。普通日志推荐通过标准库 `log/slog` 接入；需要表达审计事件时使用 SDK 的显式 `Logger.Audit`，不要把审计用途伪装成自定义严重级别。
 
 ```go
 package applogging
@@ -63,6 +63,7 @@ type Config struct {
 type Runtime struct {
     Client *logging.Client
     Logger *slog.Logger
+    Audit  *logging.Logger
 }
 
 func New(config Config, fallback io.Writer) (*Runtime, error) {
@@ -96,7 +97,17 @@ func New(config Config, fallback io.Writer) (*Runtime, error) {
         _ = client.Close(closeCtx)
         return nil, fmt.Errorf("create logging slog handler: %w", err)
     }
-    return &Runtime{Client: client, Logger: slog.New(handler)}, nil
+    auditLogger, err := logging.NewLogger(logging.LoggerConfig{
+        Service: config.Service,
+        Emitter: client,
+    })
+    if err != nil {
+        closeCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+        defer cancel()
+        _ = client.Close(closeCtx)
+        return nil, fmt.Errorf("create logging audit logger: %w", err)
+    }
+    return &Runtime{Client: client, Logger: slog.New(handler), Audit: auditLogger}, nil
 }
 
 func TraceIDFromContext(context.Context) string {
@@ -120,15 +131,31 @@ func HandleOrder(ctx context.Context, logger *slog.Logger, orderID string) {
         slog.String("order_id", orderID),
         slog.String("component", "order-handler"),
     )
-    logger.Log(ctx, logging.SlogLevelAudit, "order approved", slog.String("order_id", orderID))
+}
+
+func AuditOrderApproval(ctx context.Context, logger *logging.Logger, orderID string) {
+    logger.Audit(
+        ctx,
+        logging.LevelInfo,
+        "order approved",
+        "",
+        map[string]any{
+            "action": "order.approve",
+            "outcome": "success",
+            "resource_type": "order",
+            "resource_id": orderID,
+        },
+    )
 }
 ```
 
-`SlogHandlerConfig.MinimumLevel` 的零值默认是 `INFO`。标准级别依次映射为 `DEBUG`、`INFO`、`WARNING`、`ERROR`，精确的 `logging.SlogLevelAudit` 映射为 `AUDIT`。`Enabled` 会在构造事件和清洗 metadata 以前过滤低级别记录。根级 `trace_id` attribute 优先作为事件 trace，不存在时才调用 `TraceIDProvider(ctx)`；嵌套组中的同名字段只是普通 metadata。`service` 只能来自 Handler 配置，attribute 不能覆盖服务身份。开启 `AddSource` 后，源文件和行号写入 metadata。
+`SlogHandlerConfig.MinimumLevel` 的零值默认是 `INFO`。标准级别依次映射为 `DEBUG`、`INFO`、`WARNING`、`ERROR`，并且全部生成 `kind=LOG`。`Enabled` 会在构造事件和清洗 metadata 以前过滤低级别记录。根级 `trace_id` attribute 优先作为事件 trace，不存在时才调用 `TraceIDProvider(ctx)`；嵌套组中的同名字段只是普通 metadata。`service` 只能来自 Handler 配置，attribute 不能覆盖服务身份。开启 `AddSource` 后，源文件和行号写入 metadata。
 
 Handler 只完成转换和非阻塞入队，不在日志调用栈内执行 HTTP。metadata 会经过深度、序列长度、字符串长度和敏感键处理：敏感 key 会先转小写并去除非字母数字字符，所以 `apiKey`、`api_key`、`api-key` 和大小写变体都会命中；`error` 转成受限的 `Error()` 文本；大整数不会经 `float64` 丢失精度；非有限浮点数变为 `[UNSERIALIZABLE]`。业务代码仍不应主动把 Secret 放入日志。标准 `slog` 方法没有入队布尔返回值；队列失败由客户端 `OnDrop` 或限频 fallback warning 观测。
 
-原有 `Logger` 仍提供 `Debug`、`Info`、`Warning`、`Error` 和 `Audit`，这些方法返回是否成功入队。`LoggerConfig.MinimumLevel` 的零值默认是 `DEBUG`，保持 `v0.1.0` 行为。直接构造好 `Event` 的调用方可以使用 `Client.Enqueue(event)`；兼容接口 `Emit(ctx, event)` 会调用同一入口。
+`Logger` 提供 `Debug`、`Info`、`Warning` 和 `Error`，这些方法生成 `kind=LOG` 并按 `LoggerConfig.MinimumLevel` 过滤；零值最低级别为 `DEBUG`。`Audit(ctx, level, message, traceID, metadata)` 生成 `kind=AUDIT`，其 `level` 仍只能是四个标准严重级别，并且不参与普通日志最低级别过滤。直接构造好 v2 `Event` 的调用方可以使用 `Client.Enqueue(event)`；`Emit(ctx, event)` 会调用同一入口。
+
+`kind=AUDIT` 表示事件用途，不表示它一定比 `ERROR` 更严重。客户端整体启用时，审计事件会绕过 `MinimumLevel`，但队列已满、客户端关闭、HTTP 失败或服务端持久路径不可用时仍可能被丢弃。当前链路不是事务性审计系统，也不承诺 WORM 或绝对不丢失。推荐但不强制使用 `action`、`outcome`、`actor_id`、`resource_type` 和 `resource_id` metadata，项目仍可按自己的领域增加字段。
 
 旧 `Logger` 与 `Enqueue` 的返回值含义如下：
 
@@ -192,6 +219,8 @@ func Shutdown(runtime *Runtime) {
 SDK 调用成功只表示本地入队；`logging-service` 返回 `202` 表示 Kafka 或持久 spool 已确认；ClickHouse 最终可查询是第三个独立检查点。
 
 ## 8. 升级注意事项
+
+`v0.1.0 → v0.2.0` 是不兼容升级：删除 `LevelAudit`、`SlogLevelAudit` 和旧 `Logger.Audit(ctx, message, traceID, metadata)`，事件必须携带 `kind`，HTTP 与 Kafka 只使用 v2。升级生产者前必须先按部署文档排空 v1 客户端、service 队列、Kafka lag 和 spool，并切换迁移、sink 与 service；不能把 v1 和 v2 Module、Topic 或镜像混合运行。
 
 - 固定 SDK tag，不要引用 `main`、`dev` 或未固定 commit；
 - 升级前阅读发布说明，并在测试环境执行 `go test ./...`；

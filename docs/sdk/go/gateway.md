@@ -2,7 +2,7 @@
 
 网关 SDK 是独立 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway`，适用于 Go 1.24 及以上版本。它返回标准 `http.Handler`，业务项目继续拥有 `main.go`、环境变量解析、路由表、upstream 地址和部署配置。SDK 不启动监听端口，也不提供可直接部署的公共 gateway 进程。
 
-当前 `v0.3.0` 默认通过标准库 `slog` 输出通用访问日志，不直接依赖 Stellarmesh Logging。远程 Logging 通过独立 `loggingadapter@v0.1.0` 按需接入。
+当前 Gateway Core `v0.3.0` 默认通过标准库 `slog` 输出通用访问日志，不直接依赖 Stellarmesh Logging。远程 Logging 通过独立 `loggingadapter@v0.2.0` 按需接入；Adapter `v0.2.0` 只生成 Logging v2 的 `kind=LOG`，不会从路由、身份或状态码推断审计事件。
 
 ## 安装固定版本
 
@@ -296,8 +296,8 @@ gateway.WithoutAccessLog()
 ```sh
 go get \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter@v0.1.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.1.0
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter@v0.2.0 \
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.2.0
 go mod tidy
 ```
 
@@ -322,7 +322,7 @@ handler, err := gateway.New(
 )
 ```
 
-Adapter 只调用已有 `logging.Emitter`，不创建 Client、队列、worker 或重试，也不拥有 Emitter 的关闭生命周期。logging-service、Kafka、spool、ClickHouse 和 Sink 都是 Emitter 背后可选 Logging 实现的语义，不属于 Gateway Core 或 Adapter。
+Adapter 只调用已有 `logging.Emitter`，不创建 Client、队列、worker 或重试，也不拥有 Emitter 的关闭生命周期。它把 HTTP 状态映射为 `INFO`、`WARNING` 或 `ERROR`，并始终设置 `kind=LOG`。需要记录审计事件时，业务代码应显式调用 Logging SDK 的审计入口，不能把通用网关访问日志自动升级为审计。logging-service、Kafka、spool、ClickHouse 和 Sink 都是 Emitter 背后可选 Logging 实现的语义，不属于 Gateway Core 或 Adapter。
 
 Adapter 默认不写用户 ID 和角色；需要时显式设置 `IncludeIdentity`。请求 ID 始终保留在 metadata 中，不能默认冒充分布式链路 `trace_id`；只有 `TraceIDProvider` 返回的真实链路标识才写入 Event 的 `trace_id`。Emitter 拒绝事件只产生访问日志旁路失败，不改变 HTTP 响应。
 

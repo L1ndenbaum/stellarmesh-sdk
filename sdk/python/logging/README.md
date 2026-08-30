@@ -1,9 +1,9 @@
 # stellarmesh-logging
 
-`stellarmesh-logging` 为 Python 3.11 及以上项目提供 Logging v1 严格模型、标准库 `logging.Handler`、结构化日志门面和有界异步批量 HTTP 客户端。
+`stellarmesh-logging` 为 Python 3.11 及以上项目提供 Logging v2 严格模型、标准库 `logging.Handler`、结构化日志门面和有界异步批量 HTTP 客户端。v2 使用 `kind=LOG|AUDIT` 表示事件种类，使用 `level=DEBUG|INFO|WARNING|ERROR` 表示严重程度。
 
 ```sh
-python -m pip install stellarmesh-logging==0.1.2
+python -m pip install stellarmesh-logging==0.2.0
 ```
 
 ```python
@@ -24,6 +24,22 @@ logger.info("job started", extra={"job_id": "job-123"})
 
 client.close(timeout=10.0)
 ```
+
+标准库 `StellarmeshHandler` 始终生成 `kind=LOG`。审计事件必须通过结构化门面显式产生：
+
+```python
+from stellarmesh_logging import Level, get_logger
+
+audit_logger = get_logger("example.audit", client=client)
+audit_logger.audit(
+    "role granted",
+    level=Level.INFO,
+    action="iam.role.grant",
+    outcome="success",
+)
+```
+
+`AUDIT` 会在客户端整体启用时绕过 `minimum_level`，但仍可能因为队列已满、关闭超时或远程发送失败而丢弃。它不是合规级不可丢失或 WORM 审计存储。
 
 客户端只在内存中排队日志，不提供本地持久 spool。日志调用成功只表示事件已经进入本地队列；收到 `logging-service` 的合法 `202` 后，才表示 Kafka 或服务端持久 spool 已经确认。网络结果不确定时可能产生重复事件，链路按 at-least-once 边界设计。
 

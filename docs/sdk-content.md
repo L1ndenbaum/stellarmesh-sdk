@@ -20,13 +20,14 @@
 
 | 路径 | 内容 | 发布形式 |
 | --- | --- | --- |
-| `contracts/logging/v1/` | 日志事件、DLQ v1/v2、尺寸限制、OpenAPI 和共享测试数据 | 随仓库版本发布 |
+| `contracts/logging/v2/` | 当前日志事件、DLQ、尺寸限制、OpenAPI 和共享测试数据 | 随仓库版本发布 |
+| `contracts/logging/v1/` | 只读历史日志契约；运行时代码不再解析或发送 | 随仓库历史保留 |
 | `contracts/storage/v1/` | 对象存储控制面 OpenAPI、访问配置 Schema、统一限制和共享测试数据 | 随仓库版本发布 |
 | `sdk/go/` | 标准库实现的环境配置、JSON 请求解码和 HTTP server 基础能力 | Go module |
 | `sdk/go/objectstorage/` | namespace 绑定的对象模型、接口与 S3/S3-compatible 适配器 | 独立 Go module |
 | `sdk/go/gateway/` | 声明式 Gateway、JWT 认证、Redis 限流和旁路观测 | 独立 Go module |
 | `sdk/go/gateway/loggingadapter/` | Gateway 到 Stellarmesh Logging 的可选访问日志适配器 | 独立 Go module |
-| `sdk/go/logging/` | Logging v1 模型、校验、异步客户端和 `slog.Handler` | 独立 Go module |
+| `sdk/go/logging/` | Logging v2 模型、校验、异步客户端和 `slog.Handler` | 独立 Go module |
 | `sdk/go/mq/kafka/` | Kafka 连接、Publisher、Topic 检查与 TLS/SASL 配置 | 独立 Go module |
 | `sdk/python/logging/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | `stellarmesh-logging` Python package |
 | `sdk/python/storage/` | Python 对象存储同步与异步客户端 | `stellarmesh-storage` Python package |
@@ -46,7 +47,7 @@
 
 迁移镜像与服务镜像分开，目的不是形成新的安全边界，而是让外部编排器能够用迁移身份一次性运行固定 digest 的迁移，并确保迁移凭据不会进入常驻容器。
 
-## 日志协议 v1
+## 日志协议 v2
 
 所有语言和服务共享同一个 `LogEvent`：
 
@@ -54,15 +55,18 @@
 | --- | --- | --- |
 | `event_id` | UUID 字符串 | 事件唯一标识；客户端未提供时生成 |
 | `timestamp` | RFC 3339 时间 | 统一转换为 UTC |
-| `level` | 枚举 | `DEBUG`、`INFO`、`WARNING`、`ERROR`、`AUDIT` |
+| `kind` | 枚举 | `LOG` 或 `AUDIT`，表示事件用途 |
+| `level` | 枚举 | `DEBUG`、`INFO`、`WARNING`、`ERROR`，表示严重程度 |
 | `service` | 非空且已去除首尾空白的字符串 | 业务服务稳定标识 |
 | `message` | 非空字符串 | 日志消息 |
 | `trace_id` | 字符串 | 可由业务显式提供或通过 provider 注入 |
 | `metadata` | JSON 对象 | 扩展字段；SDK 会转换不安全或不可序列化的值 |
 
-wire payload 必须显式包含以上全部字段。`timestamp` 使用规范 RFC 3339 形式，UTC 后缀必须写为大写 `Z`，JSON 中不接受 `NaN` 或无穷值；`level` 只接受规范的大写值；`service` 必须非空且已经去除首尾空白，避免认证身份存在多个视觉等价写法；`message` 只要求去除空白后非空，允许保留首尾空白和换行。SDK 的调用方构造器仍可填充默认字段并把 `WARN` 归一化为 `WARNING`，严格 wire decoder 不接受省略字段或非规范枚举。HTTP 单条与批量入口、Go/Python decoder 和 sink 共用相同的严格事件约束。
+wire payload 必须显式包含以上全部字段。`timestamp` 使用规范 RFC 3339 形式，UTC 后缀必须写为大写 `Z`，JSON 中不接受 `NaN` 或无穷值；`kind` 与 `level` 只接受规范大写值，`level=AUDIT` 无效；`service` 必须非空且已经去除首尾空白，避免认证身份存在多个视觉等价写法；`message` 只要求去除空白后非空，允许保留首尾空白和换行。SDK 的调用方构造器仍可填充默认字段并把 `WARN` 归一化为 `WARNING`，严格 wire decoder 不接受省略字段或非规范枚举。HTTP 单条与批量入口、Go/Python decoder 和 sink 共用相同的严格事件约束。
 
-HTTP 接口为 `/v1/log-events` 和 `/v1/log-events/batch`，鉴权头为 `X-Logging-Service-Token`。Kafka 协议的默认 Topic 是 `stellarmesh.logging.events.v1`。这是规范默认值，不表示运行时可以自动创建 Topic。单条规范事件的紧凑 JSON 最大为 `900KiB`，HTTP body 与 Kafka 完整消息最大为 `1MiB`，应用层 Kafka key/value 预算为 `960KiB`，剩余空间保留给协议封装。Kafka 分区键在存在 `trace_id` 时使用其 SHA-256 摘要，否则使用 `event_id`；这样既保留同一 trace 的稳定分区，也不会因超长 trace 重复占用 key 而让已确认事件无法发布。
+严重程度和事件种类互相独立：普通 `LOG` 按客户端 `minimum_level` 过滤，客户端整体启用时 `AUDIT` 绕过该过滤，但仍可能因本地队列满、关闭超时或远程失败而丢弃。审计 metadata 推荐使用 `action`、`outcome`、`actor_id`、`resource_type` 和 `resource_id`，这些字段不是跨项目硬约束。当前链路不提供业务事务原子性、WORM 或合规级不可丢失承诺。
+
+HTTP 接口为 `/v2/log-events` 和 `/v2/log-events/batch`，鉴权头为 `X-Logging-Service-Token`。Kafka 默认 Topic 是 `stellarmesh.logging.events.v2`，DLQ 默认 Topic 是 `stellarmesh.logging.events.v2.dlq`。这是规范默认值，不表示运行时可以自动创建 Topic。单条规范事件的紧凑 JSON 最大为 `900KiB`，HTTP body 与 Kafka 完整消息最大为 `1MiB`，应用层 Kafka key/value 预算为 `960KiB`，剩余空间保留给协议封装。Kafka 分区键在存在 `trace_id` 时使用其 SHA-256 摘要，否则使用 `event_id`；这样既保留同一 trace 的稳定分区，也不会因超长 trace 重复占用 key 而让已确认事件无法发布。
 
 HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已经原子提交到接收服务的持久 spool；它不表示 ClickHouse 已写入。队列已满返回 `503`，请求体、单条事件或批量事件数超限返回 `413`，请求或事件无效返回 `400`，令牌无效返回 `401`，token 与事件 `service` 不匹配返回 `403`。
 
@@ -84,7 +88,7 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 
 `sdk/go/gateway/loggingadapter` 是独立嵌套 Module，只依赖 Gateway 和轻量 Logging Module。它把 `gateway.AccessLog` 转成 Stellarmesh Logging Event，但不创建远程客户端、不拥有 Emitter 生命周期，也不定义 logging-service、Kafka、spool、ClickHouse 或 Sink 行为。
 
-`sdk/go/logging` 是只依赖 Go 标准库的独立轻量 Module，提供 Logging v1 协议模型、严格校验、元数据清洗、异步批量 HTTP 客户端、标准 `slog.Handler` 和兼容日志门面。只使用日志能力的项目不需要引入父 SDK及其 Gateway、AWS 或 Redis 依赖。完整接入方式见 [Go Logging SDK](sdk/go/logging.md)。
+`sdk/go/logging` 是只依赖 Go 标准库的独立轻量 Module，提供 Logging v2 协议模型、严格校验、元数据清洗、异步批量 HTTP 客户端、标准 `slog.Handler` 和结构化日志门面。只使用日志能力的项目不需要引入父 SDK及其 Gateway、AWS 或 Redis 依赖。完整接入方式见 [Go Logging SDK](sdk/go/logging.md)。
 
 `sdk/go/mq/kafka` 是独立的轻量 Module，提供显式 Topic、并行 Topic 检查、Hash 分区且要求全副本确认的 Publisher，以及 `PLAINTEXT`、TLS、mTLS、SASL/PLAIN、SCRAM-SHA-256 和 SCRAM-SHA-512 配置。Consumer 继续由业务项目通过 `Connection.Dialer()` 构造 `kafka-go.Reader`，自行拥有 consumer group、offset、提交和重试语义。完整接入方式见 [Go Kafka SDK](sdk/go/kafka.md)。
 
@@ -105,7 +109,7 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 - trace provider、drop handler、日志级别过滤和元数据清洗；
 - 协议编码与解码函数及 `py.typed` 类型声明。
 
-Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业务项目的配置模块、Web 框架或请求上下文。`StellarmeshHandler` 只把标准 `LogRecord` 转成规范事件，不创建控制台输出、额外队列或重试线程；远程最低级别仍由 `ClientConfig.minimum_level` 统一过滤。业务项目通过构造参数或 provider 注入服务名、令牌和 trace id。provider 与 drop handler 的异常不会传播到业务调用方；worker 具有明确的失败状态，队列的事件数和累计字节均有上限，并提供 best-effort 进程退出排空兜底。
+Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业务项目的配置模块、Web 框架或请求上下文。`StellarmeshHandler` 只把标准 `LogRecord` 转成 `kind=LOG` 的规范事件，不创建控制台输出、额外队列或重试线程；远程最低级别只过滤普通日志，审计事件必须通过结构化门面显式生成。业务项目通过构造参数或 provider 注入服务名、令牌和 trace id。provider 与 drop handler 的异常不会传播到业务调用方；worker 具有明确的失败状态，队列的事件数和累计字节均有上限，并提供 best-effort 进程退出排空兜底。
 
 独立发布的 `stellarmesh-storage` 包提供严格 Pydantic 模型、同步 `Client` 和异步 `AsyncClient`。它只向项目级 `storage-service` 发送控制面请求，通过预签名 URL 让对象字节直接在客户端与 S3 或 MinIO 之间传输。service token 不会进入数据面请求；单次上传超过 5 GiB 时明确要求调用方管理 Multipart，不在客户端隐藏 UploadID 和 Part 状态；文件下载使用同目录临时文件并在成功后原子替换目标。完整用法见 [Python 对象存储 SDK](sdk/python/storage.md)。
 
@@ -141,7 +145,9 @@ Python 或其他客户端
 
 正常批次先由 Kafka 全同步副本确认；Kafka 发布失败时，批次先写入有总容量上限的本地分段 spool。只有其中一条持久化路径成功后，事件副本才进入有事件数和字节数双重上限的异步控制台队列。控制台按事件输出紧凑单行 JSON，writer 阻塞、编码失败或队列满只丢弃控制台副本，不影响 Kafka、spool 或已经返回的 HTTP 结果。
 
-spool 后台按段定期重放。`ERROR` 和 `AUDIT` 进入高优先级分段，其他级别进入普通分段；每轮先尝试高优先级，但其失败不会阻止普通分段获得尝试。本实现没有为 priority 预留独立容量，因此普通日志已经占满共同 spool 时，新的 `ERROR` 或 `AUDIT` 仍可能无法落盘；容量告警和生产日志级别过滤仍是必要的保护。一个接收批次先完整写入 `.staging/` 并执行 `fsync`，再通过目录重命名一次提交到 `batches/`，因此不会暴露只包含部分优先级或部分分段的批次。升级时仍会读取旧版本 `regular/` 和 `priority/` 中的 `.ready.jsonl`；这项兼容不包括业务项目自行实现的其他 JSONL 格式。损坏或不兼容的整个 segment 会连同原因元数据移入持久 `quarantine/`；publisher 判定为永久失败时，回放会把失败范围缩小到单条，只隔离不可发布记录并继续发布同段正常记录。容量账本会为每个 live segment 预留等同自身大小的隔离副本空间和 `64KiB` 元数据空间，使原文件、隔离记录和元数据并存的瞬时状态仍受同一硬上限约束；配置容量因此大于业务事件的净可用容量。隔离数据计入 spool 容量并等待人工处置，不会自动删除。暂时失败时保留原 segment，因此 Kafka 在中途恢复时允许出现重复事件，不能把这条链路理解为 exactly-once。数据目录必须由业务部署持久化，但目录挂载方式由业务项目管理。
+spool 后台按段定期重放。`kind=AUDIT` 或 `level=ERROR` 的事件进入高优先级分段，其他普通日志进入 regular；每轮先尝试高优先级，但其失败不会阻止 regular 获得尝试。本实现没有为 priority 预留独立容量，因此普通日志已经占满共同 spool 时，新的审计或错误事件仍可能无法落盘；容量告警和生产日志级别过滤仍是必要保护。一个接收批次先完整写入 `.staging/` 并执行 `fsync`，再通过目录重命名一次提交到 `batches/`，不会暴露只包含部分优先级或部分分段的批次。
+
+v2 spool 根目录使用内容为 `stellarmesh-logging-spool-v2` 的 `FORMAT` 标记。空目录会原子初始化标记，已有 v2 标记正常恢复；错误标记，或没有标记但存在 live segment 的目录会让服务启动失败。v1 spool 必须在升级前排空，或者由运维整体移出数据目录；服务不会把合法 v1 segment 误判为损坏并送入 quarantine。v2 中真正损坏或不可发布的 segment 仍按现有隔离流程处理：永久失败时递归缩小到单条，正常记录继续发布；容量账本为 live segment 的隔离副本和元数据预留空间，隔离数据计入总容量且不自动删除。暂时失败保留原 segment，因此 Kafka 中途恢复时允许重复事件，不能把链路理解为 exactly-once。
 
 接收队列同时限制尚未获得持久确认的事件数和规范化 JSON 字节数，不按 HTTP 请求数限制；发布批次也同时受事件数和字节数约束。请求进入队列后会等待当前批次由 Kafka 全部同步副本确认，或在 Kafka 失败时由本地 spool 原子提交；只有满足其中一项才返回 `202`，两者均失败则返回 `503`。客户端请求提前取消不会撤销已经入队的事件，客户端重试可能产生重复。队列已满、服务关闭或持久路径均不可用时，服务会通过 `503` 或 readiness 暴露背压。`/health/live` 只判断进程存活，`/health/ready` 表示服务最近一次确认仍能可靠转交或缓冲新事件；后台 Kafka 检查并行探测去重后的 broker，任一 broker 能访问目标 Topic 即成功，并可在空 spool 时恢复就绪状态。后续请求也会重新探测持久路径。`/metrics` 暴露有界标签的 Prometheus 指标，包括控制台副本的 `emitted`、`dropped`、`failed` 结果；`/health` 保留为存活检查兼容入口。
 
@@ -151,9 +157,11 @@ sink 启动时检查源 Topic、DLQ Topic 和 ClickHouse 运行时凭据。独�
 
 ## ClickHouse Schema 与迁移
 
-表名固定为 `log_events`，包含 `event_id`、`timestamp`、`level`、`service`、`message`、`trace_id`、`metadata_json` 和 `ingested_at` 八列，使用 `ReplacingMergeTree(ingested_at)`，按月份分区并以 `event_id` 排序。
+表名固定为 `log_events`。revision 2 在原有列上新增 `kind LowCardinality(String)`；历史 `level=AUDIT` 行迁移为 `kind=AUDIT, level=INFO`，其他历史行迁移为 `kind=LOG`。表继续使用 `ReplacingMergeTree(ingested_at)`，按月份分区并以 `event_id` 排序。
 
 本仓库拥有表、字段、引擎和后续 Schema 演进；`server-infrastructure` 拥有 ClickHouse database、迁移身份、运行时身份和授权。迁移镜像可以从空 database 执行，也可以由外部编排器指定 revision。常驻接收服务与 sink 不包含迁移命令，也不应获得 DDL 权限。
+
+revision 1 到 2 以及 2 到 1 都会执行同步 mutation，可能扫描并改写历史分区。生产操作前必须备份，检查表大小、分区和 `distinct level`；未知历史 `level` 或 `kind` 会让迁移 fail-close。v2 sink 与 service 不能在 migration 失败后继续发布。
 
 生产发布顺序应为：
 
@@ -171,9 +179,9 @@ resources plan/apply
 
 ## 版本兼容规则
 
-- 协议目录的 `v1` 是消息兼容边界；新增可选字段必须同时更新契约与四方测试。
+- `contracts/logging/v2` 是当前日志消息兼容边界；`contracts/logging/v1` 只读保留，运行时不提供 v1 decoder、HTTP、Kafka 或 spool 兼容。
 - Storage v1 的 OpenAPI、访问配置 Schema、Go 服务和 Python 客户端必须同步更新共享限制与 testdata。
-- DLQ 记录是独立的 v1 协议，不得直接投回正常事件 Topic；修复并重放前必须显式解码 `payload_base64`、校验来源坐标并经过审计。
+- DLQ 的 `schema_version` 表示完整载荷或摘要载荷形式，不表示 LogEvent 协议版本。DLQ 记录不得直接投回正常事件 Topic；修复并重放前必须显式解码 `payload_base64`、校验来源坐标并经过审计。
 - 删除字段、改变含义或收紧校验属于破坏性变化，应创建新的协议版本与 Topic。
 - Go SDK、两个 Python 包、接收服务、storage-service、sink 与迁移镜像应使用同一仓库 commit 构建。
 - 父 Go SDK与独立 Gateway、Logging、Kafka、Object Storage Module使用各自版本；历史父版本包含同 import path 时必须原子升级，不能用长期 `replace` 绕过 `ambiguous import`。
