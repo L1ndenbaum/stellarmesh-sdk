@@ -18,7 +18,7 @@ jobs:
       artifact: ${{ steps.component.outputs.artifact }}
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
 
       - name: 选择待发布组件
         id: component
@@ -29,13 +29,11 @@ jobs:
               package_path="sdk/python/logging"
               distribution="stellarmesh-logging"
               tag_version="${GITHUB_REF_NAME#sdk/python/logging/v}"
-              check_paths="src tests"
               ;;
             sdk/python/storage/v*.*.*)
               package_path="sdk/python/storage"
               distribution="stellarmesh-storage"
               tag_version="${GITHUB_REF_NAME#sdk/python/storage/v}"
-              check_paths="."
               ;;
             *)
               echo "不支持的 Python 组件 tag：$GITHUB_REF_NAME" >&2
@@ -45,15 +43,19 @@ jobs:
           echo "package_path=$package_path" >> "$GITHUB_OUTPUT"
           echo "distribution=$distribution" >> "$GITHUB_OUTPUT"
           echo "tag_version=$tag_version" >> "$GITHUB_OUTPUT"
-          echo "check_paths=$check_paths" >> "$GITHUB_OUTPUT"
           echo "artifact=${distribution}-distributions" >> "$GITHUB_OUTPUT"
 
       - name: 安装 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: ${{ steps.component.outputs.package_path }}/pyproject.toml
+
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          version: "0.12.5"
+          enable-cache: true
+          cache-dependency-glob: ${{ steps.component.outputs.package_path }}/uv.lock
 
       - name: 校验 tag 与包版本
         shell: bash
@@ -71,40 +73,37 @@ jobs:
               print(tomllib.load(stream)["project"]["version"])
           PY
           )"
-          if [[ "$TAG_VERSION" != "$package_version" ]]; then
+          if [ "$TAG_VERSION" != "$package_version" ]; then
             echo "tag 版本 $TAG_VERSION 与 Python 包版本 $package_version 不一致" >&2
             exit 1
           fi
 
-      - name: 安装构建和检查依赖
-        env:
-          PACKAGE_PATH: ${{ steps.component.outputs.package_path }}
-        run: >-
-          python -m pip install
-          -e "${PACKAGE_PATH}[dev]"
-          'build>=1,<2'
-          'twine>=5,<7'
-
-      - name: 验证 Python 包
-        working-directory: ${{ steps.component.outputs.package_path }}
-        env:
-          CHECK_PATHS: ${{ steps.component.outputs.check_paths }}
-        run: |
-          read -r -a check_paths <<< "$CHECK_PATHS"
-          python -m ruff check "${check_paths[@]}"
-          python -m ruff format --check "${check_paths[@]}"
-          python -m mypy "${check_paths[@]}"
-          python -m pytest
-
-      - name: 构建发布制品
+      - name: 冻结同步并验证 Python 包
+        shell: bash
         env:
           PACKAGE_PATH: ${{ steps.component.outputs.package_path }}
         run: |
-          python -m build "$PACKAGE_PATH" --outdir dist
-          python -m twine check dist/*
+          uv sync --project "$PACKAGE_PATH" --frozen
+          uv lock --project "$PACKAGE_PATH" --check
+          uv run --project "$PACKAGE_PATH" --frozen ruff check "$PACKAGE_PATH"
+          uv run --project "$PACKAGE_PATH" --frozen ruff format --check "$PACKAGE_PATH"
+          uv run --project "$PACKAGE_PATH" --frozen mypy "$PACKAGE_PATH"
+          (
+            cd "$PACKAGE_PATH"
+            uv run --frozen pytest
+          )
+          uv pip check --python "$PACKAGE_PATH/.venv/bin/python"
+
+      - name: 构建并检查发布制品
+        shell: bash
+        env:
+          PACKAGE_PATH: ${{ steps.component.outputs.package_path }}
+        run: |
+          uv build --project "$PACKAGE_PATH" --out-dir dist
+          uv run --project "$PACKAGE_PATH" --frozen twine check dist/*
 
       - name: 上传发布制品
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ steps.component.outputs.artifact }}
           path: dist/*
@@ -122,13 +121,13 @@ jobs:
       id-token: write
     steps:
       - name: 下载发布制品
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: dist
 
       - name: 发布到 TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
           repository-url: https://test.pypi.org/legacy/
           packages-dir: dist/
@@ -146,12 +145,12 @@ jobs:
       id-token: write
     steps:
       - name: 下载发布制品
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ needs.build.outputs.artifact }}
           path: dist
 
       - name: 发布到 PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
           packages-dir: dist/

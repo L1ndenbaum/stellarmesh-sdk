@@ -198,6 +198,11 @@ run_local() {
 resolve_public_component() {
 	tag=$1
 	case "$tag" in
+		sdk/go/gateway/loggingadapter/v*.*.*)
+			component=loggingadapter
+			module_path=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter
+			module_version=${tag#sdk/go/gateway/loggingadapter/}
+			;;
 		sdk/go/gateway/v*.*.*)
 			component=gateway
 			module_path=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway
