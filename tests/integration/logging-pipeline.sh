@@ -52,6 +52,16 @@ wait_until() {
     done
 }
 
+require_equal() {
+    label="$1"
+    expected="$2"
+    actual="$3"
+    if [ "$actual" != "$expected" ]; then
+        echo "$label: 期望 $expected，实际 $actual" >&2
+        return 1
+    fi
+}
+
 clickhouse_has_event() {
     result="$(docker exec "$clickhouse" clickhouse-client --database logging --query "SELECT kind, level FROM log_events WHERE event_id = '$event_id' FORMAT TSV")"
     [ "$result" = "LOG	INFO" ]
@@ -217,15 +227,19 @@ status="$(curl --max-time 10 -sS -o /dev/null -w '%{http_code}' -X POST "http://
 [ "$status" = '202' ]
 wait_until 'Kafka 中断事件进入 spool' spool_has_segments
 
-docker exec "$ingester" chmod 500 /var/lib/stellarmesh-logging/spool/.staging
+docker exec --user root "$ingester" chmod 500 /var/lib/stellarmesh-logging/spool/.staging
+if docker exec --user appuser "$ingester" test -w /var/lib/stellarmesh-logging/spool/.staging; then
+    echo 'spool 故障注入失败：appuser 仍可写入 staging 目录' >&2
+    exit 1
+fi
 status="$(curl --max-time 10 -sS -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$ingester_port/v2/log-events" \
     -H 'Content-Type: application/json' \
     -H "X-Logging-Service-Token: $service_token" \
     --data "{\"event\":{\"event_id\":\"88888888-8888-4888-8888-888888888888\",\"timestamp\":\"2026-08-01T12:00:03Z\",\"kind\":\"LOG\",\"level\":\"ERROR\",\"service\":\"integration-service\",\"message\":\"durability unavailable\",\"trace_id\":\"\",\"metadata\":{}}}")"
-[ "$status" = '503' ]
+require_equal '持久化路径不可用时的写入状态' '503' "$status"
 status="$(curl --max-time 10 -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$ingester_port/health/ready")"
-[ "$status" = '503' ]
-docker exec "$ingester" chmod 700 /var/lib/stellarmesh-logging/spool/.staging
+require_equal '持久化路径不可用时的 readiness 状态' '503' "$status"
+docker exec --user root "$ingester" chmod 700 /var/lib/stellarmesh-logging/spool/.staging
 
 docker start "$kafka" >/dev/null
 wait_until 'Kafka 恢复' docker exec "$kafka" rpk cluster health --exit-when-healthy
