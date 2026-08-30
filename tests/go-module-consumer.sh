@@ -53,6 +53,10 @@ run_local_consumer() {
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.0.0
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go=../sdk-go
 				;;
+			objectstorage)
+				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage@v0.0.0
+				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage=../objectstorage-sdk
+				;;
 			kafka)
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.0.0
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka=../kafka-sdk
@@ -63,11 +67,13 @@ run_local_consumer() {
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter@v0.0.0
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.0.0
 				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka@v0.0.0
+				go mod edit -require=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage@v0.0.0
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go=../sdk-go
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway=../gateway-sdk
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter=../loggingadapter-sdk
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging=../logging-sdk
 				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka=../kafka-sdk
+				go mod edit -replace=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage=../objectstorage-sdk
 				;;
 			*)
 				echo "不允许的本地 Go Module 组件: $component" >&2
@@ -100,6 +106,14 @@ run_local_consumer() {
 				exit 1
 			fi
 		fi
+		if [ "$component" = "objectstorage" ]; then
+			module_graph=$(GOWORK=off go list -m all)
+			if printf '%s\n' "$module_graph" | grep -Eq \
+				'^github\.com/L1ndenbaum/stellarmesh-sdk/sdk/go v|sdk/go/gateway|sdk/go/logging|sdk/go/mq/kafka|go-chi/chi|golang-jwt|redis/go-redis|segmentio/kafka-go'; then
+				echo "Object Storage 消费者引入了父 SDK、Gateway、Logging、Chi 或 Kafka 依赖" >&2
+				exit 1
+			fi
+		fi
 	)
 }
 
@@ -112,6 +126,7 @@ run_local() {
 	mv "$temporary_root/gateway-sdk/loggingadapter" "$temporary_root/loggingadapter-sdk"
 	mv "$temporary_root/sdk-go/logging" "$temporary_root/logging-sdk"
 	mv "$temporary_root/sdk-go/mq/kafka" "$temporary_root/kafka-sdk"
+	mv "$temporary_root/sdk-go/objectstorage" "$temporary_root/objectstorage-sdk"
 
 	(
 		cd "$temporary_root/gateway-sdk"
@@ -149,10 +164,24 @@ run_local() {
 		GOWORK=off go test ./...
 	)
 	(
+		cd "$temporary_root/objectstorage-sdk"
+		GOWORK=off go test ./...
+		module_graph=$(GOWORK=off go list -m all)
+		if printf '%s\n' "$module_graph" | grep -Eq \
+			'^github\.com/L1ndenbaum/stellarmesh-sdk/sdk/go v|sdk/go/gateway|sdk/go/logging|sdk/go/mq/kafka|go-chi/chi|golang-jwt|redis/go-redis|segmentio/kafka-go'; then
+			echo "Object Storage Module 引入了父 SDK、Gateway、Logging、Chi 或 Kafka 依赖" >&2
+			exit 1
+		fi
+	)
+	(
 		cd "$temporary_root/sdk-go"
 		GOWORK=off go test ./...
 		if GOWORK=off go list -m all | grep -q '^github.com/segmentio/kafka-go '; then
 			echo "父 SDK 不应包含 kafka-go" >&2
+			exit 1
+		fi
+		if GOWORK=off go list -m all | grep -Eq 'aws-sdk-go-v2|aws/smithy-go'; then
+			echo "父 SDK 不应包含 AWS 或 Smithy 依赖" >&2
 			exit 1
 		fi
 	)
@@ -162,6 +191,7 @@ run_local() {
 	run_local_consumer logging "$temporary_root"
 	run_local_consumer parent "$temporary_root"
 	run_local_consumer kafka "$temporary_root"
+	run_local_consumer objectstorage "$temporary_root"
 	run_local_consumer combined "$temporary_root"
 }
 
@@ -182,6 +212,11 @@ resolve_public_component() {
 			component=kafka
 			module_path=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka
 			module_version=${tag#sdk/go/mq/kafka/}
+			;;
+		sdk/go/objectstorage/v*.*.*)
+			component=objectstorage
+			module_path=github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage
+			module_version=${tag#sdk/go/objectstorage/}
 			;;
 		sdk/go/v*.*.*)
 			component=parent
