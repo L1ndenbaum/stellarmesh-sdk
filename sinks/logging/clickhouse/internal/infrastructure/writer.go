@@ -110,7 +110,7 @@ func (writer *Writer) InsertEvents(ctx context.Context, events []sharedlogging.E
 			return err
 		}
 		if err := encoder.Encode(logRow{
-			EventID: event.EventID, Timestamp: formatTime(event.Timestamp), Level: string(event.Level),
+			EventID: event.EventID, Timestamp: formatTime(event.Timestamp), Kind: string(event.Kind), Level: string(event.Level),
 			Service: event.Service, Message: event.Message, TraceID: event.TraceID,
 			MetadataJSON: string(metadata), IngestedAt: formatTime(writer.now()),
 		}); err != nil {
@@ -176,6 +176,7 @@ func formatTime(value time.Time) string {
 type logRow struct {
 	EventID      string `json:"event_id"`
 	Timestamp    string `json:"timestamp"`
+	Kind         string `json:"kind"`
 	Level        string `json:"level"`
 	Service      string `json:"service"`
 	Message      string `json:"message"`

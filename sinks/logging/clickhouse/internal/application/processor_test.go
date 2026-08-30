@@ -165,7 +165,7 @@ func newTestProcessor(
 	processor, err := NewProcessor(ProcessorConfig{
 		Inserter: inserter, DeadLetters: deadLetters, Committer: committer,
 		Now:                   func() time.Time { return time.Date(2026, 8, 1, 12, 0, 1, 0, time.UTC) },
-		MaxSourceMessageBytes: sharedlogging.MaxKafkaMessageBytesV1,
+		MaxSourceMessageBytes: sharedlogging.MaxKafkaMessageBytesV2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func newTestProcessor(
 
 func validSourceMessage(payload []byte, offset int64) Message {
 	return Message{
-		Topic: sharedlogging.TopicV1, Partition: 1, Offset: offset,
+		Topic: sharedlogging.TopicV2, Partition: 1, Offset: offset,
 		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
 		Key:       []byte("trace-123"), Value: payload,
 	}
@@ -188,7 +188,7 @@ func validEvent(t *testing.T) sharedlogging.Event {
 		t.Fatal(err)
 	}
 	return sharedlogging.Event{
-		EventID: id, Timestamp: time.Now(), Level: sharedlogging.LevelInfo,
+		EventID: id, Timestamp: time.Now(), Kind: sharedlogging.EventKindLog, Level: sharedlogging.LevelInfo,
 		Service: "test", Message: "event", Metadata: map[string]any{},
 	}
 }

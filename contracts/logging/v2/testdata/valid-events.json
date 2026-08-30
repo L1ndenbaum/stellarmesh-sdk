@@ -1,0 +1,72 @@
+[
+  {
+    "event_id": "00000000-0000-4000-8000-000000000001",
+    "timestamp": "2026-08-01T12:00:00Z",
+    "kind": "LOG",
+    "level": "DEBUG",
+    "service": "example-backend",
+    "message": "debug details",
+    "trace_id": "request-1",
+    "metadata": {}
+  },
+  {
+    "event_id": "00000000-0000-4000-8000-000000000002",
+    "timestamp": "2026-08-01T12:00:01Z",
+    "kind": "LOG",
+    "level": "INFO",
+    "service": "example-backend",
+    "message": "request completed",
+    "trace_id": "request-1",
+    "metadata": {"duration_ms": 12}
+  },
+  {
+    "event_id": "00000000-0000-4000-8000-000000000003",
+    "timestamp": "2026-08-01T12:00:02Z",
+    "kind": "LOG",
+    "level": "WARNING",
+    "service": "example-backend",
+    "message": "request slowed",
+    "trace_id": "request-1",
+    "metadata": {}
+  },
+  {
+    "event_id": "00000000-0000-4000-8000-000000000004",
+    "timestamp": "2026-08-01T12:00:03Z",
+    "kind": "LOG",
+    "level": "ERROR",
+    "service": "example-backend",
+    "message": "request failed",
+    "trace_id": "request-1",
+    "metadata": {}
+  },
+  {
+    "event_id": "00000000-0000-4000-8000-000000000005",
+    "timestamp": "2026-08-01T12:00:04Z",
+    "kind": "AUDIT",
+    "level": "INFO",
+    "service": "example-backend",
+    "message": "role granted",
+    "trace_id": "request-1",
+    "metadata": {"action": "iam.role.grant", "outcome": "success"}
+  },
+  {
+    "event_id": "00000000-0000-4000-8000-000000000006",
+    "timestamp": "2026-08-01T12:00:05Z",
+    "kind": "AUDIT",
+    "level": "WARNING",
+    "service": "example-backend",
+    "message": "policy override requested",
+    "trace_id": "request-1",
+    "metadata": {}
+  },
+  {
+    "event_id": "00000000-0000-4000-8000-000000000007",
+    "timestamp": "2026-08-01T12:00:06Z",
+    "kind": "AUDIT",
+    "level": "ERROR",
+    "service": "example-backend",
+    "message": "role grant failed",
+    "trace_id": "request-1",
+    "metadata": {}
+  }
+]

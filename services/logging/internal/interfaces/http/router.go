@@ -26,10 +26,10 @@ func NewRouter(handler *Handler, monitoring Monitoring) *chi.Mux {
 	if monitoring != nil {
 		router.With(observe(monitoring, "/metrics")).Handle("/metrics", monitoring.Handler())
 	}
-	router.With(observe(monitoring, "/v1/log-events"), handler.authenticate).
-		Post("/v1/log-events", handler.HandleLogEvent)
-	router.With(observe(monitoring, "/v1/log-events/batch"), handler.authenticate).
-		Post("/v1/log-events/batch", handler.HandleLogEventBatch)
+	router.With(observe(monitoring, "/v2/log-events"), handler.authenticate).
+		Post("/v2/log-events", handler.HandleLogEvent)
+	router.With(observe(monitoring, "/v2/log-events/batch"), handler.authenticate).
+		Post("/v2/log-events/batch", handler.HandleLogEventBatch)
 	return router
 }
 

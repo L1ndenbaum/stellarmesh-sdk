@@ -66,7 +66,7 @@ func TestRouterAuthenticatesAndAcceptsBatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/v1/log-events/batch", strings.NewReader(string(payload)))
+	request := httptest.NewRequest(http.MethodPost, "/v2/log-events/batch", strings.NewReader(string(payload)))
 	request.Header.Set(serviceTokenHeader, "token")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -78,16 +78,29 @@ func TestRouterAuthenticatesAndAcceptsBatch(t *testing.T) {
 func TestRouterRejectsMissingToken(t *testing.T) {
 	router := testRouter(&fakeIngestor{})
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader("{}")))
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/v2/log-events", strings.NewReader("{}")))
 	if recorder.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d", recorder.Code)
+	}
+}
+
+func TestRouterDoesNotExposeV1IngestRoutes(t *testing.T) {
+	router := testRouter(&fakeIngestor{})
+	for _, path := range []string{"/v1/log-events", "/v1/log-events/batch"} {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
+		request.Header.Set(serviceTokenHeader, "token")
+		router.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusNotFound {
+			t.Fatalf("path=%s status=%d", path, recorder.Code)
+		}
 	}
 }
 
 func TestHandlerMapsQueueFullToUnavailable(t *testing.T) {
 	router := testRouter(&fakeIngestor{err: application.ErrQueueFull})
 	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: validEvent(t)})
-	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
+	request := httptest.NewRequest(http.MethodPost, "/v2/log-events", strings.NewReader(string(payload)))
 	request.Header.Set(serviceTokenHeader, "token")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -99,7 +112,7 @@ func TestHandlerMapsQueueFullToUnavailable(t *testing.T) {
 func TestHandlerMapsDurabilityFailureToUnavailable(t *testing.T) {
 	router := testRouter(&fakeIngestor{err: application.ErrDurabilityUnavailable})
 	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: validEvent(t)})
-	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
+	request := httptest.NewRequest(http.MethodPost, "/v2/log-events", strings.NewReader(string(payload)))
 	request.Header.Set(serviceTokenHeader, "token")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -111,7 +124,7 @@ func TestHandlerMapsDurabilityFailureToUnavailable(t *testing.T) {
 func TestHandlerMapsTooManyEventsToPayloadTooLarge(t *testing.T) {
 	router := testRouter(&fakeIngestor{err: application.ErrTooManyEvents})
 	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: validEvent(t)})
-	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
+	request := httptest.NewRequest(http.MethodPost, "/v2/log-events", strings.NewReader(string(payload)))
 	request.Header.Set(serviceTokenHeader, "token")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -123,7 +136,7 @@ func TestHandlerMapsTooManyEventsToPayloadTooLarge(t *testing.T) {
 func TestHandlerMapsOversizedEventToPayloadTooLarge(t *testing.T) {
 	router := testRouter(&fakeIngestor{err: application.ErrEventTooLarge})
 	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: validEvent(t)})
-	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
+	request := httptest.NewRequest(http.MethodPost, "/v2/log-events", strings.NewReader(string(payload)))
 	request.Header.Set(serviceTokenHeader, "token")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -152,7 +165,7 @@ func TestRouterExposesLivenessReadinessAndMetrics(t *testing.T) {
 
 func TestHandlerRejectsUnknownFields(t *testing.T) {
 	router := testRouter(&fakeIngestor{err: errors.New("unexpected")})
-	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(`{"unknown":true}`))
+	request := httptest.NewRequest(http.MethodPost, "/v2/log-events", strings.NewReader(`{"unknown":true}`))
 	request.Header.Set(serviceTokenHeader, "token")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -163,7 +176,7 @@ func TestHandlerRejectsUnknownFields(t *testing.T) {
 
 func TestHandlerRejectsSharedInvalidEventFixtures(t *testing.T) {
 	payload, err := os.ReadFile(filepath.Join(
-		"..", "..", "..", "..", "..", "contracts", "logging", "v1", "testdata", "invalid-events.json",
+		"..", "..", "..", "..", "..", "contracts", "logging", "v2", "testdata", "invalid-events.json",
 	))
 	if err != nil {
 		t.Fatal(err)
@@ -181,8 +194,8 @@ func TestHandlerRejectsSharedInvalidEventFixtures(t *testing.T) {
 			path string
 			body any
 		}{
-			{name: "single", path: "/v1/log-events", body: map[string]any{"event": fixture.Payload}},
-			{name: "batch", path: "/v1/log-events/batch", body: map[string]any{"events": []json.RawMessage{fixture.Payload}}},
+			{name: "single", path: "/v2/log-events", body: map[string]any{"event": fixture.Payload}},
+			{name: "batch", path: "/v2/log-events/batch", body: map[string]any{"events": []json.RawMessage{fixture.Payload}}},
 		} {
 			t.Run(fixture.Name+"/"+endpoint.name, func(t *testing.T) {
 				body, err := json.Marshal(endpoint.body)
@@ -206,7 +219,7 @@ func TestHandlerRejectsServiceIdentityMismatch(t *testing.T) {
 	event := validEvent(t)
 	event.Service = "another-service"
 	payload, _ := json.Marshal(sharedlogging.IngestRequest{Event: event})
-	request := httptest.NewRequest(http.MethodPost, "/v1/log-events", strings.NewReader(string(payload)))
+	request := httptest.NewRequest(http.MethodPost, "/v2/log-events", strings.NewReader(string(payload)))
 	request.Header.Set(serviceTokenHeader, "token")
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
@@ -222,7 +235,7 @@ func validEvent(t *testing.T) sharedlogging.Event {
 		t.Fatal(err)
 	}
 	return sharedlogging.Event{
-		EventID: id, Timestamp: time.Now(), Level: sharedlogging.LevelInfo,
+		EventID: id, Timestamp: time.Now(), Kind: sharedlogging.EventKindLog, Level: sharedlogging.LevelInfo,
 		Service: "test", Message: "event", Metadata: map[string]any{},
 	}
 }

@@ -47,7 +47,8 @@ func TestSinkWritesDecodableSingleLineJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	event := sharedlogging.Event{
-		EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", Timestamp: time.Now(), Level: sharedlogging.LevelInfo,
+		EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", Timestamp: time.Now(),
+		Kind: sharedlogging.EventKindAudit, Level: sharedlogging.LevelInfo,
 		Service: "backend", Message: "first\n\x1b[31msecond", TraceID: "trace-1", Metadata: map[string]any{},
 	}
 	if err := sink.WriteBatch(context.Background(), []sharedlogging.Event{event}); err != nil {
@@ -63,7 +64,8 @@ func TestSinkWritesDecodableSingleLineJSON(t *testing.T) {
 	if err := json.Unmarshal(bytes.TrimSpace(output.Bytes()), &decoded); err != nil {
 		t.Fatal(err)
 	}
-	if decoded.Message != event.Message || decoded.TraceID != event.TraceID {
+	if decoded.Kind != sharedlogging.EventKindAudit || decoded.Level != sharedlogging.LevelInfo ||
+		decoded.Message != event.Message || decoded.TraceID != event.TraceID {
 		t.Fatalf("decoded event = %#v", decoded)
 	}
 }
@@ -75,7 +77,7 @@ func TestSinkNeverBlocksAndBoundsQueuedBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	event := sharedlogging.Event{Level: sharedlogging.LevelInfo, Service: "backend", Message: "event", Metadata: map[string]any{}}
+	event := sharedlogging.Event{Kind: sharedlogging.EventKindLog, Level: sharedlogging.LevelInfo, Service: "backend", Message: "event", Metadata: map[string]any{}}
 	if err := sink.WriteBatch(context.Background(), []sharedlogging.Event{event}); err != nil {
 		t.Fatal(err)
 	}

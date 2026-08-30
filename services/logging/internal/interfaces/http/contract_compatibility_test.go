@@ -10,8 +10,14 @@ import (
 )
 
 func TestGoLoggingDecodersAcceptSharedContractFixtures(t *testing.T) {
-	if _, err := sharedlogging.DecodeEvent(readLoggingContract(t, "testdata", "valid-event.json")); err != nil {
+	var events []json.RawMessage
+	if err := json.Unmarshal(readLoggingContract(t, "testdata", "valid-events.json"), &events); err != nil {
 		t.Fatal(err)
+	}
+	for _, payload := range events {
+		if _, err := sharedlogging.DecodeEvent(payload); err != nil {
+			t.Fatal(err)
+		}
 	}
 	deadLetter, err := sharedlogging.DecodeDeadLetter(readLoggingContract(t, "testdata", "valid-dead-letter.json"))
 	if err != nil {
@@ -90,17 +96,17 @@ func TestGoLoggingLimitsMatchSharedContract(t *testing.T) {
 	if err := json.Unmarshal(readLoggingContract(t, "limits.json"), &limits); err != nil {
 		t.Fatal(err)
 	}
-	if limits.SchemaVersion != "v1" || limits.MaxEventJSONBytes != sharedlogging.MaxEventJSONBytesV1 ||
-		limits.MaxHTTPBodyBytes != sharedlogging.MaxHTTPBodyBytesV1 ||
-		limits.MaxKafkaKeyValueBytes != sharedlogging.MaxKafkaKeyValueBytesV1 ||
-		limits.MaxKafkaMessageBytes != sharedlogging.MaxKafkaMessageBytesV1 {
+	if limits.SchemaVersion != "v2" || limits.MaxEventJSONBytes != sharedlogging.MaxEventJSONBytesV2 ||
+		limits.MaxHTTPBodyBytes != sharedlogging.MaxHTTPBodyBytesV2 ||
+		limits.MaxKafkaKeyValueBytes != sharedlogging.MaxKafkaKeyValueBytesV2 ||
+		limits.MaxKafkaMessageBytes != sharedlogging.MaxKafkaMessageBytesV2 {
 		t.Fatalf("contract limits do not match Go constants: %#v", limits)
 	}
 }
 
 func readLoggingContract(t *testing.T, parts ...string) []byte {
 	t.Helper()
-	pathParts := append([]string{"..", "..", "..", "..", "..", "contracts", "logging", "v1"}, parts...)
+	pathParts := append([]string{"..", "..", "..", "..", "..", "contracts", "logging", "v2"}, parts...)
 	payload, err := os.ReadFile(filepath.Join(pathParts...))
 	if err != nil {
 		t.Fatal(err)

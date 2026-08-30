@@ -11,13 +11,15 @@ from .contracts import LogEvent
 _EVENT_FIELDS = {
     "event_id",
     "timestamp",
+    "kind",
     "level",
     "service",
     "message",
     "trace_id",
     "metadata",
 }
-_EVENT_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "AUDIT"}
+_EVENT_KINDS = {"LOG", "AUDIT"}
+_EVENT_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 _CANONICAL_TIMESTAMP = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
     r"(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$"
@@ -43,9 +45,19 @@ def decode_event(payload: bytes | str) -> LogEvent:
         unexpected = set(data) - _EVENT_FIELDS
         names = ", ".join(sorted(unexpected))
         raise ValueError(f"unexpected log event fields: {names}")
-    for field in ("event_id", "timestamp", "level", "service", "message", "trace_id"):
+    for field in (
+        "event_id",
+        "timestamp",
+        "kind",
+        "level",
+        "service",
+        "message",
+        "trace_id",
+    ):
         if not isinstance(data[field], str):
             raise ValueError(f"log event field {field} must be a string")
+    if data["kind"] not in _EVENT_KINDS:
+        raise ValueError("log event kind must use a canonical uppercase value")
     if data["level"] not in _EVENT_LEVELS:
         raise ValueError("log event level must use a canonical uppercase value")
     if _CANONICAL_TIMESTAMP.fullmatch(data["timestamp"]) is None:

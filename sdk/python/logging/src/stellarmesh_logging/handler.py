@@ -53,8 +53,6 @@ class StellarmeshHandler(logging.Handler):
 
 
 def _record_level(record: logging.LogRecord) -> Level:
-    if record.levelname.upper() == Level.AUDIT.value:
-        return Level.AUDIT
     if record.levelno >= logging.ERROR:
         return Level.ERROR
     if record.levelno >= logging.WARNING:

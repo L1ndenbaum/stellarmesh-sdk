@@ -142,8 +142,8 @@ func (service *Service) Ingest(ctx context.Context, events []sharedlogging.Event
 			service.observeIngest("rejected", "invalid", len(events))
 			return err
 		}
-		if len(payload) > sharedlogging.MaxEventJSONBytesV1 ||
-			!sharedlogging.FitsKafkaKeyValueBudgetV1(event, len(payload)) {
+		if len(payload) > sharedlogging.MaxEventJSONBytesV2 ||
+			!sharedlogging.FitsKafkaKeyValueBudgetV2(event, len(payload)) {
 			service.observeIngest("rejected", "event_too_large", len(events))
 			return ErrEventTooLarge
 		}

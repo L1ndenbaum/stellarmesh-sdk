@@ -1,0 +1,193 @@
+openapi: 3.1.0
+info:
+  title: Stellarmesh Logging API
+  version: 2.0.0
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: 服务存活
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiEnvelope"
+  /health/live:
+    get:
+      operationId: getLiveness
+      responses:
+        "200":
+          description: 进程存活
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiEnvelope"
+  /health/ready:
+    get:
+      operationId: getReadiness
+      responses:
+        "200":
+          description: 服务可以接收并可靠转交或暂存事件
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiEnvelope"
+        "503":
+          description: Kafka 与本地持久缓冲均无法保证后续接收
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiEnvelope"
+  /metrics:
+    get:
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus 文本格式指标
+          content:
+            text/plain:
+              schema:
+                type: string
+  /v2/log-events:
+    post:
+      operationId: ingestLogEvent
+      security:
+        - LoggingServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogEventIngestRequest"
+      responses:
+        "202":
+          description: 事件已持久写入 Kafka 或本地 spool
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogEventIngestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /v2/log-events/batch:
+    post:
+      operationId: ingestLogEventBatch
+      security:
+        - LoggingServiceToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LogEventBatchIngestRequest"
+      responses:
+        "202":
+          description: 事件已持久写入 Kafka 或本地 spool
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogEventIngestResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+components:
+  securitySchemes:
+    LoggingServiceToken:
+      type: apiKey
+      in: header
+      name: X-Logging-Service-Token
+  schemas:
+    LogEvent:
+      $ref: "./log-event.schema.json"
+    LogEventIngestRequest:
+      type: object
+      additionalProperties: false
+      required: [event]
+      properties:
+        event:
+          $ref: "#/components/schemas/LogEvent"
+    LogEventBatchIngestRequest:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/LogEvent"
+    LogEventIngestResult:
+      type: object
+      additionalProperties: false
+      required: [accepted]
+      properties:
+        accepted:
+          type: integer
+          minimum: 0
+    ApiEnvelope:
+      type: object
+      required: [code, message, data, timestamp]
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+        data: {}
+        timestamp:
+          type: string
+          format: date-time
+        error_reason:
+          type: string
+    LogEventIngestResponse:
+      allOf:
+        - $ref: "#/components/schemas/ApiEnvelope"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/LogEventIngestResult"
+  responses:
+    BadRequest:
+      description: 请求或事件格式无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiEnvelope"
+    Unauthorized:
+      description: 服务令牌无效
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiEnvelope"
+    Forbidden:
+      description: 令牌无权为事件中的服务标识写入日志
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiEnvelope"
+    PayloadTooLarge:
+      description: 请求体、单条事件或批量事件数超过契约限制
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiEnvelope"
+    Unavailable:
+      description: 队列已满、服务正在关闭、请求已取消，或 Kafka 与本地 spool 均无法持久接收事件
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiEnvelope"

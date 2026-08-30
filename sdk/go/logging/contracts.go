@@ -1,4 +1,4 @@
-// Package logging 包含规范日志 v1 契约和客户端。
+// Package logging 包含规范日志 v2 契约和客户端。
 package logging
 
 import (
@@ -16,25 +16,37 @@ import (
 )
 
 const (
-	// TopicV1 是日志 v1 事件的规范 Kafka topic 名称。
-	TopicV1 = "stellarmesh.logging.events.v1"
-	// DeadLetterTopicV1 是被拒绝 v1 载荷的规范 Kafka topic 名称。
-	DeadLetterTopicV1 = "stellarmesh.logging.events.v1.dlq"
+	// TopicV2 是日志 v2 事件的规范 Kafka topic 名称。
+	TopicV2 = "stellarmesh.logging.events.v2"
+	// DeadLetterTopicV2 是被拒绝 v2 载荷的规范 Kafka topic 名称。
+	DeadLetterTopicV2 = "stellarmesh.logging.events.v2.dlq"
 	// DeadLetterSchemaV1 标识死信记录结构。
 	DeadLetterSchemaV1 = "v1"
 	// DeadLetterSchemaV2 标识超大消息的紧凑死信记录结构。
 	DeadLetterSchemaV2 = "v2"
-	// MaxEventJSONBytesV1 是单个规范事件紧凑 JSON 的大小上限。
-	MaxEventJSONBytesV1 = 900 * 1024
-	// MaxHTTPBodyBytesV1 是接收请求体的大小上限。
-	MaxHTTPBodyBytesV1 = 1 << 20
-	// MaxKafkaKeyValueBytesV1 在 Kafka 消息上限内为协议开销保留空间。
-	MaxKafkaKeyValueBytesV1 = 960 * 1024
-	// MaxKafkaMessageBytesV1 是序列化 Kafka 记录的大小上限。
-	MaxKafkaMessageBytesV1 = 1 << 20
+	// MaxEventJSONBytesV2 是单个规范事件紧凑 JSON 的大小上限。
+	MaxEventJSONBytesV2 = 900 * 1024
+	// MaxHTTPBodyBytesV2 是接收请求体的大小上限。
+	MaxHTTPBodyBytesV2 = 1 << 20
+	// MaxKafkaKeyValueBytesV2 在 Kafka 消息上限内为协议开销保留空间。
+	MaxKafkaKeyValueBytesV2 = 960 * 1024
+	// MaxKafkaMessageBytesV2 是序列化 Kafka 记录的大小上限。
+	MaxKafkaMessageBytesV2 = 1 << 20
 )
 
 const maxDeadLetterErrorRunes = 2048
+
+// EventKind 描述事件用途，不参与严重程度排序。
+type EventKind string
+
+const (
+	EventKindLog   EventKind = "LOG"
+	EventKindAudit EventKind = "AUDIT"
+)
+
+var validEventKinds = map[EventKind]struct{}{
+	EventKindLog: {}, EventKindAudit: {},
+}
 
 // Level 是日志契约接受的严重级别。
 type Level string
@@ -44,17 +56,17 @@ const (
 	LevelInfo    Level = "INFO"
 	LevelWarning Level = "WARNING"
 	LevelError   Level = "ERROR"
-	LevelAudit   Level = "AUDIT"
 )
 
 var validLevels = map[Level]struct{}{
-	LevelDebug: {}, LevelInfo: {}, LevelWarning: {}, LevelError: {}, LevelAudit: {},
+	LevelDebug: {}, LevelInfo: {}, LevelWarning: {}, LevelError: {},
 }
 
-// Event 是规范日志 v1 记录。
+// Event 是规范日志 v2 记录。
 type Event struct {
 	EventID   string         `json:"event_id"`
 	Timestamp time.Time      `json:"timestamp"`
+	Kind      EventKind      `json:"kind"`
 	Level     Level          `json:"level"`
 	Service   string         `json:"service"`
 	Message   string         `json:"message"`
@@ -62,12 +74,12 @@ type Event struct {
 	Metadata  map[string]any `json:"metadata"`
 }
 
-// IngestRequest 为 v1 HTTP 端点封装一个事件。
+// IngestRequest 为 v2 HTTP 端点封装一个事件。
 type IngestRequest struct {
 	Event Event `json:"event"`
 }
 
-// BatchIngestRequest 为 v1 批量端点封装多个事件。
+// BatchIngestRequest 为 v2 批量端点封装多个事件。
 type BatchIngestRequest struct {
 	Events []Event `json:"events"`
 }
@@ -108,8 +120,8 @@ type OversizeDeadLetter struct {
 	FailedAt        time.Time  `json:"failed_at"`
 }
 
-// KafkaPartitionKeyV1 返回有界稳定键，同时保持同一 trace 位于相同分区。
-func KafkaPartitionKeyV1(event Event) []byte {
+// KafkaPartitionKeyV2 返回有界稳定键，同时保持同一 trace 位于相同分区。
+func KafkaPartitionKeyV2(event Event) []byte {
 	if event.TraceID == "" {
 		return []byte(event.EventID)
 	}
@@ -117,9 +129,17 @@ func KafkaPartitionKeyV1(event Event) []byte {
 	return digest[:]
 }
 
-// FitsKafkaKeyValueBudgetV1 判断紧凑事件能否安全封装为 Kafka 记录。
-func FitsKafkaKeyValueBudgetV1(event Event, payloadBytes int) bool {
-	return payloadBytes >= 0 && payloadBytes+len(KafkaPartitionKeyV1(event)) <= MaxKafkaKeyValueBytesV1
+// FitsKafkaKeyValueBudgetV2 判断紧凑事件能否安全封装为 Kafka 记录。
+func FitsKafkaKeyValueBudgetV2(event Event, payloadBytes int) bool {
+	return payloadBytes >= 0 && payloadBytes+len(KafkaPartitionKeyV2(event)) <= MaxKafkaKeyValueBytesV2
+}
+
+// Validate 校验事件种类。
+func (kind EventKind) Validate() error {
+	if _, ok := validEventKinds[kind]; !ok {
+		return fmt.Errorf("invalid log event kind %q", kind)
+	}
+	return nil
 }
 
 // Validate 校验严重级别。
@@ -130,13 +150,16 @@ func (level Level) Validate() error {
 	return nil
 }
 
-// Validate 校验 v1 契约要求的所有字段。
+// Validate 校验 v2 契约要求的所有字段。
 func (event Event) Validate() error {
 	if !validEventID(event.EventID) {
 		return errors.New("event_id must be a canonical UUID")
 	}
 	if event.Timestamp.IsZero() {
 		return errors.New("timestamp is required")
+	}
+	if err := event.Kind.Validate(); err != nil {
+		return err
 	}
 	if err := event.Level.Validate(); err != nil {
 		return err
@@ -234,7 +257,7 @@ func NewEventID() (string, error) {
 
 // DecodeEvent 严格解码一个规范事件并拒绝未知字段。
 func DecodeEvent(payload []byte) (Event, error) {
-	if err := requireJSONFields(payload, "event", "event_id", "timestamp", "level", "service", "message", "trace_id", "metadata"); err != nil {
+	if err := requireJSONFields(payload, "event", "event_id", "timestamp", "kind", "level", "service", "message", "trace_id", "metadata"); err != nil {
 		return Event{}, err
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))

@@ -20,7 +20,7 @@ type Publisher struct {
 // NewPublisher 创建日志事件发布器。
 func NewPublisher(brokers []string, topic string, connection sharedkafka.ConnectionConfig) (*Publisher, error) {
 	base, err := sharedkafka.NewPublisher(sharedkafka.Config{
-		Brokers: brokers, Topic: topic, BatchBytes: sharedlogging.MaxKafkaMessageBytesV1, Connection: connection,
+		Brokers: brokers, Topic: topic, BatchBytes: sharedlogging.MaxKafkaMessageBytesV2, Connection: connection,
 	})
 	if err != nil {
 		return nil, err
@@ -41,8 +41,8 @@ func (publisher *Publisher) Publish(ctx context.Context, events []sharedlogging.
 		if err != nil {
 			return err
 		}
-		key := sharedlogging.KafkaPartitionKeyV1(event)
-		if !sharedlogging.FitsKafkaKeyValueBudgetV1(event, len(payload)) {
+		key := sharedlogging.KafkaPartitionKeyV2(event)
+		if !sharedlogging.FitsKafkaKeyValueBudgetV2(event, len(payload)) {
 			return ErrMessageTooLarge
 		}
 		messages = append(messages, sharedkafka.Message{Key: key, Value: payload, Time: event.Timestamp})

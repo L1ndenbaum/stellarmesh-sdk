@@ -22,6 +22,7 @@ from .codec import encode_event
 from .contracts import (
     MAX_EVENT_JSON_BYTES,
     MAX_HTTP_BODY_BYTES,
+    EventKind,
     Level,
     LogEvent,
     normalize_level,
@@ -125,6 +126,7 @@ class Client:
         metadata: dict[str, Any] | None = None,
         timestamp: datetime | None = None,
         service: str | None = None,
+        kind: EventKind = EventKind.LOG,
     ) -> bool:
         """构造并入队一个事件，不等待远端投递。"""
         try:
@@ -135,6 +137,7 @@ class Client:
                 resolved_trace_id = provider() if provider is not None else ""
             event = LogEvent(
                 timestamp=timestamp or datetime.now(UTC),
+                kind=kind,
                 level=normalized_level,
                 service=service or self.config.service,
                 message=message,
@@ -148,7 +151,9 @@ class Client:
 
     def enqueue(self, event: LogEvent) -> bool:
         """将已校验的事件加入队列。"""
-        if not self.config.enabled or not should_emit_level(
+        if not self.config.enabled:
+            return False
+        if event.kind is EventKind.LOG and not should_emit_level(
             event.level, self._minimum_level
         ):
             return False

@@ -19,10 +19,12 @@ const (
 	defaultMaxBytes       = int64(1 << 30)
 	defaultSegmentBytes   = int64(16 << 20)
 	defaultReplayBatch    = 128
-	defaultMaxRecordBytes = sharedlogging.MaxEventJSONBytesV1 + 1
+	defaultMaxRecordBytes = sharedlogging.MaxEventJSONBytesV2 + 1
 	// 覆盖隔离产物旁保存的有界原因、源路径、时间戳和 JSON envelope。
 	quarantineMetadataReserveBytes = int64(64 << 10)
 	segmentSuffix                  = ".ready.jsonl"
+	formatFileName                 = "FORMAT"
+	spoolFormatV2                  = "stellarmesh-logging-spool-v2\n"
 	stagingDirectory               = ".staging"
 	batchesDirectory               = "batches"
 	quarantineDirectory            = "quarantine"
@@ -35,6 +37,8 @@ var (
 	ErrRecordTooLarge = errors.New("logging fallback spool record is too large")
 	// ErrCorruptSegment 标识无法安全解码的分段。
 	ErrCorruptSegment = errors.New("logging fallback spool segment is corrupt")
+	// ErrIncompatibleSpool 标识数据目录不是当前 v2 spool 格式。
+	ErrIncompatibleSpool = errors.New("logging fallback spool format is incompatible")
 )
 
 // Publisher 将恢复的事件回放到事件总线。
@@ -66,7 +70,7 @@ type Config struct {
 	Observer                Observer
 }
 
-// KafkaFallbackStore 将普通事件和 error/audit 事件拆分到原子分段中。
+// KafkaFallbackStore 将普通事件和 error 或 audit 事件拆分到原子分段中。
 type KafkaFallbackStore struct {
 	rootDir                 string
 	maxBytes                int64
@@ -108,6 +112,9 @@ func NewKafkaFallbackStore(config Config) (*KafkaFallbackStore, error) {
 		replayBatchSize: config.ReplayBatchSize, publishTimeout: config.PublishTimeout,
 		isPermanentPublishError: config.IsPermanentPublishError,
 		observer:                config.Observer, rename: os.Rename, syncDir: syncDirectory,
+	}
+	if err := ensureSpoolFormat(store.rootDir); err != nil {
+		return nil, err
 	}
 	regular, err := prepareDirectory(store.directory(regularPriority))
 	if err != nil {

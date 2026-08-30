@@ -1,4 +1,4 @@
-"""规范日志 v1 模型。"""
+"""规范日志 v2 模型。"""
 
 from __future__ import annotations
 
@@ -13,12 +13,19 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_valid
 
 from .sanitizer import sanitize_metadata
 
-LOG_EVENT_TOPIC = "stellarmesh.logging.events.v1"
-LOG_DEAD_LETTER_TOPIC = "stellarmesh.logging.events.v1.dlq"
+LOG_EVENT_TOPIC = "stellarmesh.logging.events.v2"
+LOG_DEAD_LETTER_TOPIC = "stellarmesh.logging.events.v2.dlq"
 MAX_EVENT_JSON_BYTES = 900 * 1024
 MAX_HTTP_BODY_BYTES = 1 << 20
 MAX_KAFKA_KEY_VALUE_BYTES = 960 * 1024
 MAX_KAFKA_MESSAGE_BYTES = 1 << 20
+
+
+class EventKind(StrEnum):
+    """日志事件的用途分类。"""
+
+    LOG = "LOG"
+    AUDIT = "AUDIT"
 
 
 class Level(StrEnum):
@@ -28,7 +35,6 @@ class Level(StrEnum):
     INFO = "INFO"
     WARNING = "WARNING"
     ERROR = "ERROR"
-    AUDIT = "AUDIT"
 
 
 _LEVEL_ORDER = {level: index for index, level in enumerate(Level)}
@@ -41,10 +47,11 @@ class ContractModel(BaseModel):
 
 
 class LogEvent(ContractModel):
-    """规范日志 v1 事件。"""
+    """规范日志 v2 事件。"""
 
     event_id: str = Field(default_factory=lambda: str(uuid4()))
     timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    kind: EventKind = EventKind.LOG
     level: Level = Level.INFO
     service: str
     message: str
@@ -222,9 +229,7 @@ def normalize_level(value: object) -> Level:
     try:
         return Level(raw)
     except ValueError as exc:
-        raise ValueError(
-            "level must be one of DEBUG, INFO, WARNING, ERROR, AUDIT"
-        ) from exc
+        raise ValueError("level must be one of DEBUG, INFO, WARNING, ERROR") from exc
 
 
 def should_emit_level(level: object, minimum_level: object) -> bool:

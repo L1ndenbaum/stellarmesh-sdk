@@ -59,38 +59,53 @@ func NewLogger(config LoggerConfig) (*Logger, error) {
 }
 
 func (logger *Logger) Debug(ctx context.Context, message, traceID string, metadata map[string]any) bool {
-	return logger.emit(ctx, LevelDebug, message, traceID, metadata)
+	return logger.emitLog(ctx, LevelDebug, message, traceID, metadata)
 }
 
 func (logger *Logger) Info(ctx context.Context, message, traceID string, metadata map[string]any) bool {
-	return logger.emit(ctx, LevelInfo, message, traceID, metadata)
+	return logger.emitLog(ctx, LevelInfo, message, traceID, metadata)
 }
 
 func (logger *Logger) Warning(ctx context.Context, message, traceID string, metadata map[string]any) bool {
-	return logger.emit(ctx, LevelWarning, message, traceID, metadata)
+	return logger.emitLog(ctx, LevelWarning, message, traceID, metadata)
 }
 
 func (logger *Logger) Error(ctx context.Context, message, traceID string, metadata map[string]any) bool {
-	return logger.emit(ctx, LevelError, message, traceID, metadata)
+	return logger.emitLog(ctx, LevelError, message, traceID, metadata)
 }
 
-func (logger *Logger) Audit(ctx context.Context, message, traceID string, metadata map[string]any) bool {
-	return logger.emit(ctx, LevelAudit, message, traceID, metadata)
+// Audit 构造审计事件；其严重级别不参与普通日志最低级别过滤。
+func (logger *Logger) Audit(ctx context.Context, level Level, message, traceID string, metadata map[string]any) bool {
+	if logger.emitter == nil || level.Validate() != nil {
+		return false
+	}
+	return logger.emit(ctx, EventKindAudit, level, message, traceID, metadata)
 }
 
-func (logger *Logger) emit(ctx context.Context, level Level, message, traceID string, metadata map[string]any) bool {
+func (logger *Logger) emitLog(ctx context.Context, level Level, message, traceID string, metadata map[string]any) bool {
 	if logger.emitter == nil {
 		return false
 	}
 	if !levelEnabled(level, logger.minimumLevel) {
 		return false
 	}
+	return logger.emit(ctx, EventKindLog, level, message, traceID, metadata)
+}
+
+func (logger *Logger) emit(
+	ctx context.Context,
+	kind EventKind,
+	level Level,
+	message string,
+	traceID string,
+	metadata map[string]any,
+) bool {
 	if traceID == "" && logger.traceIDProvider != nil {
 		traceID = logger.traceIDProvider(ctx)
 	}
 	return logger.emitter.Emit(ctx, Event{
 		Timestamp: logger.now().UTC(),
-		Level:     level, Service: logger.service, Message: message, TraceID: traceID,
+		Kind:      kind, Level: level, Service: logger.service, Message: message, TraceID: traceID,
 		Metadata: SanitizeMetadata(metadata),
 	})
 }
@@ -109,8 +124,6 @@ func levelOrder(level Level) int {
 		return 2
 	case LevelError:
 		return 3
-	case LevelAudit:
-		return 4
 	default:
 		return -1
 	}

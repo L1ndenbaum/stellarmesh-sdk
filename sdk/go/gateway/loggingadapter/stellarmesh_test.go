@@ -50,7 +50,7 @@ func TestStellarmeshMapsLevelsAndKeepsTraceExplicit(t *testing.T) {
 	}
 	for index, want := range wantLevels {
 		event := emitter.events[index]
-		if event.Level != want || event.TraceID != "" || event.Metadata["request_id"] != "request-1" {
+		if event.Kind != sharedlogging.EventKindLog || event.Level != want || event.TraceID != "" || event.Metadata["request_id"] != "request-1" {
 			t.Fatalf("event %d = %#v", index, event)
 		}
 	}

@@ -113,7 +113,7 @@ func TestServiceFlushesAndDrains(t *testing.T) {
 			t.Fatal(err)
 		}
 		event := sharedlogging.Event{
-			EventID: id, Timestamp: time.Now(), Level: sharedlogging.LevelInfo,
+			EventID: id, Timestamp: time.Now(), Kind: sharedlogging.EventKindLog, Level: sharedlogging.LevelInfo,
 			Service: "test", Message: message, Metadata: map[string]any{},
 		}
 		if err := service.Ingest(context.Background(), []sharedlogging.Event{event}); err != nil {
@@ -140,7 +140,7 @@ func TestServiceRejectsInvalidAndOversizedRequests(t *testing.T) {
 	if err := service.Ingest(context.Background(), make([]sharedlogging.Event, 2)); err != ErrTooManyEvents {
 		t.Fatalf("error = %v", err)
 	}
-	oversized := validApplicationEvent(t, strings.Repeat("x", sharedlogging.MaxEventJSONBytesV1))
+	oversized := validApplicationEvent(t, strings.Repeat("x", sharedlogging.MaxEventJSONBytesV2))
 	if err := service.Ingest(context.Background(), []sharedlogging.Event{oversized}); !errors.Is(err, ErrEventTooLarge) {
 		t.Fatalf("oversized error = %v", err)
 	}
@@ -333,7 +333,7 @@ func validApplicationEvent(t *testing.T, message string) sharedlogging.Event {
 		t.Fatal(err)
 	}
 	return sharedlogging.Event{
-		EventID: id, Timestamp: time.Now(), Level: sharedlogging.LevelInfo,
+		EventID: id, Timestamp: time.Now(), Kind: sharedlogging.EventKindLog, Level: sharedlogging.LevelInfo,
 		Service: "test", Message: message, Metadata: map[string]any{},
 	}
 }

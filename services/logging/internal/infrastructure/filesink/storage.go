@@ -14,6 +14,73 @@ import (
 	sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
 )
 
+func ensureSpoolFormat(root string) error {
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(root, 0o700); err != nil {
+		return err
+	}
+	marker := filepath.Join(root, formatFileName)
+	payload, err := os.ReadFile(marker)
+	if err == nil {
+		if string(payload) != spoolFormatV2 {
+			return fmt.Errorf("%w: unexpected FORMAT marker", ErrIncompatibleSpool)
+		}
+		return nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	hasLiveSegments, err := containsLiveSegments(root)
+	if err != nil {
+		return err
+	}
+	if hasLiveSegments {
+		return fmt.Errorf("%w: unmarked live segments require an explicit v1 drain", ErrIncompatibleSpool)
+	}
+	temporary, err := os.CreateTemp(root, ".FORMAT-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if err := temporary.Chmod(0o600); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	writeErr := writeAndSync(temporary, []byte(spoolFormatV2))
+	closeErr := temporary.Close()
+	if writeErr != nil || closeErr != nil {
+		return errors.Join(writeErr, closeErr)
+	}
+	if err := os.Rename(temporaryPath, marker); err != nil {
+		return err
+	}
+	return syncDirectory(root)
+}
+
+func containsLiveSegments(root string) (bool, error) {
+	found := false
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() {
+			if path == filepath.Join(root, quarantineDirectory) || path == filepath.Join(root, stagingDirectory) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(entry.Name(), segmentSuffix) {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found, err
+}
+
 type segment struct {
 	payload []byte
 	events  int
@@ -130,7 +197,7 @@ func partitionEvents(events []sharedlogging.Event) ([]sharedlogging.Event, []sha
 	regular := make([]sharedlogging.Event, 0, len(events))
 	priority := make([]sharedlogging.Event, 0, len(events))
 	for _, event := range events {
-		if event.Level == sharedlogging.LevelError || event.Level == sharedlogging.LevelAudit {
+		if event.Kind == sharedlogging.EventKindAudit || event.Level == sharedlogging.LevelError {
 			priority = append(priority, event)
 		} else {
 			regular = append(regular, event)

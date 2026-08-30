@@ -16,6 +16,7 @@ from stellarmesh_logging import (
     MAX_HTTP_BODY_BYTES,
     Client,
     ClientConfig,
+    EventKind,
     Level,
     LogEvent,
     encode_event,
@@ -53,7 +54,9 @@ def test_client_batches_and_drains() -> None:
 
     def handle(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
+        assert request.url.path == "/v2/log-events/batch"
         batches.append([event["message"] for event in payload["events"]])
+        assert {event["kind"] for event in payload["events"]} == {"LOG"}
         assert request.headers["X-Logging-Service-Token"] == "token"
         return _response(len(payload["events"]))
 
@@ -124,6 +127,58 @@ def test_trace_provider_and_logger_redaction() -> None:
 
     assert captured[0]["trace_id"] == "request-1"
     assert captured[0]["metadata"]["api_token"] == "[REDACTED]"
+
+
+def test_audit_bypasses_minimum_level_but_respects_enabled() -> None:
+    captured: list[dict[str, Any]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        captured.extend(payload["events"])
+        return _response(len(payload["events"]))
+
+    client = Client(
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            minimum_level=Level.ERROR,
+            batch_size=1,
+        ),
+        transport=httpx.MockTransport(handle),
+    )
+    logger = get_logger("audit", client=client)
+    assert not logger.info("filtered")
+    assert logger.audit(
+        "role granted",
+        action="iam.role.grant",
+        outcome="success",
+    )
+    assert logger.audit("grant warning", level=Level.WARNING)
+    assert client.close(timeout=1)
+    assert [(event["kind"], event["level"]) for event in captured] == [
+        ("AUDIT", "INFO"),
+        ("AUDIT", "WARNING"),
+    ]
+
+    disabled = Client(
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            enabled=False,
+            minimum_level=Level.ERROR,
+        )
+    )
+    assert not disabled.enqueue(
+        LogEvent(
+            kind=EventKind.AUDIT,
+            level=Level.INFO,
+            service="backend",
+            message="disabled audit",
+        )
+    )
+    assert disabled.close(timeout=1)
 
 
 def test_aclose_does_not_block_event_loop() -> None:
@@ -408,6 +463,12 @@ def test_client_rejects_invalid_configuration() -> None:
             service="backend",
             max_backoff_seconds=2.0,
             max_retry_after_seconds=1.0,
+        ),
+        ClientConfig(
+            base_url="http://logging-service",
+            token="token",
+            service="backend",
+            minimum_level="AUDIT",
         ),
     ]
     for config in invalid:

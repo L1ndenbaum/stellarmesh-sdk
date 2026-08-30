@@ -22,7 +22,7 @@ const (
 	defaultClientQueueSize     = 4096
 	defaultClientBatchSize     = 128
 	defaultClientFlushInterval = 100 * time.Millisecond
-	defaultMaxBatchBodyBytes   = MaxHTTPBodyBytesV1
+	defaultMaxBatchBodyBytes   = MaxHTTPBodyBytesV2
 	defaultClientQueueBytes    = 16 << 20
 	defaultClientMaxAttempts   = 3
 	defaultInitialBackoff      = 100 * time.Millisecond
@@ -63,7 +63,7 @@ type ClientConfig struct {
 	FallbackWriter io.Writer
 }
 
-// Client 异步投递 v1 日志批次。
+// Client 异步投递 v2 日志批次。
 type Client struct {
 	baseURL             string
 	token               string
@@ -186,8 +186,8 @@ func validateClientConfig(config ClientConfig) error {
 		config.InitialBackoff < 0 || config.MaxBackoff < 0 || config.MaxRetryAfter < 0 {
 		return errors.New("logging client limits must not be negative")
 	}
-	if config.MaxBodyBytes > MaxHTTPBodyBytesV1 {
-		return fmt.Errorf("logging max body bytes must not exceed %d", MaxHTTPBodyBytesV1)
+	if config.MaxBodyBytes > MaxHTTPBodyBytesV2 {
+		return fmt.Errorf("logging max body bytes must not exceed %d", MaxHTTPBodyBytesV2)
 	}
 	if config.QueueSize > maxClientQueueEvents || config.QueueBytes > maxClientQueueBytes ||
 		config.BatchSize > maxClientBatchEvents || config.MaxAttempts > maxClientAttempts {
@@ -236,7 +236,7 @@ func (client *Client) Enqueue(event Event) bool {
 		return false
 	}
 	eventBytes := int64(len(payload))
-	if eventBytes > MaxEventJSONBytesV1 {
+	if eventBytes > MaxEventJSONBytesV2 {
 		client.drop(event, ErrEventTooLarge)
 		return false
 	}
@@ -368,7 +368,7 @@ func (client *Client) sendBatch(ctx context.Context, queued []queuedEvent) {
 func (client *Client) sendOnce(ctx context.Context, events []Event, payload []byte) (bool, time.Duration, error) {
 	ctx, cancel := context.WithTimeout(ctx, client.timeout)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.baseURL+"/v1/log-events/batch", bytes.NewReader(payload))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, client.baseURL+"/v2/log-events/batch", bytes.NewReader(payload))
 	if err != nil {
 		return false, 0, err
 	}

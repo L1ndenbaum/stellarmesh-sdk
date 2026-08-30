@@ -23,10 +23,10 @@ func TestLoadUsesCanonicalTopic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.KafkaTopic != sharedlogging.TopicV1 {
+	if cfg.KafkaTopic != sharedlogging.TopicV2 {
 		t.Fatalf("topic = %q", cfg.KafkaTopic)
 	}
-	if cfg.KafkaDLQTopic != sharedlogging.DeadLetterTopicV1 || cfg.ObservabilityAddr != ":8092" {
+	if cfg.KafkaDLQTopic != sharedlogging.DeadLetterTopicV2 || cfg.ObservabilityAddr != ":8092" {
 		t.Fatalf("runtime config = %#v", cfg)
 	}
 	if cfg.MaxSourceMessageBytes != 1<<20 {

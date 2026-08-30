@@ -102,7 +102,6 @@ def test_handler_maps_levels_and_preserves_record_timestamp() -> None:
         ),
         logging.LogRecord("levels", 45, __file__, 6, "audit", (), None),
     ]
-    records[-1].levelname = "AUDIT"
     for record in records:
         record.created = expected_timestamp.timestamp()
         handler.emit(record)
@@ -114,8 +113,9 @@ def test_handler_maps_levels_and_preserves_record_timestamp() -> None:
         "WARNING",
         "ERROR",
         "ERROR",
-        "AUDIT",
+        "ERROR",
     ]
+    assert {event["kind"] for event in captured} == {"LOG"}
     assert {event["timestamp"] for event in captured} == {"2026-08-12T12:00:00Z"}
 
 

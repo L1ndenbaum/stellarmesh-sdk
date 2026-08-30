@@ -23,14 +23,14 @@ func TestSlogHandlerMapsLevelsAndFiltersBeforeEmission(t *testing.T) {
 	logger.Info("info")
 	logger.Warn("warning")
 	logger.Error("error")
-	logger.Log(context.Background(), SlogLevelAudit, "audit")
+	logger.Log(context.Background(), 12, "custom-high-level")
 	if len(emitter.events) != 3 {
 		t.Fatalf("events = %#v", emitter.events)
 	}
 	levels := []Level{emitter.events[0].Level, emitter.events[1].Level, emitter.events[2].Level}
-	want := []Level{LevelWarning, LevelError, LevelAudit}
+	want := []Level{LevelWarning, LevelError, LevelError}
 	for index := range want {
-		if levels[index] != want[index] {
+		if levels[index] != want[index] || emitter.events[index].Kind != EventKindLog {
 			t.Fatalf("levels = %v", levels)
 		}
 	}
@@ -107,5 +107,11 @@ func TestSlogHandlerAndLoggerValidateMinimumLevels(t *testing.T) {
 	}
 	if !logger.Error(context.Background(), "emitted", "", nil) || len(emitter.events) != 1 {
 		t.Fatalf("events = %#v", emitter.events)
+	}
+	if !logger.Audit(context.Background(), LevelInfo, "audit", "", nil) || len(emitter.events) != 2 {
+		t.Fatalf("audit did not bypass minimum level: %#v", emitter.events)
+	}
+	if emitter.events[1].Kind != EventKindAudit || emitter.events[1].Level != LevelInfo {
+		t.Fatalf("audit event = %#v", emitter.events[1])
 	}
 }

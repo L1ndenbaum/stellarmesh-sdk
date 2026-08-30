@@ -73,8 +73,11 @@ func (publisher *recordingPublisher) Publish(_ context.Context, events []sharedl
 
 func TestFallbackStorePrioritizesAndReplaysLargeEvents(t *testing.T) {
 	store := newStore(t, Config{RootDir: filepath.Join(t.TempDir(), "spool"), SegmentBytes: 32 << 10})
+	audit := validEvent(t, sharedlogging.LevelInfo, "audit-priority")
+	audit.Kind = sharedlogging.EventKindAudit
 	events := []sharedlogging.Event{
 		validEvent(t, sharedlogging.LevelInfo, strings.Repeat("x", 70<<10)),
+		audit,
 		validEvent(t, sharedlogging.LevelError, "priority"),
 	}
 	if err := store.WriteBatch(context.Background(), events); err != nil {
@@ -84,7 +87,8 @@ func TestFallbackStorePrioritizesAndReplaysLargeEvents(t *testing.T) {
 	if err := store.ReplayOnce(context.Background(), publisher); err != nil {
 		t.Fatal(err)
 	}
-	if len(publisher.events) != 2 || publisher.events[0].Level != sharedlogging.LevelError {
+	if len(publisher.events) != 3 || publisher.events[0].Kind != sharedlogging.EventKindAudit ||
+		publisher.events[0].Level != sharedlogging.LevelInfo || publisher.events[1].Level != sharedlogging.LevelError {
 		t.Fatalf("events = %#v", publisher.events)
 	}
 	regular, priority := store.Bytes()
@@ -230,7 +234,7 @@ func TestFallbackStoreAccountsCommittedBatchWhenParentSyncFails(t *testing.T) {
 	}
 }
 
-func TestFallbackStoreReplaysLegacySegments(t *testing.T) {
+func TestFallbackStoreRejectsUnmarkedLiveSegmentsWithoutQuarantine(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "spool")
 	legacy := filepath.Join(root, regularPriority)
 	if err := os.MkdirAll(legacy, 0o700); err != nil {
@@ -244,13 +248,35 @@ func TestFallbackStoreReplaysLegacySegments(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(legacy, "legacy"+segmentSuffix), append(payload, '\n'), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	store := newStore(t, Config{RootDir: root})
-	publisher := &recordingPublisher{}
-	if err := store.ReplayOnce(context.Background(), publisher); err != nil {
+	if _, err := NewKafkaFallbackStore(Config{RootDir: root}); !errors.Is(err, ErrIncompatibleSpool) {
+		t.Fatalf("NewKafkaFallbackStore() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(legacy, "legacy"+segmentSuffix)); err != nil {
+		t.Fatalf("legacy segment was changed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, quarantineDirectory)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("legacy segment was quarantined: %v", err)
+	}
+}
+
+func TestFallbackStoreInitializesAndValidatesV2FormatMarker(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "spool")
+	newStore(t, Config{RootDir: root})
+	payload, err := os.ReadFile(filepath.Join(root, formatFileName))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if len(publisher.events) != 1 || publisher.events[0].EventID != event.EventID {
-		t.Fatalf("events = %#v", publisher.events)
+	if string(payload) != spoolFormatV2 {
+		t.Fatalf("FORMAT = %q", payload)
+	}
+	if _, err := NewKafkaFallbackStore(Config{RootDir: root}); err != nil {
+		t.Fatalf("v2 marker was rejected: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, formatFileName), []byte("stellarmesh-logging-spool-v1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewKafkaFallbackStore(Config{RootDir: root}); !errors.Is(err, ErrIncompatibleSpool) {
+		t.Fatalf("wrong marker error = %v", err)
 	}
 }
 
@@ -500,7 +526,7 @@ func validEvent(t *testing.T, level sharedlogging.Level, payload string) sharedl
 		t.Fatal(err)
 	}
 	return sharedlogging.Event{
-		EventID: id, Timestamp: time.Now(), Level: level, Service: "test", Message: "event",
+		EventID: id, Timestamp: time.Now(), Kind: sharedlogging.EventKindLog, Level: level, Service: "test", Message: "event",
 		Metadata: map[string]any{"payload": payload},
 	}
 }

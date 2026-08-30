@@ -1,4 +1,4 @@
-// Package httpapi 暴露日志 v1 HTTP API。
+// Package httpapi 暴露日志 v2 HTTP API。
 package httpapi
 
 import (
@@ -26,7 +26,7 @@ type Readiness interface {
 	Ready() bool
 }
 
-// Handler 将 v1 HTTP 请求映射到日志接收应用。
+// Handler 将 v2 HTTP 请求映射到日志接收应用。
 type Handler struct {
 	ingestor      Ingestor
 	authenticator Authenticator
@@ -101,7 +101,7 @@ func (handler *Handler) authorizeEvents(w http.ResponseWriter, r *http.Request, 
 
 func (handler *Handler) decode(w http.ResponseWriter, r *http.Request, target any) bool {
 	err := jsonbody.Decode(w, r, target, jsonbody.Options{
-		MaxBytes: sharedlogging.MaxHTTPBodyBytesV1, DisallowUnknownFields: true,
+		MaxBytes: sharedlogging.MaxHTTPBodyBytesV2, DisallowUnknownFields: true,
 	})
 	if err == nil {
 		return true

@@ -16,16 +16,16 @@ import (
 
 func TestKafkaPartitionKeyIsBoundedAndStable(t *testing.T) {
 	event := Event{EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", TraceID: strings.Repeat("trace", 1000)}
-	first := KafkaPartitionKeyV1(event)
-	second := KafkaPartitionKeyV1(event)
+	first := KafkaPartitionKeyV2(event)
+	second := KafkaPartitionKeyV2(event)
 	if len(first) != 32 || !bytes.Equal(first, second) {
 		t.Fatalf("trace key length=%d stable=%v", len(first), bytes.Equal(first, second))
 	}
 	event.TraceID = ""
-	if got := string(KafkaPartitionKeyV1(event)); got != event.EventID {
+	if got := string(KafkaPartitionKeyV2(event)); got != event.EventID {
 		t.Fatalf("fallback key = %q", got)
 	}
-	if !FitsKafkaKeyValueBudgetV1(event, MaxEventJSONBytesV1) {
+	if !FitsKafkaKeyValueBudgetV2(event, MaxEventJSONBytesV2) {
 		t.Fatal("maximum canonical event does not fit the Kafka key/value budget")
 	}
 }
@@ -111,7 +111,7 @@ func TestClientBatchesAndDrains(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, message := range []string{"first", "second"} {
-		if !client.Emit(context.Background(), Event{Level: LevelInfo, Service: "test", Message: message}) {
+		if !client.Emit(context.Background(), Event{Kind: EventKindLog, Level: LevelInfo, Service: "test", Message: message}) {
 			t.Fatalf("Emit(%q) = false", message)
 		}
 	}
@@ -155,7 +155,7 @@ func TestClientReportsQueueFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !client.Emit(context.Background(), Event{Level: LevelInfo, Service: "test", Message: "event"}) {
+	if !client.Emit(context.Background(), Event{Kind: EventKindLog, Level: LevelInfo, Service: "test", Message: "event"}) {
 		t.Fatal("Emit() = false")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -193,7 +193,7 @@ func TestClientRetriesTransientStatusWithStableEventID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !client.Emit(context.Background(), Event{Level: LevelInfo, Service: "test", Message: "event"}) {
+	if !client.Emit(context.Background(), Event{Kind: EventKindLog, Level: LevelInfo, Service: "test", Message: "event"}) {
 		t.Fatal("Emit() = false")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -220,7 +220,7 @@ func TestClientDoesNotRetryPermanentStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !client.Emit(context.Background(), Event{Level: LevelInfo, Service: "test", Message: "event"}) {
+	if !client.Emit(context.Background(), Event{Kind: EventKindLog, Level: LevelInfo, Service: "test", Message: "event"}) {
 		t.Fatal("Emit() = false")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -244,7 +244,7 @@ func TestClientQueueBytesIncludeInFlightBatch(t *testing.T) {
 	event := Event{
 		EventID:   "018f16b6-3f9f-7d98-a328-3eac70bd0542",
 		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
-		Level:     LevelInfo, Service: "test", Message: "event", Metadata: map[string]any{},
+		Kind:      EventKindLog, Level: LevelInfo, Service: "test", Message: "event", Metadata: map[string]any{},
 	}
 	payload, err := json.Marshal(event)
 	if err != nil {
@@ -293,7 +293,7 @@ func TestClientDefaultBodyLimitIncludesBatchEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if client.maxBodyBytes != MaxHTTPBodyBytesV1 {
+	if client.maxBodyBytes != MaxHTTPBodyBytesV2 {
 		t.Fatalf("max body bytes = %d", client.maxBodyBytes)
 	}
 	if client.timeout != 7*time.Second || client.maxRetryAfter != 30*time.Second {
@@ -310,18 +310,18 @@ func TestClientDefaultBodyLimitSendsMaximumCanonicalEvent(t *testing.T) {
 	event := Event{
 		EventID:   "018f16b6-3f9f-7d98-a328-3eac70bd0542",
 		Timestamp: time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC),
-		Level:     LevelInfo, Service: "test", Message: "x", Metadata: map[string]any{},
+		Kind:      EventKindLog, Level: LevelInfo, Service: "test", Message: "x", Metadata: map[string]any{},
 	}
 	payload, err := json.Marshal(event)
 	if err != nil {
 		t.Fatal(err)
 	}
-	event.Message = strings.Repeat("x", MaxEventJSONBytesV1-(len(payload)-1))
+	event.Message = strings.Repeat("x", MaxEventJSONBytesV2-(len(payload)-1))
 	payload, err = json.Marshal(event)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(payload) != MaxEventJSONBytesV1 {
+	if len(payload) != MaxEventJSONBytesV2 {
 		t.Fatalf("event bytes = %d", len(payload))
 	}
 	requests := 0
@@ -333,7 +333,7 @@ func TestClientDefaultBodyLimitSendsMaximumCanonicalEvent(t *testing.T) {
 			if readErr != nil {
 				return nil, readErr
 			}
-			if len(body) > MaxHTTPBodyBytesV1 {
+			if len(body) > MaxHTTPBodyBytesV2 {
 				return nil, errors.New("batch body exceeded the HTTP contract limit")
 			}
 			response := `{"code":202,"message":"ok","data":{"accepted":1},"timestamp":"2026-08-01T12:00:00Z"}`
@@ -365,7 +365,7 @@ func TestClientAcceptsLegacyOKResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !client.Emit(context.Background(), Event{Level: LevelInfo, Service: "test", Message: "event"}) {
+	if !client.Emit(context.Background(), Event{Kind: EventKindLog, Level: LevelInfo, Service: "test", Message: "event"}) {
 		t.Fatal("Emit() = false")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -387,7 +387,7 @@ func TestClientIsolatesDropHandlerPanic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !client.Emit(context.Background(), Event{Level: LevelInfo, Service: "test", Message: "event"}) {
+	if !client.Emit(context.Background(), Event{Kind: EventKindLog, Level: LevelInfo, Service: "test", Message: "event"}) {
 		t.Fatal("Emit() = false")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -446,7 +446,7 @@ func TestClientCloseDeadlineCancelsTransportAndDropsUnsentEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, message := range []string{"in-flight", "queued"} {
-		if !client.Enqueue(Event{Level: LevelInfo, Service: "test", Message: message}) {
+		if !client.Enqueue(Event{Kind: EventKindLog, Level: LevelInfo, Service: "test", Message: message}) {
 			t.Fatalf("Enqueue(%q) = false", message)
 		}
 		if message == "in-flight" {
@@ -480,7 +480,7 @@ func TestClientCloseDeadlineCancelsTransportAndDropsUnsentEvents(t *testing.T) {
 
 func TestEventRejectsUntrimmedServiceButPreservesMessageWhitespace(t *testing.T) {
 	event := Event{
-		EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", Timestamp: time.Now(), Level: LevelInfo,
+		EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", Timestamp: time.Now(), Kind: EventKindLog, Level: LevelInfo,
 		Service: " backend ", Message: " message\n", Metadata: map[string]any{},
 	}
 	if err := event.Validate(); err == nil {
@@ -489,6 +489,25 @@ func TestEventRejectsUntrimmedServiceButPreservesMessageWhitespace(t *testing.T)
 	event.Service = "backend"
 	if err := event.Validate(); err != nil {
 		t.Fatalf("Validate() rejected message whitespace: %v", err)
+	}
+}
+
+func TestEventRequiresV2KindAndStandardLevel(t *testing.T) {
+	event := Event{
+		EventID: "018f16b6-3f9f-7d98-a328-3eac70bd0542", Timestamp: time.Now(),
+		Kind: EventKindLog, Level: LevelInfo, Service: "backend", Message: "event", Metadata: map[string]any{},
+	}
+	if err := event.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	event.Kind = ""
+	if err := event.Validate(); err == nil {
+		t.Fatal("Validate() accepted a missing event kind")
+	}
+	event.Kind = EventKindAudit
+	event.Level = "AUDIT"
+	if err := event.Validate(); err == nil {
+		t.Fatal("Validate() accepted AUDIT as a severity level")
 	}
 }
 

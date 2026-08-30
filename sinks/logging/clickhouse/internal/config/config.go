@@ -44,8 +44,8 @@ func Load() (Config, error) {
 	loader := envconfig.NewStrictLoader()
 	cfg := Config{
 		KafkaBrokers:          loader.CSV("STELLARMESH_LOGGING_KAFKA_BROKERS", "kafka:9092"),
-		KafkaTopic:            envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV1),
-		KafkaDLQTopic:         envconfig.String("STELLARMESH_LOGGING_KAFKA_DLQ_TOPIC", sharedlogging.DeadLetterTopicV1),
+		KafkaTopic:            envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV2),
+		KafkaDLQTopic:         envconfig.String("STELLARMESH_LOGGING_KAFKA_DLQ_TOPIC", sharedlogging.DeadLetterTopicV2),
 		KafkaGroupID:          envconfig.String("STELLARMESH_LOGGING_WRITER_GROUP_ID", "stellarmesh-logging-clickhouse"),
 		KafkaConnection:       kafkaConnectionConfig(),
 		MaxSourceMessageBytes: loader.ByteSize("STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES", 1<<20),
@@ -86,7 +86,7 @@ func Load() (Config, error) {
 		cfg.BatchMaxBytes <= 0 || cfg.BatchMaxBytes > maxWriterBatchBytes {
 		return Config{}, errors.New("logging writer batch limits are outside supported bounds")
 	}
-	if cfg.MaxSourceMessageBytes <= 0 || cfg.MaxSourceMessageBytes > sharedlogging.MaxKafkaMessageBytesV1 {
+	if cfg.MaxSourceMessageBytes <= 0 || cfg.MaxSourceMessageBytes > sharedlogging.MaxKafkaMessageBytesV2 {
 		return Config{}, errors.New("STELLARMESH_LOGGING_WRITER_MAX_SOURCE_MESSAGE_BYTES must be between 1 byte and 1 MiB")
 	}
 	if cfg.BatchMaxBytes < cfg.MaxSourceMessageBytes {

@@ -1,0 +1,15 @@
+{
+  "schema_version": "v2",
+  "source_topic": "stellarmesh.logging.events.v2",
+  "source_partition": 1,
+  "source_offset": 43,
+  "source_timestamp": "2026-08-01T12:00:00Z",
+  "reason": "source_message_too_large",
+  "error": "source message exceeds the configured limit",
+  "source_key_bytes": 7,
+  "source_key_sha256": "eafe895eb8119e6e5d064c0bd7971f7a8e476272d20a1464983ad40c3d8a72d6",
+  "payload_bytes": 1048577,
+  "payload_sha256": "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+  "content_omitted": true,
+  "failed_at": "2026-08-01T12:00:01Z"
+}

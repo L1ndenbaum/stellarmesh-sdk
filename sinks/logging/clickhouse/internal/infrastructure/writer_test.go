@@ -41,13 +41,14 @@ func TestWriterUsesFixedTableAndJSONEachRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	event := sharedlogging.Event{
-		EventID: id, Timestamp: time.Now(), Level: sharedlogging.LevelInfo,
+		EventID: id, Timestamp: time.Now(), Kind: sharedlogging.EventKindAudit, Level: sharedlogging.LevelInfo,
 		Service: "test", Message: "event", Metadata: map[string]any{"safe": true},
 	}
 	if err := writer.InsertEvents(context.Background(), []sharedlogging.Event{event}); err != nil {
 		t.Fatal(err)
 	}
-	if query != "INSERT INTO log_events FORMAT JSONEachRow" || !strings.Contains(body, `"metadata_json":"{\"safe\":true}"`) {
+	if query != "INSERT INTO log_events FORMAT JSONEachRow" || !strings.Contains(body, `"kind":"AUDIT"`) ||
+		!strings.Contains(body, `"level":"INFO"`) || !strings.Contains(body, `"metadata_json":"{\"safe\":true}"`) {
 		t.Fatalf("query=%q body=%s", query, body)
 	}
 }

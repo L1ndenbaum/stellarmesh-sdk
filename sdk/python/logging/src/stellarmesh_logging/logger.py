@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .client import Client
-from .contracts import Level
+from .contracts import EventKind, Level
 
 
 class Logger:
@@ -60,9 +60,20 @@ class Logger:
         return self._emit(Level.ERROR, message, trace_id, metadata)
 
     def audit(
-        self, message: str, *, trace_id: str | None = None, **metadata: Any
+        self,
+        message: str,
+        *,
+        level: Level = Level.INFO,
+        trace_id: str | None = None,
+        **metadata: Any,
     ) -> bool:
-        return self._emit(Level.AUDIT, message, trace_id, metadata)
+        return self._emit(
+            level,
+            message,
+            trace_id,
+            metadata,
+            kind=EventKind.AUDIT,
+        )
 
     def exception(
         self, message: str, *, trace_id: str | None = None, **metadata: Any
@@ -83,9 +94,12 @@ class Logger:
         message: str,
         trace_id: str | None,
         metadata: dict[str, Any],
+        *,
+        kind: EventKind = EventKind.LOG,
     ) -> bool:
         return self._client.emit_event(
             level,
+            kind=kind,
             message=message,
             trace_id=trace_id,
             service=self._service,

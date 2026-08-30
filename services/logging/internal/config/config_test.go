@@ -22,7 +22,7 @@ func TestLoadUsesCanonicalDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.KafkaTopic != sharedlogging.TopicV1 || cfg.MaxRequestEvents != 512 {
+	if cfg.KafkaTopic != sharedlogging.TopicV2 || cfg.MaxRequestEvents != 512 {
 		t.Fatalf("config = %#v", cfg)
 	}
 	if cfg.QueueCapacityEvents != 4096 || cfg.QueueCapacityBytes != 16<<20 || cfg.MaxBatchBytes != 4<<20 ||

@@ -38,7 +38,7 @@ class BatchTransport:
     def send(self, events: list[LogEvent], payload: bytes) -> None:
         """发送一个批次，并要求 200/202 响应中的接受数量匹配。"""
         response = self._get_client().post(
-            f"{self._base_url}/v1/log-events/batch",
+            f"{self._base_url}/v2/log-events/batch",
             content=payload,
             headers={
                 "Content-Type": "application/json",

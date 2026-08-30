@@ -10,9 +10,6 @@ import (
 	"time"
 )
 
-// SlogLevelAudit 为标准 slog 补充契约中的审计级别。
-const SlogLevelAudit slog.Level = 12
-
 // SlogHandlerConfig 配置标准库 slog 到 Stellarmesh Event 的转换。
 type SlogHandlerConfig struct {
 	Service         string
@@ -82,7 +79,7 @@ func (handler *SlogHandler) Handle(ctx context.Context, record slog.Record) erro
 		timestamp = time.Now()
 	}
 	handler.emitter.Emit(ctx, Event{
-		Timestamp: timestamp.UTC(), Level: mapSlogLevel(record.Level), Service: handler.config.Service,
+		Timestamp: timestamp.UTC(), Kind: EventKindLog, Level: mapSlogLevel(record.Level), Service: handler.config.Service,
 		Message: record.Message, TraceID: traceID, Metadata: SanitizeMetadata(metadata),
 	})
 	return nil
@@ -115,9 +112,6 @@ func (handler *SlogHandler) clone() *SlogHandler {
 }
 
 func mapSlogLevel(level slog.Level) Level {
-	if level == SlogLevelAudit {
-		return LevelAudit
-	}
 	switch {
 	case level < slog.LevelInfo:
 		return LevelDebug

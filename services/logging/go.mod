@@ -4,7 +4,7 @@ go 1.24
 
 require (
 	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.5.0
-	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.1.0
+	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.2.0
 	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka v0.1.0
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/prometheus/client_golang v1.20.5

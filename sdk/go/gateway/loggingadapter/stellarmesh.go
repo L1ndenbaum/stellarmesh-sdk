@@ -79,6 +79,7 @@ func (logger *stellarmeshAccessLogger) Log(ctx context.Context, accessLog gatewa
 	}
 	if !logger.emitter.Emit(ctx, sharedlogging.Event{
 		Timestamp: accessLog.Timestamp.UTC(),
+		Kind:      sharedlogging.EventKindLog,
 		Level:     stellarmeshLevel(accessLog.Status),
 		Service:   logger.service,
 		Message:   "gateway request",

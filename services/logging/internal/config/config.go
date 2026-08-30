@@ -19,7 +19,7 @@ const (
 	maxBatchEvents         = 10_000
 	maxBatchBytes          = int64(64 << 20)
 	maxSpoolBytes          = int64(1 << 40)
-	minimumSpoolBytes      = int64(2*(sharedlogging.MaxEventJSONBytesV1+1) + (64 << 10))
+	minimumSpoolBytes      = int64(2*(sharedlogging.MaxEventJSONBytesV2+1) + (64 << 10))
 	maxRuntimeDuration     = 24 * time.Hour
 )
 
@@ -72,7 +72,7 @@ func Load() (Config, error) {
 		MaxBatchBytes:        loader.ByteSize("STELLARMESH_LOGGING_MAX_BATCH_BYTES", 4<<20),
 		MaxRequestEvents:     loader.Int("STELLARMESH_LOGGING_MAX_REQUEST_EVENTS", 512),
 		KafkaBrokers:         loader.CSV("STELLARMESH_LOGGING_KAFKA_BROKERS", "kafka:9092"),
-		KafkaTopic:           envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV1),
+		KafkaTopic:           envconfig.String("STELLARMESH_LOGGING_KAFKA_TOPIC", sharedlogging.TopicV2),
 		KafkaConnection:      kafkaConnectionConfig("stellarmesh-logging-ingester"),
 		SpoolDir:             envconfig.String("STELLARMESH_LOGGING_SPOOL_DIR", dataDir+"/spool"),
 		SpoolMaxBytes:        loader.ByteSize("STELLARMESH_LOGGING_SPOOL_MAX_BYTES", 1<<30),
@@ -92,7 +92,7 @@ func Load() (Config, error) {
 		return Config{}, errors.New("STELLARMESH_LOGGING_KAFKA_TOPIC is required")
 	}
 	if cfg.QueueCapacityEvents <= 0 || cfg.QueueCapacityEvents > maxQueueCapacityEvents ||
-		cfg.QueueCapacityBytes < sharedlogging.MaxEventJSONBytesV1 || cfg.QueueCapacityBytes > maxQueueCapacityBytes {
+		cfg.QueueCapacityBytes < sharedlogging.MaxEventJSONBytesV2 || cfg.QueueCapacityBytes > maxQueueCapacityBytes {
 		return Config{}, errors.New("logging queue limits are outside supported bounds")
 	}
 	if cfg.MaxBatchSize <= 0 || cfg.MaxBatchSize > maxBatchEvents ||
