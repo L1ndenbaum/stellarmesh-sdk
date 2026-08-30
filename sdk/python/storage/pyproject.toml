@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stellarmesh-storage"
-version = "0.1.0"
+version = "0.1.1"
 description = "Stellarmesh 对象存储控制面与预签名数据面客户端"
 readme = "README.md"
 requires-python = ">=3.11"

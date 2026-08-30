@@ -11,7 +11,7 @@
 - `sdk/go/gateway/loggingadapter/`：开发中的可选 Stellarmesh Logging 访问日志适配器，当前尚未发布。
 - `sdk/go/logging/`：独立发布、仅依赖标准库的 Logging v1 契约、异步客户端与 `slog.Handler`。
 - `sdk/go/mq/kafka/`：独立发布的轻量 Kafka Go Module，提供 PLAIN、SCRAM、TLS/mTLS、Publisher 和 Topic 检查。
-- `sdk/python/`：独立发布的 `stellarmesh-logging` 日志包。
+- `sdk/python/logging/`：独立发布的 `stellarmesh-logging` 日志包。
 - `sdk/python/storage/`：独立发布的 `stellarmesh-storage` 同步与异步对象存储客户端。
 - `services/logging/`：接收 HTTP 日志并发布到 Kafka 的常驻服务。
 - `services/storage/`：签发 S3/MinIO 预签名请求的项目级控制面服务，不代理对象字节。

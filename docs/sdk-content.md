@@ -27,7 +27,7 @@
 | `sdk/go/gateway/loggingadapter/` | Gateway 到 Stellarmesh Logging 的可选访问日志适配器 | 开发中，尚未发布 |
 | `sdk/go/logging/` | Logging v1 模型、校验、异步客户端和 `slog.Handler` | 独立 Go module |
 | `sdk/go/mq/kafka/` | Kafka 连接、Publisher、Topic 检查与 TLS/SASL 配置 | 独立 Go module |
-| `sdk/python/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | `stellarmesh-logging` Python package |
+| `sdk/python/logging/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | `stellarmesh-logging` Python package |
 | `sdk/python/storage/` | Python 对象存储同步与异步客户端 | `stellarmesh-storage` Python package |
 | `services/logging/` | HTTP 接收、内存队列、控制台输出、Kafka 发布与失败暂存 | 常驻服务镜像 |
 | `services/storage/` | 项目级对象存储认证、授权、readiness、内部 Storage v1 实现与预签名控制面 | 常驻服务镜像 |

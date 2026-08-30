@@ -6,7 +6,7 @@
 - [Go 网关 SDK 接入教程](go/gateway.md)：对应独立的 `sdk/go/gateway` Go Module，包含基础 Gateway、JWT 认证和 Redis 限流；
 - [Go Logging SDK 接入教程](go/logging.md)：对应独立的 `sdk/go/logging` Go Module，只依赖标准库；
 - [Go Kafka SDK 接入教程](go/kafka.md)：对应独立的 `sdk/go/mq/kafka` Go module，只引入 Kafka、压缩和 SCRAM 相关依赖；
-- [Python 日志 SDK 接入教程](python/README.md)：对应 `sdk/python` 中发布的 `stellarmesh-logging` 包；
+- [Python 日志 SDK 接入教程](python/README.md)：对应 `sdk/python/logging` 中发布的 `stellarmesh-logging` 包；
 - [Python 对象存储 SDK 接入教程](python/storage.md)：对应 `sdk/python/storage` 中发布的 `stellarmesh-storage` 包。
 
 Go 与 Python 日志 SDK 都能在业务进程内构造规范日志事件，通过有界异步队列批量发送到 `logging-service`。独立 Go Logging Module提供标准库 `log/slog.Handler`，Python 日志包提供标准库 `logging.Handler`；已有 SDK 日志门面继续保持兼容。独立 [Gateway Module](go/gateway.md) 允许项目通过 `WithXxx` 选择路由、鉴权、限流和观测能力，安全执行顺序由 SDK 固定。

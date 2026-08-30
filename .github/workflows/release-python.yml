@@ -26,7 +26,7 @@ jobs:
         run: |
           case "$GITHUB_REF_NAME" in
             sdk/python/logging/v*.*.*)
-              package_path="sdk/python"
+              package_path="sdk/python/logging"
               distribution="stellarmesh-logging"
               tag_version="${GITHUB_REF_NAME#sdk/python/logging/v}"
               check_paths="src tests"

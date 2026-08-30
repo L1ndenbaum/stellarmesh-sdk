@@ -17,7 +17,7 @@ python -m pip install stellarmesh-logging==0.1.2
 仅在本地联调 SDK 源码时，可以从相邻仓库安装：
 
 ```sh
-python -m pip install -e ../stellarmesh-sdk/sdk/python
+python -m pip install -e ../stellarmesh-sdk/sdk/python/logging
 ```
 
 ## 2. 准备业务配置

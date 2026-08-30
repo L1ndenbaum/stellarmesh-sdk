@@ -103,7 +103,7 @@ func traceIDFromProjectContext(context.Context) string {
 本地开发可从仓库子目录安装：
 
 ```sh
-pip install ./sdk/python
+pip install ./sdk/python/logging
 ```
 
 发布到 PyPI 后，应固定包版本：

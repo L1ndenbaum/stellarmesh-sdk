@@ -11,6 +11,7 @@ from typing import TypeVar
 
 import httpx
 
+from . import _operations
 from ._common import (
     encode_control_payload,
     ensure_success,
@@ -26,22 +27,14 @@ from .models import (
     Checksum,
     ClientConfig,
     CompletedPart,
-    MultipartAbortRequest,
-    MultipartCompleteRequest,
-    MultipartCreateRequest,
-    MultipartPartRequest,
     MultipartUpload,
     ObjectInfo,
-    ObjectRequest,
     PresignedRequest,
-    PresignGetRequest,
-    PresignPutRequest,
-    StrictModel,
     path_value,
     request_payload,
 )
 
-ModelType = TypeVar("ModelType", bound=StrictModel)
+ModelType = TypeVar("ModelType", bound=ObjectInfo | PresignedRequest | MultipartUpload)
 
 
 class Client:
@@ -88,14 +81,14 @@ class Client:
     def stat(
         self, namespace: str, key: str, *, version_id: str | None = None
     ) -> ObjectInfo:
-        request = ObjectRequest(namespace=namespace, key=key, version_id=version_id)
-        return self._model_request("/v1/objects/stat", request, ObjectInfo, retry=True)
+        return self._model_request(
+            _operations.stat(namespace, key, version_id=version_id)
+        )
 
     def delete(
         self, namespace: str, key: str, *, version_id: str | None = None
     ) -> None:
-        request = ObjectRequest(namespace=namespace, key=key, version_id=version_id)
-        self._empty_request("/v1/objects/delete", request, retry=True)
+        self._empty_request(_operations.delete(namespace, key, version_id=version_id))
 
     def presign_get(
         self,
@@ -105,14 +98,13 @@ class Client:
         version_id: str | None = None,
         expires_in: int = 900,
     ) -> PresignedRequest:
-        request = PresignGetRequest(
-            namespace=namespace,
-            key=key,
-            version_id=version_id,
-            expires_in=expires_in,
-        )
         return self._model_request(
-            "/v1/presign/get", request, PresignedRequest, retry=True
+            _operations.presign_get(
+                namespace,
+                key,
+                version_id=version_id,
+                expires_in=expires_in,
+            )
         )
 
     def presign_put(
@@ -126,17 +118,16 @@ class Client:
         checksum: Checksum | None = None,
         expires_in: int = 900,
     ) -> PresignedRequest:
-        request = PresignPutRequest(
-            namespace=namespace,
-            key=key,
-            size=size,
-            content_type=content_type,
-            metadata=metadata or {},
-            checksum=checksum,
-            expires_in=expires_in,
-        )
         return self._model_request(
-            "/v1/presign/put", request, PresignedRequest, retry=True
+            _operations.presign_put(
+                namespace,
+                key,
+                size=size,
+                content_type=content_type,
+                metadata=metadata,
+                checksum=checksum,
+                expires_in=expires_in,
+            )
         )
 
     def create_multipart(
@@ -148,15 +139,14 @@ class Client:
         metadata: dict[str, str] | None = None,
         checksum: Checksum | None = None,
     ) -> MultipartUpload:
-        request = MultipartCreateRequest(
-            namespace=namespace,
-            key=key,
-            content_type=content_type,
-            metadata=metadata or {},
-            checksum=checksum,
-        )
         return self._model_request(
-            "/v1/multipart/create", request, MultipartUpload, retry=False
+            _operations.create_multipart(
+                namespace,
+                key,
+                content_type=content_type,
+                metadata=metadata,
+                checksum=checksum,
+            )
         )
 
     def presign_part(
@@ -168,18 +158,14 @@ class Client:
         *,
         expires_in: int = 900,
     ) -> PresignedRequest:
-        request = MultipartPartRequest(
-            namespace=namespace,
-            key=key,
-            upload_id=upload_id,
-            part_number=part_number,
-            expires_in=expires_in,
-        )
         return self._model_request(
-            "/v1/multipart/presign-part",
-            request,
-            PresignedRequest,
-            retry=True,
+            _operations.presign_part(
+                namespace,
+                key,
+                upload_id,
+                part_number,
+                expires_in=expires_in,
+            )
         )
 
     def complete_multipart(
@@ -189,18 +175,12 @@ class Client:
         upload_id: str,
         parts: list[CompletedPart],
     ) -> ObjectInfo:
-        request = MultipartCompleteRequest(
-            namespace=namespace, key=key, upload_id=upload_id, parts=parts
-        )
         return self._model_request(
-            "/v1/multipart/complete", request, ObjectInfo, retry=False
+            _operations.complete_multipart(namespace, key, upload_id, parts)
         )
 
     def abort_multipart(self, namespace: str, key: str, upload_id: str) -> None:
-        request = MultipartAbortRequest(
-            namespace=namespace, key=key, upload_id=upload_id
-        )
-        self._empty_request("/v1/multipart/abort", request, retry=True)
+        self._empty_request(_operations.abort_multipart(namespace, key, upload_id))
 
     def upload_bytes(
         self,
@@ -326,17 +306,21 @@ class Client:
 
     def _model_request(
         self,
-        path: str,
-        request: StrictModel,
-        model: type[ModelType],
-        *,
-        retry: bool,
+        operation: _operations.ModelOperation[ModelType],
     ) -> ModelType:
-        response = self._control_request(path, request_payload(request), retry=retry)
-        return parse_success(response, model)
+        response = self._control_request(
+            operation.path,
+            request_payload(operation.request),
+            retry=operation.retry,
+        )
+        return parse_success(response, operation.response_model)
 
-    def _empty_request(self, path: str, request: StrictModel, *, retry: bool) -> None:
-        response = self._control_request(path, request_payload(request), retry=retry)
+    def _empty_request(self, operation: _operations.EmptyOperation) -> None:
+        response = self._control_request(
+            operation.path,
+            request_payload(operation.request),
+            retry=operation.retry,
+        )
         ensure_success(response)
 
     def _control_request(

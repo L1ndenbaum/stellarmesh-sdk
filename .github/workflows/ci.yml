@@ -37,7 +37,7 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: |
-            sdk/python/pyproject.toml
+            sdk/python/logging/pyproject.toml
             sdk/python/storage/pyproject.toml
 
       - name: 安装 Python 检查依赖

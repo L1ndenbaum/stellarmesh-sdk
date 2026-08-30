@@ -1,7 +1,7 @@
 SHELL := /bin/sh
 
 ROOT := $(CURDIR)
-PYTHON_LOGGING_DIR := sdk/python
+PYTHON_LOGGING_DIR := sdk/python/logging
 PYTHON_STORAGE_DIR := sdk/python/storage
 VENV := $(ROOT)/.venv
 GO_PACKAGES := ./sdk/go/... ./sdk/go/gateway/... ./sdk/go/gateway/loggingadapter/... ./sdk/go/logging/... ./sdk/go/mq/kafka/... ./sdk/go/objectstorage/... ./services/logging/... ./services/storage/... ./sinks/logging/clickhouse/...

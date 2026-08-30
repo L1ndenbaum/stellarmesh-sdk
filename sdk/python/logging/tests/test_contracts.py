@@ -24,7 +24,7 @@ from stellarmesh_logging import (
     should_emit_level,
 )
 
-_REPOSITORY_ROOT = Path(__file__).parents[3]
+_REPOSITORY_ROOT = Path(__file__).parents[4]
 
 
 def test_contract_fixture_round_trips() -> None:
