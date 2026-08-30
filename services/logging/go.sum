@@ -1,7 +1,7 @@
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.5.0 h1:IFSYneQ8KwliQZCVjbU1x9zi8vn6AaQAEaOLPqrc47U=
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.5.0/go.mod h1:/kB8QtJnrUb8ec9aw0RmxkQvNSvH4JvZnJQE6GOEiiY=
-github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.1.0 h1:H2nqGS8zen3xZdZZQRfFjw1xitysFx5oujJqmSXjO/4=
-github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.1.0/go.mod h1:fkTP5YWMkQtsdttZi9MMuD9vCb3k4XFcIMATtG/6qao=
+github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.2.0 h1:NjMPOX2lhX5jNMERpOORW2EyMFWrO5Lsxd0V7Tw4yDM=
+github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.2.0/go.mod h1:fkTP5YWMkQtsdttZi9MMuD9vCb3k4XFcIMATtG/6qao=
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka v0.1.0 h1:mfK6H2PPKkcalzrVd5sFld5X5wb9cYIW8fSWgkyI4Ms=
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka v0.1.0/go.mod h1:0JRHLCqVRz0hCsry0RDANn+Ule3RUo8LWRzfRwqx0co=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
