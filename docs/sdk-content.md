@@ -22,7 +22,7 @@
 | --- | --- | --- |
 | `contracts/logging/v1/` | 日志事件、DLQ v1/v2、尺寸限制、OpenAPI 和共享测试数据 | 随仓库版本发布 |
 | `contracts/storage/v1/` | 对象存储控制面 OpenAPI、访问配置 Schema、统一限制和共享测试数据 | 随仓库版本发布 |
-| `sdk/go/` | Go 公共 HTTP、环境配置、Storage 契约和对象存储客户端 | Go module |
+| `sdk/go/` | Go 公共 HTTP、环境配置和进程内对象存储客户端 | Go module |
 | `sdk/go/gateway/` | 声明式 Gateway、JWT 认证、Redis 限流和旁路观测 | 独立 Go module |
 | `sdk/go/gateway/loggingadapter/` | Gateway 到 Stellarmesh Logging 的可选访问日志适配器 | 开发中，尚未发布 |
 | `sdk/go/logging/` | Logging v1 模型、校验、异步客户端和 `slog.Handler` | 独立 Go module |
@@ -30,7 +30,7 @@
 | `sdk/python/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | `stellarmesh-logging` Python package |
 | `sdk/python/storage/` | Python 对象存储同步与异步客户端 | `stellarmesh-storage` Python package |
 | `services/logging/` | HTTP 接收、内存队列、控制台输出、Kafka 发布与失败暂存 | 常驻服务镜像 |
-| `services/storage/` | 项目级对象存储认证、授权、readiness 与预签名控制面 | 常驻服务镜像 |
+| `services/storage/` | 项目级对象存储认证、授权、readiness、内部 Storage v1 实现与预签名控制面 | 常驻服务镜像 |
 | `sinks/clickhouse/` | Kafka 消费、批量写入和 offset 提交 | 常驻 sink 镜像 |
 | `sinks/clickhouse/migrations/` | `log_events` 表的版本化 up/down SQL | 一次性迁移镜像 |
 
@@ -74,8 +74,9 @@ HTTP `202 Accepted` 表示事件已经由 Kafka 全同步副本确认，或已�
 - `http/server`：带超时的 HTTP server 构造；
 - `objectstorage`：namespace 绑定的 provider-neutral 小接口、对象模型、参数校验和稳定错误；
 - `objectstorage/s3store`：基于 AWS SDK for Go v2 的 AWS S3 与 S3-compatible 适配器；
-- `storagecontract`：Storage v1 的统一限制、严格访问配置和 capability 校验；
 - `envconfig`：不依赖业务 settings 的基础环境变量解析，并提供显式错误的严格 loader。
+
+`objectstorage` 只表达业务进程直接访问对象存储时需要的 provider-neutral 能力，不包含 HTTP DTO、service token、principal、capability 或访问文件解析。Storage v1 的语言无关协议只在 `contracts/storage/v1` 定义；对应 Go DTO、限制校验和访问策略是 `storage-service` 的内部实现，位于 `services/storage/internal/storagev1`，不能被业务 Module 导入。
 
 `sdk/go/gateway` 是独立 Gateway Module，包含固定安全顺序的声明式网关、静态路由、可信代理、CORS、反向代理、健康检查、旁路观测、HS256 JWT 认证和 Redis 原子令牌桶。当前本地 `dev` 源码只直接依赖 JWT 和 Redis，不依赖父 SDK、Logging、AWS SDK、对象存储、Chi 或 Kafka。Gateway 默认把通用访问记录交给标准库 `slog`，项目可以关闭默认日志或注入自己的 `AccessLogger`。完整接入方式见[Go 网关 SDK](sdk/go/gateway.md)。
 
@@ -109,6 +110,8 @@ Python 客户端使用后台线程发送批量 HTTP 请求，不依赖任一业�
 ## 对象存储协议与数据链路
 
 Storage v1 的业务请求只包含逻辑 `namespace` 和 `key`，不接受 Bucket。每个项目独立部署一份 `storage-service`，由只读访问文件把 namespace 映射到 Bucket 与 Prefix，并把 principal token 映射到 `read`、`write`、`delete` capability。同一实例可以声明多个 namespace，但所有 namespace 必须使用同一项目的 AWS IAM Role、Web Identity 或 MinIO 项目凭据。
+
+进程内 Go SDK 与 Storage v1 控制面是两条不同接入路径：前者由 Go 进程直接持有项目对象存储凭据，后者由 `storage-service` 持有凭据并给客户端签发数据面请求。两者复用 `objectstorage` 的对象语义，但 HTTP 鉴权和响应模型不属于公共 `objectstorage` API。
 
 ```text
 Go 服务 -> 进程内 objectstorage SDK -> S3 或 MinIO

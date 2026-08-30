@@ -4,6 +4,8 @@
 
 Namespace 是防误用边界，不是权限边界。生产权限仍必须由 AWS IAM Role 或 MinIO Policy 限制到当前项目拥有的 Bucket 和 Prefix。
 
+本 package 不实现 `storage-service` 的 HTTP 协议，也不包含 service token、principal、capability、访问配置文件或项目级响应模型。需要让不持有对象存储凭据的客户端使用预签名控制面时，应部署 `storage-service` 并按 `contracts/storage/v1` 接入；不要把控制面 DTO 合并进 provider-neutral 的 `objectstorage` 接口。
+
 ## 1. 安装与凭据
 
 业务项目固定 Go module 版本：

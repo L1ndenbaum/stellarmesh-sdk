@@ -1,6 +1,8 @@
 # Go 父 SDK 接入教程
 
-本教程对应 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.24 及以上版本。父 SDK `v0.4.0` 提供共享 HTTP、对象存储、Storage 契约和环境变量解析；Gateway、Logging 与 Kafka 已分别拆为独立 Module。
+本教程对应 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go`，适用于 Go 1.24 及以上版本。当前公开父 SDK `v0.4.0` 提供共享 HTTP、对象存储和环境变量解析；Gateway、Logging 与 Kafka 已分别拆为独立 Module。
+
+`v0.4.0` 的不可变源码中仍包含旧 `storagecontract` package，但它把 `storage-service` 的 HTTP DTO 和访问策略暴露成了通用 SDK。当前本地 `dev` 源码已移除该 package：语言无关的 Storage v1 定义继续由 `contracts/storage/v1` 管理，Go 实现归入 `services/storage/internal/storagev1`。业务项目不应新增对旧 package 的依赖；这一删除尚未发布，后续父 SDK 发版时必须按破坏性 Module 边界变化处理。
 
 ## 安装固定版本
 
@@ -18,7 +20,7 @@ go mod tidy
 
 ## 版本兼容
 
-`sdk/go/v0.3.0` 仍不可变地包含旧 `sdk/go/gateway` package，不能与独立 Gateway Module 同时进入一个 build list。`sdk/go/v0.2.0` 仍包含旧 Logging package，`sdk/go/v0.1.1` 仍包含旧 Kafka package。错误组合可能产生 `ambiguous import`，不能通过长期 `replace` 绕过。
+`sdk/go/v0.3.0` 仍不可变地包含旧 `sdk/go/gateway` package，不能与独立 Gateway Module 同时进入一个 build list。`sdk/go/v0.2.0` 仍包含旧 Logging package，`sdk/go/v0.1.1` 仍包含旧 Kafka package。错误组合可能产生 `ambiguous import`，不能通过长期 `replace` 绕过。`storagecontract` 的内部化只影响当前未发布源码，不改变这些历史 tag。
 
 同时使用父 SDK 与 Gateway 的项目必须原子升级：
 

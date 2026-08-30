@@ -160,12 +160,14 @@ async def application_shutdown() -> None:
 
 ## 接入对象存储
 
-对象存储有两种接入路径，二者共享 Storage v1 的 key、TTL、Metadata 和错误边界：
+对象存储有两种接入路径，二者共享相容的 key、Metadata、Checksum 和稳定错误语义，但只有控制面路径使用 Storage v1 HTTP 契约：
 
 - Go 服务需要在进程内读取或写入对象时，直接使用 `objectstorage/s3store`，由应用启动配置把一个客户端绑定到一个 Bucket 与 Prefix；
 - Python 或其他不应持有对象存储凭据的客户端，通过项目自己的 `storage-service` 获取预签名请求，再直接与 S3 或 MinIO 传输对象字节。
 
 Go 进程内客户端使用标准 AWS 凭据链，不应把 Bucket 暴露为每次业务调用的参数。AWS 模式不设置自定义 Endpoint；MinIO 模式显式设置内部 Endpoint、客户端可访问的 `PresignEndpoint` 和 `UsePathStyle=true`。`Check` 只执行只读可访问性检查，不创建 Bucket。构造、Range、Checksum、错误映射和显式 Multipart 示例见 [Go 对象存储 SDK](sdk/go/object-storage.md)。
+
+`contracts/storage/v1` 是跨语言控制面协议的唯一来源。`storage-service` 内部的 Go DTO 与访问策略不属于公共 Go SDK；当前没有独立发布的 Go Storage v1 HTTP Client。Go 项目需要直接访问对象存储时使用 `objectstorage`，需要通过控制面访问时应按 OpenAPI 生成或实现项目客户端，不能导入 `services/storage/internal/storagev1`。
 
 Python 包独立安装，不能用日志包替代：
 

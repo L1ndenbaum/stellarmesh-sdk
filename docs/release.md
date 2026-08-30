@@ -15,6 +15,8 @@
 
 不同组件可以有不同版本。例如四个镜像可以保持 `0.1.1`，父 Go SDK 保持 `0.4.0`，Gateway 使用 `0.2.0`，Logging 与 Kafka Module 使用 `0.1.0`，Python 日志包保持 `0.1.2`，`stellarmesh-storage` 继续保持 `0.1.0`。发布前必须先让 `main` 或 `dev` 分支的持续验证通过，不得用 tag 绕过格式、静态检查、测试、镜像构建或集成测试。已经推送的 tag 不得移动、删除、覆盖或强推；制品内容需要修改时必须提升 patch 版本。
 
+当前本地 `dev` 源码已把旧父 SDK `storagecontract` package 内部化为 `services/storage/internal/storagev1`，但尚未发布新的父 SDK 或镜像。公开 `sdk/go/v0.4.0` 仍不可变地包含旧 package；在后续父 SDK 发版前必须将这一删除作为破坏性 Module 边界变化审查，并同步验证 `storage-service` 镜像。Storage v1 的语言无关契约仍位于 `contracts/storage/v1`，不随 Go package 的移动而复制或改名。
+
 ## 镜像发布
 
 推送形如 `v0.1.1` 的根 tag 后，`.github/workflows/release-images.yml` 会发布：
