@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: 检出消费测试
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: 安装 Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
