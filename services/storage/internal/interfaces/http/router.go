@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	sharedhttp "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
-	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/storagecontract"
+	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/storagev1"
 )
 
 // Monitoring 提供指标端点和有界请求计数器。
@@ -43,7 +43,7 @@ func NewRouter(handler *Handler, monitoring Monitoring) *sharedhttp.Router {
 
 func (handler *Handler) authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if handler.policy == nil || !handler.policy.Authenticate(request.Header.Get(storagecontract.ServiceTokenHeader)) {
+		if handler.policy == nil || !handler.policy.Authenticate(request.Header.Get(storagev1.ServiceTokenHeader)) {
 			sharedhttp.WriteError(w, http.StatusUnauthorized, "invalid storage service token")
 			return
 		}

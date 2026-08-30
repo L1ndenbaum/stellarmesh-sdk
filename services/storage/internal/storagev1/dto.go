@@ -1,4 +1,4 @@
-package storagecontract
+package storagev1
 
 import "time"
 

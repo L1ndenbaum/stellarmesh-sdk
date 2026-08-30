@@ -12,11 +12,11 @@ import (
 
 	httpserver "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/server"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage/s3store"
-	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/storagecontract"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/application"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/config"
 	httpapi "github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/interfaces/http"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/observability"
+	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/storagev1"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 )
 
@@ -35,7 +35,7 @@ func run() (result error) {
 	if err != nil {
 		return fmt.Errorf("打开 storage 访问配置: %w", err)
 	}
-	policy, decodeErr := storagecontract.DecodePolicy(accessFile)
+	policy, decodeErr := storagev1.DecodePolicy(accessFile)
 	closeErr := accessFile.Close()
 	if decodeErr != nil || closeErr != nil {
 		return errors.Join(decodeErr, closeErr)

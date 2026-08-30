@@ -9,8 +9,8 @@ import (
 
 	sharedhttp "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/api"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage"
-	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/storagecontract"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/application"
+	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/storagev1"
 )
 
 // Readiness 报告全部 namespace 最近一次可访问性检查结果。
@@ -21,12 +21,12 @@ type Readiness interface {
 // Handler 将严格 Storage v1 请求映射到 namespace store。
 type Handler struct {
 	registry  *application.Registry
-	policy    *storagecontract.Policy
+	policy    *storagev1.Policy
 	readiness Readiness
 }
 
 // NewHandler 创建 storage-service HTTP handler。
-func NewHandler(registry *application.Registry, policy *storagecontract.Policy, readiness Readiness) *Handler {
+func NewHandler(registry *application.Registry, policy *storagev1.Policy, readiness Readiness) *Handler {
 	return &Handler{registry: registry, policy: policy, readiness: readiness}
 }
 
@@ -46,8 +46,8 @@ func (handler *Handler) HandleReady(w http.ResponseWriter, _ *http.Request) {
 
 // HandleStat 读取对象元数据。
 func (handler *Handler) HandleStat(w http.ResponseWriter, request *http.Request) {
-	var payload storagecontract.ObjectRequest
-	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagecontract.CapabilityRead) {
+	var payload storagev1.ObjectRequest
+	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagev1.CapabilityRead) {
 		return
 	}
 	store, namespace, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, payload.VersionID, "", nil)
@@ -65,8 +65,8 @@ func (handler *Handler) HandleStat(w http.ResponseWriter, request *http.Request)
 
 // HandleDelete 删除当前对象语义或指定版本。
 func (handler *Handler) HandleDelete(w http.ResponseWriter, request *http.Request) {
-	var payload storagecontract.ObjectRequest
-	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagecontract.CapabilityDelete) {
+	var payload storagev1.ObjectRequest
+	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagev1.CapabilityDelete) {
 		return
 	}
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, payload.VersionID, "", nil)
@@ -82,15 +82,15 @@ func (handler *Handler) HandleDelete(w http.ResponseWriter, request *http.Reques
 
 // HandlePresignGet 创建直接下载请求。
 func (handler *Handler) HandlePresignGet(w http.ResponseWriter, request *http.Request) {
-	var payload storagecontract.PresignGetRequest
-	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagecontract.CapabilityRead) {
+	var payload storagev1.PresignGetRequest
+	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagev1.CapabilityRead) {
 		return
 	}
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, payload.VersionID, "", nil)
 	if !ok {
 		return
 	}
-	ttl, err := storagecontract.PresignTTL(payload.ExpiresIn)
+	ttl, err := storagev1.PresignTTL(payload.ExpiresIn)
 	if err != nil {
 		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
 		return
@@ -107,8 +107,8 @@ func (handler *Handler) HandlePresignGet(w http.ResponseWriter, request *http.Re
 
 // HandlePresignPut 创建直接上传请求。
 func (handler *Handler) HandlePresignPut(w http.ResponseWriter, request *http.Request) {
-	var payload storagecontract.PresignPutRequest
-	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagecontract.CapabilityWrite) {
+	var payload storagev1.PresignPutRequest
+	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagev1.CapabilityWrite) {
 		return
 	}
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, "", payload.ContentType, payload.Metadata)
@@ -123,7 +123,7 @@ func (handler *Handler) HandlePresignPut(w http.ResponseWriter, request *http.Re
 		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	ttl, err := storagecontract.PresignTTL(payload.ExpiresIn)
+	ttl, err := storagev1.PresignTTL(payload.ExpiresIn)
 	if err != nil {
 		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
 		return
@@ -141,8 +141,8 @@ func (handler *Handler) HandlePresignPut(w http.ResponseWriter, request *http.Re
 
 // HandleMultipartCreate 初始化 Multipart。
 func (handler *Handler) HandleMultipartCreate(w http.ResponseWriter, request *http.Request) {
-	var payload storagecontract.MultipartCreateRequest
-	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagecontract.CapabilityWrite) {
+	var payload storagev1.MultipartCreateRequest
+	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagev1.CapabilityWrite) {
 		return
 	}
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, "", payload.ContentType, payload.Metadata)
@@ -161,23 +161,23 @@ func (handler *Handler) HandleMultipartCreate(w http.ResponseWriter, request *ht
 		writeStoreError(w, err)
 		return
 	}
-	sharedhttp.WriteJSON(w, http.StatusOK, storagecontract.MultipartUpload{Key: upload.Key, UploadID: upload.UploadID})
+	sharedhttp.WriteJSON(w, http.StatusOK, storagev1.MultipartUpload{Key: upload.Key, UploadID: upload.UploadID})
 }
 
 // HandleMultipartPresignPart 为一个分片创建上传请求。
 func (handler *Handler) HandleMultipartPresignPart(w http.ResponseWriter, request *http.Request) {
-	var payload storagecontract.MultipartPartRequest
-	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagecontract.CapabilityWrite) {
+	var payload storagev1.MultipartPartRequest
+	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagev1.CapabilityWrite) {
 		return
 	}
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, "", "", nil)
-	if !ok || payload.UploadID == "" || payload.PartNumber < storagecontract.MinPartNumber || payload.PartNumber > storagecontract.MaxPartNumber {
+	if !ok || payload.UploadID == "" || payload.PartNumber < storagev1.MinPartNumber || payload.PartNumber > storagev1.MaxPartNumber {
 		if ok {
 			sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
 		}
 		return
 	}
-	ttl, err := storagecontract.PresignTTL(payload.ExpiresIn)
+	ttl, err := storagev1.PresignTTL(payload.ExpiresIn)
 	if err != nil {
 		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
 		return
@@ -194,8 +194,8 @@ func (handler *Handler) HandleMultipartPresignPart(w http.ResponseWriter, reques
 
 // HandleMultipartComplete 完成显式 Multipart。
 func (handler *Handler) HandleMultipartComplete(w http.ResponseWriter, request *http.Request) {
-	var payload storagecontract.MultipartCompleteRequest
-	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagecontract.CapabilityWrite) {
+	var payload storagev1.MultipartCompleteRequest
+	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagev1.CapabilityWrite) {
 		return
 	}
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, "", "", nil)
@@ -219,8 +219,8 @@ func (handler *Handler) HandleMultipartComplete(w http.ResponseWriter, request *
 
 // HandleMultipartAbort 中止显式 Multipart。
 func (handler *Handler) HandleMultipartAbort(w http.ResponseWriter, request *http.Request) {
-	var payload storagecontract.MultipartAbortRequest
-	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagecontract.CapabilityWrite) {
+	var payload storagev1.MultipartAbortRequest
+	if !decode(w, request, &payload) || !handler.authorize(w, request, payload.Namespace, storagev1.CapabilityWrite) {
 		return
 	}
 	store, _, ok := handler.storeAndValidate(w, payload.Namespace, payload.Key, "", "", nil)
@@ -237,15 +237,15 @@ func (handler *Handler) HandleMultipartAbort(w http.ResponseWriter, request *htt
 	sharedhttp.WriteJSON(w, http.StatusOK, map[string]any{})
 }
 
-func (handler *Handler) authorize(w http.ResponseWriter, request *http.Request, namespace string, capability storagecontract.Capability) bool {
-	if err := storagecontract.ValidateNamespaceName(namespace); err != nil {
+func (handler *Handler) authorize(w http.ResponseWriter, request *http.Request, namespace string, capability storagev1.Capability) bool {
+	if err := storagev1.ValidateNamespaceName(namespace); err != nil {
 		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
 		return false
 	}
-	switch handler.policy.Authorize(request.Header.Get(storagecontract.ServiceTokenHeader), namespace, capability) {
-	case storagecontract.DecisionAllowed:
+	switch handler.policy.Authorize(request.Header.Get(storagev1.ServiceTokenHeader), namespace, capability) {
+	case storagev1.DecisionAllowed:
 		return true
-	case storagecontract.DecisionUnauthenticated:
+	case storagev1.DecisionUnauthenticated:
 		sharedhttp.WriteError(w, http.StatusUnauthorized, "invalid storage service token")
 	default:
 		sharedhttp.WriteError(w, http.StatusForbidden, "storage access forbidden")
@@ -260,7 +260,7 @@ func (handler *Handler) storeAndValidate(w http.ResponseWriter, namespaceName, k
 		sharedhttp.WriteError(w, http.StatusForbidden, "storage access forbidden")
 		return nil, objectstorage.Namespace{}, false
 	}
-	if err := storagecontract.ValidateObjectInput(namespace, key, versionID, contentType, metadata); err != nil {
+	if err := storagev1.ValidateObjectInput(namespace, key, versionID, contentType, metadata); err != nil {
 		sharedhttp.WriteError(w, http.StatusBadRequest, "invalid request")
 		return nil, objectstorage.Namespace{}, false
 	}
@@ -269,7 +269,7 @@ func (handler *Handler) storeAndValidate(w http.ResponseWriter, namespaceName, k
 
 func decode(w http.ResponseWriter, request *http.Request, target any) bool {
 	err := sharedhttp.DecodeJSONWithOptions(w, request, target, sharedhttp.DecodeJSONOptions{
-		MaxBytes: storagecontract.MaxControlBodyBytes, DisallowUnknownFields: true,
+		MaxBytes: storagev1.MaxControlBodyBytes, DisallowUnknownFields: true,
 	})
 	if err == nil {
 		return true
@@ -299,7 +299,7 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	sharedhttp.WriteError(w, status, message)
 }
 
-func parseChecksum(checksum *storagecontract.Checksum) (objectstorage.HeaderChecksum, bool) {
+func parseChecksum(checksum *storagev1.Checksum) (objectstorage.HeaderChecksum, bool) {
 	if checksum == nil {
 		return objectstorage.HeaderChecksum{}, true
 	}
@@ -323,8 +323,8 @@ func parseChecksum(checksum *storagecontract.Checksum) (objectstorage.HeaderChec
 	}
 }
 
-func objectInfo(info objectstorage.ObjectInfo) storagecontract.ObjectInfo {
-	result := storagecontract.ObjectInfo{
+func objectInfo(info objectstorage.ObjectInfo) storagev1.ObjectInfo {
+	result := storagev1.ObjectInfo{
 		Key: info.Key, VersionID: info.VersionID, ETag: info.ETag, Size: info.Size,
 		ContentType: info.ContentType, Metadata: info.Metadata, Checksum: checksum(info.Checksum),
 	}
@@ -338,23 +338,23 @@ func objectInfo(info objectstorage.ObjectInfo) storagecontract.ObjectInfo {
 	return result
 }
 
-func checksum(value objectstorage.HeaderChecksum) *storagecontract.Checksum {
+func checksum(value objectstorage.HeaderChecksum) *storagev1.Checksum {
 	switch {
 	case value.CRC32 != "":
-		return &storagecontract.Checksum{Algorithm: "CRC32", Value: value.CRC32}
+		return &storagev1.Checksum{Algorithm: "CRC32", Value: value.CRC32}
 	case value.CRC32C != "":
-		return &storagecontract.Checksum{Algorithm: "CRC32C", Value: value.CRC32C}
+		return &storagev1.Checksum{Algorithm: "CRC32C", Value: value.CRC32C}
 	case value.SHA1 != "":
-		return &storagecontract.Checksum{Algorithm: "SHA1", Value: value.SHA1}
+		return &storagev1.Checksum{Algorithm: "SHA1", Value: value.SHA1}
 	case value.SHA256 != "":
-		return &storagecontract.Checksum{Algorithm: "SHA256", Value: value.SHA256}
+		return &storagev1.Checksum{Algorithm: "SHA256", Value: value.SHA256}
 	default:
 		return nil
 	}
 }
 
-func presignedRequest(request objectstorage.PresignedRequest) storagecontract.PresignedRequest {
-	return storagecontract.PresignedRequest{
+func presignedRequest(request objectstorage.PresignedRequest) storagev1.PresignedRequest {
+	return storagev1.PresignedRequest{
 		Method: request.Method, URL: request.URL, Headers: request.Headers, ExpiresAt: request.ExpiresAt,
 	}
 }

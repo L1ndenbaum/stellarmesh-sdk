@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage"
-	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/storagecontract"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/application"
 	httpapi "github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/interfaces/http"
+	"github.com/L1ndenbaum/stellarmesh-sdk/services/storage/internal/storagev1"
 )
 
 const validToken = "storage-service-test-token-0000000001"
@@ -23,8 +23,8 @@ const validToken = "storage-service-test-token-0000000001"
 func TestRouterHealthAuthenticationAndReadiness(t *testing.T) {
 	t.Parallel()
 	ready := &readiness{value: false}
-	router := testRouter(t, &fakeStore{}, ready, []storagecontract.Capability{
-		storagecontract.CapabilityRead, storagecontract.CapabilityWrite, storagecontract.CapabilityDelete,
+	router := testRouter(t, &fakeStore{}, ready, []storagev1.Capability{
+		storagev1.CapabilityRead, storagev1.CapabilityWrite, storagev1.CapabilityDelete,
 	})
 	if response := perform(router, http.MethodGet, "/health", "", ""); response.Code != http.StatusOK {
 		t.Fatalf("health status = %d", response.Code)
@@ -43,7 +43,7 @@ func TestRouterHealthAuthenticationAndReadiness(t *testing.T) {
 
 func TestRoutesRejectUnknownFieldsAndEnforceCapability(t *testing.T) {
 	t.Parallel()
-	router := testRouter(t, &fakeStore{}, &readiness{value: true}, []storagecontract.Capability{storagecontract.CapabilityRead})
+	router := testRouter(t, &fakeStore{}, &readiness{value: true}, []storagev1.Capability{storagev1.CapabilityRead})
 	response := perform(router, http.MethodPost, "/v1/objects/stat", `{"namespace":"documents","key":"key","bucket":"forbidden"}`, validToken)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("unknown field status = %d body=%s", response.Code, response.Body.String())
@@ -52,7 +52,7 @@ func TestRoutesRejectUnknownFieldsAndEnforceCapability(t *testing.T) {
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("capability status = %d", response.Code)
 	}
-	large := `{"namespace":"documents","key":"` + strings.Repeat("x", storagecontract.MaxControlBodyBytes) + `"}`
+	large := `{"namespace":"documents","key":"` + strings.Repeat("x", storagev1.MaxControlBodyBytes) + `"}`
 	response = perform(router, http.MethodPost, "/v1/objects/stat", large, validToken)
 	if response.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("large body status = %d", response.Code)
@@ -61,8 +61,8 @@ func TestRoutesRejectUnknownFieldsAndEnforceCapability(t *testing.T) {
 
 func TestAllControlRoutes(t *testing.T) {
 	t.Parallel()
-	router := testRouter(t, &fakeStore{}, &readiness{value: true}, []storagecontract.Capability{
-		storagecontract.CapabilityRead, storagecontract.CapabilityWrite, storagecontract.CapabilityDelete,
+	router := testRouter(t, &fakeStore{}, &readiness{value: true}, []storagev1.Capability{
+		storagev1.CapabilityRead, storagev1.CapabilityWrite, storagev1.CapabilityDelete,
 	})
 	tests := []struct {
 		route   string
@@ -111,7 +111,7 @@ func TestProviderErrorsAreMappedWithoutDetails(t *testing.T) {
 		store := &fakeStore{statErr: &objectstorage.Error{
 			Kind: test.kind, Operation: "stat", Key: "key", Err: errors.New("https://internal.example/private-bucket?X-Amz-Signature=secret"),
 		}}
-		router := testRouter(t, store, &readiness{value: true}, []storagecontract.Capability{storagecontract.CapabilityRead})
+		router := testRouter(t, store, &readiness{value: true}, []storagev1.Capability{storagev1.CapabilityRead})
 		response := perform(router, http.MethodPost, "/v1/objects/stat", `{"namespace":"documents","key":"key"}`, validToken)
 		if response.Code != test.status {
 			t.Fatalf("kind %v status = %d", test.kind, response.Code)
@@ -123,12 +123,12 @@ func TestProviderErrorsAreMappedWithoutDetails(t *testing.T) {
 	}
 }
 
-func testRouter(t *testing.T, store application.Store, ready httpapi.Readiness, capabilities []storagecontract.Capability) http.Handler {
+func testRouter(t *testing.T, store application.Store, ready httpapi.Readiness, capabilities []storagev1.Capability) http.Handler {
 	t.Helper()
-	policy, err := storagecontract.CompilePolicy(storagecontract.AccessConfig{
-		Namespaces: map[string]storagecontract.NamespaceConfig{"documents": {Bucket: "bucket", Prefix: "prefix/"}},
-		Principals: map[string]storagecontract.PrincipalConfig{"backend": {
-			Tokens: []string{validToken}, Grants: map[string][]storagecontract.Capability{"documents": capabilities},
+	policy, err := storagev1.CompilePolicy(storagev1.AccessConfig{
+		Namespaces: map[string]storagev1.NamespaceConfig{"documents": {Bucket: "bucket", Prefix: "prefix/"}},
+		Principals: map[string]storagev1.PrincipalConfig{"backend": {
+			Tokens: []string{validToken}, Grants: map[string][]storagev1.Capability{"documents": capabilities},
 		}},
 	})
 	if err != nil {
@@ -141,7 +141,7 @@ func testRouter(t *testing.T, store application.Store, ready httpapi.Readiness, 
 func perform(handler http.Handler, method, path, body, token string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	if token != "" {
-		request.Header.Set(storagecontract.ServiceTokenHeader, token)
+		request.Header.Set(storagev1.ServiceTokenHeader, token)
 	}
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
