@@ -15,9 +15,9 @@ import (
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/application"
 	serviceauth "github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/auth"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/config"
+	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/infrastructure/console"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/infrastructure/filesink"
 	kafkapub "github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/infrastructure/kafka"
-	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/interfaces/console"
 	httpapi "github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/interfaces/http"
 	"github.com/L1ndenbaum/stellarmesh-sdk/services/logging/internal/observability"
 )
