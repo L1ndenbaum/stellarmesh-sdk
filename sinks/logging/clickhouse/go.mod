@@ -1,4 +1,4 @@
-module github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse
+module github.com/L1ndenbaum/stellarmesh-sdk/sinks/logging/clickhouse
 
 go 1.24
 

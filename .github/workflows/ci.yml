@@ -29,7 +29,7 @@ jobs:
             sdk/go/mq/kafka/go.sum
             services/logging/go.sum
             services/storage/go.sum
-            sinks/clickhouse/go.sum
+            sinks/logging/clickhouse/go.sum
 
       - name: 安装 Python
         uses: actions/setup-python@v5

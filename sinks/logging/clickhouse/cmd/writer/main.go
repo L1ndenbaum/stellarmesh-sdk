@@ -13,10 +13,10 @@ import (
 
 	httpserver "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/http/server"
 	sharedkafka "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka"
-	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/application"
-	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/config"
-	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/infrastructure"
-	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/observability"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/logging/clickhouse/internal/application"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/logging/clickhouse/internal/config"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/logging/clickhouse/internal/infrastructure"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/logging/clickhouse/internal/observability"
 	segmentio "github.com/segmentio/kafka-go"
 )
 

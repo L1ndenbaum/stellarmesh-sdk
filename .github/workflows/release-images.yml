@@ -28,7 +28,7 @@ jobs:
             sdk/go/mq/kafka/go.sum
             services/logging/go.sum
             services/storage/go.sum
-            sinks/clickhouse/go.sum
+            sinks/logging/clickhouse/go.sum
 
       - name: 安装 Python
         uses: actions/setup-python@v5
@@ -60,10 +60,10 @@ jobs:
             file: services/storage/Dockerfile
           - image: stellarmesh-sdk/logging-clickhouse-sink
             context: .
-            file: sinks/clickhouse/Dockerfile
+            file: sinks/logging/clickhouse/Dockerfile
           - image: stellarmesh-sdk/logging-clickhouse-migrate
-            context: sinks/clickhouse
-            file: sinks/clickhouse/Dockerfile.migrate
+            context: sinks/logging/clickhouse
+            file: sinks/logging/clickhouse/Dockerfile.migrate
     steps:
       - name: 检出代码
         uses: actions/checkout@v4

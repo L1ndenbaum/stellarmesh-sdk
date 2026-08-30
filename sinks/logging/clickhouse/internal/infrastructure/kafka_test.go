@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/application"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/logging/clickhouse/internal/application"
 )
 
 func TestKafkaSourceRejectsUnknownCommitHandle(t *testing.T) {

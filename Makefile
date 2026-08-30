@@ -4,7 +4,7 @@ ROOT := $(CURDIR)
 PYTHON_LOGGING_DIR := sdk/python
 PYTHON_STORAGE_DIR := sdk/python/storage
 VENV := $(ROOT)/.venv
-GO_PACKAGES := ./sdk/go/... ./sdk/go/gateway/... ./sdk/go/gateway/loggingadapter/... ./sdk/go/logging/... ./sdk/go/mq/kafka/... ./sdk/go/objectstorage/... ./services/logging/... ./services/storage/... ./sinks/clickhouse/...
+GO_PACKAGES := ./sdk/go/... ./sdk/go/gateway/... ./sdk/go/gateway/loggingadapter/... ./sdk/go/logging/... ./sdk/go/mq/kafka/... ./sdk/go/objectstorage/... ./services/logging/... ./services/storage/... ./sinks/logging/clickhouse/...
 DOCKER_PROXY_ARGS := --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY --build-arg http_proxy --build-arg https_proxy --build-arg no_proxy
 GOPROXY ?= https://proxy.golang.org,direct
 GOSUMDB ?= sum.golang.org
@@ -22,7 +22,7 @@ bootstrap:
 	$(VENV)/bin/pip install -e '$(PYTHON_STORAGE_DIR)[dev]'
 
 format:
-	gofmt -w $$(rg --files sdk/go services/logging services/storage sinks/clickhouse -g '*.go')
+	gofmt -w $$(rg --files sdk/go services/logging services/storage sinks/logging/clickhouse -g '*.go')
 	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/ruff check src tests --fix
 	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/ruff format src tests
 	cd $(PYTHON_STORAGE_DIR) && $(VENV)/bin/ruff check . --fix
@@ -31,7 +31,7 @@ format:
 	$(VENV)/bin/ruff format tests/integration/storage-pipeline.py
 
 check:
-	test -z "$$(gofmt -l sdk/go services/logging services/storage sinks/clickhouse)"
+	test -z "$$(gofmt -l sdk/go services/logging services/storage sinks/logging/clickhouse)"
 	go vet $(GO_PACKAGES)
 	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/ruff check src tests
 	cd $(PYTHON_LOGGING_DIR) && $(VENV)/bin/ruff format --check src tests
@@ -65,8 +65,8 @@ verify: check test
 images:
 	docker build --network=host $(DOCKER_GO_ARGS) -f services/logging/Dockerfile -t stellarmesh-logging-service:test .
 	docker build --network=host $(DOCKER_GO_ARGS) -f services/storage/Dockerfile -t stellarmesh-storage-service:test .
-	docker build --network=host $(DOCKER_GO_ARGS) -f sinks/clickhouse/Dockerfile -t stellarmesh-logging-clickhouse-sink:test .
-	docker build -f sinks/clickhouse/Dockerfile.migrate -t stellarmesh-logging-clickhouse-migrate:test sinks/clickhouse
+	docker build --network=host $(DOCKER_GO_ARGS) -f sinks/logging/clickhouse/Dockerfile -t stellarmesh-logging-clickhouse-sink:test .
+	docker build -f sinks/logging/clickhouse/Dockerfile.migrate -t stellarmesh-logging-clickhouse-migrate:test sinks/logging/clickhouse
 
 integration: images
 	./tests/integration/logging-pipeline.sh

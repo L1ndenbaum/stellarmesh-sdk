@@ -8,7 +8,7 @@ import (
 
 	sharedlogging "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging"
 	sharedkafka "github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/mq/kafka"
-	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/clickhouse/internal/application"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sinks/logging/clickhouse/internal/application"
 	segmentio "github.com/segmentio/kafka-go"
 )
 

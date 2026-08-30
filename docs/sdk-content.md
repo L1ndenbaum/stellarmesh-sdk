@@ -31,8 +31,8 @@
 | `sdk/python/storage/` | Python 对象存储同步与异步客户端 | `stellarmesh-storage` Python package |
 | `services/logging/` | HTTP 接收、内存队列、控制台输出、Kafka 发布与失败暂存 | 常驻服务镜像 |
 | `services/storage/` | 项目级对象存储认证、授权、readiness、内部 Storage v1 实现与预签名控制面 | 常驻服务镜像 |
-| `sinks/clickhouse/` | Kafka 消费、批量写入和 offset 提交 | 常驻 sink 镜像 |
-| `sinks/clickhouse/migrations/` | `log_events` 表的版本化 up/down SQL | 一次性迁移镜像 |
+| `sinks/logging/clickhouse/` | Kafka 消费、批量写入和 offset 提交 | 常驻日志 sink 镜像 |
+| `sinks/logging/clickhouse/migrations/` | `log_events` 表的版本化 up/down SQL | 一次性迁移镜像 |
 
 建议发布四个相互独立、但来自同一 Git commit 的镜像：
 

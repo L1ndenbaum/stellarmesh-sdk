@@ -9,7 +9,7 @@ use (
 	./sdk/go/objectstorage
 	./services/logging
 	./services/storage
-	./sinks/clickhouse
+	./sinks/logging/clickhouse
 )
 
 replace (
