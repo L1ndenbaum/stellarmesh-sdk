@@ -44,6 +44,12 @@ type recursiveValue struct {
 	Child *recursiveValue `json:"child"`
 }
 
+type groupValuer struct{}
+
+func (groupValuer) LogValue() slog.Value {
+	return slog.GroupValue(slog.String("client-secret", "hidden"), slog.String("name", "visible"))
+}
+
 func TestSanitizingHandlerProducesBoundedSafeJSON(t *testing.T) {
 	var output bytes.Buffer
 	base := slog.NewJSONHandler(&output, nil)
@@ -112,7 +118,11 @@ func TestSanitizingHandlerPreservesLargeIntegersAndResolvesGroups(t *testing.T) 
 		t.Fatal(err)
 	}
 	logger := slog.New(handler.WithAttrs([]slog.Attr{slog.Int64("value", 9_007_199_254_740_993)})).WithGroup("outer")
-	logger.Info("done", slog.Group("inner", slog.String("API-KEY", "secret"), slog.Time("at", time.Unix(1, 0))))
+	logger.Info(
+		"done",
+		slog.Group("inner", slog.String("API-KEY", "secret"), slog.Time("at", time.Unix(1, 0))),
+		slog.Any("resolved", groupValuer{}),
+	)
 
 	var record map[string]any
 	decoder := json.NewDecoder(&output)
@@ -127,6 +137,10 @@ func TestSanitizingHandlerPreservesLargeIntegersAndResolvesGroups(t *testing.T) 
 	inner := outer["inner"].(map[string]any)
 	if inner["API-KEY"] != redactedValue {
 		t.Fatalf("API-KEY = %#v", inner["API-KEY"])
+	}
+	resolved := outer["resolved"].(map[string]any)
+	if resolved["client-secret"] != redactedValue || resolved["name"] != "visible" {
+		t.Fatalf("resolved = %#v", resolved)
 	}
 }
 
@@ -166,6 +180,8 @@ func TestSanitizingHandlerIsolatesPanics(t *testing.T) {
 	record := slog.NewRecord(time.Now(), slog.LevelInfo, "message", 0)
 	if err := handler.Handle(context.Background(), record); !errors.Is(err, ErrHandlerPanic) {
 		t.Fatalf("Handle() error = %v", err)
+	} else if err.Error() != ErrHandlerPanic.Error() {
+		t.Fatalf("Handler panic 泄露了内部文本: %v", err)
 	}
 
 	handler, err = NewSanitizingHandler(slog.NewJSONHandler(&bytes.Buffer{}, nil), HandlerOptions{
@@ -176,6 +192,8 @@ func TestSanitizingHandlerIsolatesPanics(t *testing.T) {
 	}
 	if err := handler.Handle(context.Background(), record); !errors.Is(err, ErrContextAttrsPanic) {
 		t.Fatalf("ContextAttrs panic error = %v", err)
+	} else if err.Error() != ErrContextAttrsPanic.Error() {
+		t.Fatalf("ContextAttrs panic 泄露了内部文本: %v", err)
 	}
 }
 

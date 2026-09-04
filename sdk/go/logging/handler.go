@@ -97,8 +97,8 @@ func (handler *SanitizingHandler) Enabled(ctx context.Context, level slog.Level)
 // Handle 清洗当前记录并把下游 panic 转换为错误。
 func (handler *SanitizingHandler) Handle(ctx context.Context, record slog.Record) (err error) {
 	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("%w: %s", ErrHandlerPanic, safePanicText(recovered))
+		if recover() != nil {
+			err = ErrHandlerPanic
 		}
 	}()
 	if !handler.next.Enabled(ctx, record.Level) {
@@ -359,8 +359,8 @@ func (handler *SanitizingHandler) sensitiveKey(key string) bool {
 
 func callContextAttrs(callback ContextAttrs, ctx context.Context) (attrs []slog.Attr, err error) {
 	defer func() {
-		if recovered := recover(); recovered != nil {
-			err = fmt.Errorf("%w: %s", ErrContextAttrsPanic, safePanicText(recovered))
+		if recover() != nil {
+			err = ErrContextAttrsPanic
 		}
 	}()
 	return callback(ctx), nil
@@ -428,10 +428,6 @@ func safeErrorText(value error) (result string) {
 		}
 	}()
 	return value.Error()
-}
-
-func safePanicText(value any) string {
-	return truncateUTF8(fmt.Sprint(value), 256)
 }
 
 func isNil(value any) bool {

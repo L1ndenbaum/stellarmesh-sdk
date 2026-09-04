@@ -10,6 +10,11 @@ import pytest
 from stellarmesh_logging import JSONFormatter, __version__
 
 
+class BrokenException(Exception):
+    def __str__(self) -> str:
+        raise RuntimeError("secret from __str__")
+
+
 def _record(
     message: object = "request completed",
     *,
@@ -131,6 +136,25 @@ def test_exception_and_source_are_structured() -> None:
     assert decoded["exception"]["type"] == "ValueError"
     assert decoded["exception"]["message"] == "bad value"
     assert "ValueError: bad value" in decoded["exception"]["traceback"]
+
+
+def test_unsafe_exception_and_recursive_metadata_fail_safely() -> None:
+    recursive: dict[str, object] = {}
+    recursive["self"] = recursive
+    formatter = JSONFormatter()
+    decoded = json.loads(
+        formatter.format(
+            _record(
+                extra={
+                    "error": BrokenException(),
+                    "recursive": recursive,
+                }
+            )
+        )
+    )
+
+    assert decoded["error"] == "[UNSERIALIZABLE]"
+    assert decoded["recursive"] == {"self": "[UNSERIALIZABLE]"}
 
 
 def test_reserved_fields_cannot_be_overridden() -> None:
