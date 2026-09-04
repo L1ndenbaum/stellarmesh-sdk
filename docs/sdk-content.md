@@ -1,8 +1,10 @@
 # SDK 内容
 
+> `services/logging` 与 `sinks/logging/clickhouse` 已从主干退役。本文件中的远程 Logging v2 service、Kafka、spool、ClickHouse sink 与迁移说明只记录 `0.2.0` 历史链路，供现存 KGraph 迁移；新项目应使用标准库结构化 stdout 与项目自有 Collector。
+
 ## 目标与边界
 
-`stellarmesh-sdk` 把原先散落在不同项目中的基础 HTTP、网关、日志和对象存储能力集中维护。各项目可以引用相同的 SDK，并独立部署同一版本的服务制品，使用各自的业务路由、Kafka Topic、ClickHouse database、对象存储 namespace、账号与凭据，不需要复制公共源码。
+`stellarmesh-sdk` 把原先散落在不同项目中的基础 HTTP、网关、日志安全辅助和对象存储能力集中维护。日志持久化、表结构与 Collector 部署由项目拥有；SDK不再集中维护一套公共日志运行时。
 
 仓库有意不包含以下内容：
 
@@ -20,8 +22,7 @@
 
 | 路径 | 内容 | 发布形式 |
 | --- | --- | --- |
-| `contracts/logging/v2/` | 当前日志事件、DLQ、尺寸限制、OpenAPI 和共享测试数据 | 随仓库版本发布 |
-| `contracts/logging/v1/` | 只读历史日志契约；运行时代码不再解析或发送 | 随仓库历史保留 |
+| `contracts/logging/v1/`、`contracts/logging/v2/` | 冻结的历史远程日志契约，仅供 `0.2.0` 迁移 | 随仓库历史保留 |
 | `contracts/storage/v1/` | 对象存储控制面 OpenAPI、访问配置 Schema、统一限制和共享测试数据 | 随仓库版本发布 |
 | `sdk/go/` | 标准库实现的环境配置、JSON 请求解码和 HTTP server 基础能力 | Go module |
 | `sdk/go/objectstorage/` | namespace 绑定的对象模型、接口与 S3/S3-compatible 适配器 | 独立 Go module |
@@ -31,21 +32,9 @@
 | `sdk/go/mq/kafka/` | Kafka 连接、Publisher、Topic 检查与 TLS/SASL 配置 | 独立 Go module |
 | `sdk/python/logging/` | Python 日志客户端、类型模型、标准 Handler 与日志门面 | `stellarmesh-logging` Python package |
 | `sdk/python/storage/` | Python 对象存储同步与异步客户端 | `stellarmesh-storage` Python package |
-| `services/logging/` | HTTP 接收、内存队列、控制台输出、Kafka 发布与失败暂存 | 常驻服务镜像 |
 | `services/storage/` | 项目级对象存储认证、授权、readiness、内部 Storage v1 实现与预签名控制面 | 常驻服务镜像 |
-| `sinks/logging/clickhouse/` | Kafka 消费、批量写入和 offset 提交 | 常驻日志 sink 镜像 |
-| `sinks/logging/clickhouse/migrations/` | `log_events` 表的版本化 up/down SQL | 一次性迁移镜像 |
 
-建议发布四个相互独立、但来自同一 Git commit 的镜像：
-
-- `ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-service`；
-- `ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service`；
-- `ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-clickhouse-sink`；
-- `ghcr.io/l1ndenbaum/stellarmesh-sdk/logging-clickhouse-migrate`。
-
-这些镜像是公开制品，可以匿名拉取；测试环境固定完整版本，生产环境固定已验证的 manifest digest。
-
-迁移镜像与服务镜像分开，目的不是形成新的安全边界，而是让外部编排器能够用迁移身份一次性运行固定 digest 的迁移，并确保迁移凭据不会进入常驻容器。
+当前根 tag 只发布 `ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service`。已经发布的三个 Logging `0.2.0` 镜像保留为历史制品，不再从主干重建。
 
 ## 日志协议 v2
 

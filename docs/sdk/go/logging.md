@@ -1,5 +1,7 @@
 # Go Logging SDK 接入教程
 
+> 本页当前记录已经冻结的 `v0.2.0` 远程客户端，供现存项目迁移。公共日志运行时已经退役；新的轻量 `v0.3.0` 将只提供标准库 `slog.Handler` 安全装饰能力。
+
 本教程对应独立 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging`，适用于 Go 1.24 及以上版本。它包含 Logging v2 契约模型、异步 HTTP 客户端、结构化日志门面和标准库 `log/slog.Handler`，只依赖 Go 标准库，不会引入父 SDK、Gateway、AWS SDK、Redis 或 Kafka 依赖。
 
 ## 1. 安装固定版本

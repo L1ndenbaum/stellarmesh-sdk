@@ -1,5 +1,7 @@
 # 接入 SDK
 
+> 公共 `logging-service`、ClickHouse sink 和迁移镜像已从主干退役。本文中对应章节只记录 `0.2.0` 历史接入，供仍运行旧链路的项目迁移，不是新项目的推荐方案。新项目应输出结构化单行 JSON，并由项目自己的 Vector 等 Collector负责持久化与数据库投影。
+
 本文件说明业务项目接入 SDK、日志接收服务、对象存储服务、ClickHouse sink 和迁移制品的完整流程。只接入日志客户端时，可直接阅读 [Go Logging SDK](sdk/go/logging.md) 或 [Python SDK 接入教程](sdk/python/README.md)；父 Go SDK见[Go 父 SDK 接入教程](sdk/go/README.md)，Kafka 基础能力见 [Go Kafka SDK](sdk/go/kafka.md)，网关能力见 [Go 网关 SDK](sdk/go/gateway.md)，对象存储接入分别阅读 [Go 对象存储 SDK](sdk/go/object-storage.md)、[Python 对象存储 SDK](sdk/python/storage.md) 和 [storage-service 部署文档](storage-service.md)。
 
 ## 接入前准备

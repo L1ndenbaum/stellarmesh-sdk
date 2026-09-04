@@ -2,6 +2,12 @@
 
 > 本文件保存旧版本拆分、失败处理和迁移背景。文中的“当前”“未发布”和版本矩阵均表示记录写入时的状态，不是现行发布指令；实际操作以[当前发布文档](../release.md)为准。
 
+## 公共日志运行时退役
+
+SDK 主干已经删除未被业务仓库采用的 `logging-service`、ClickHouse sink、迁移镜像及其发布目标。GHCR 中已经发布的 `0.2.0` 镜像、Logging v1/v2 契约和 Go/Python `0.2.0` 包保持不可变，供仍运行旧链路的 KGraph 完成后续迁移；删除主干源码不等于删除历史制品。
+
+后续新项目默认使用标准库结构化 stdout，并由项目自己的 Vector 等 Collector负责解析、持久缓冲、重放和数据库投影。日志表、保留策略和 ClickHouse migration 不再由公共 SDK统一规定。根镜像发布工作流从此只构建 `storage-service`，`v0.2.0` 是三个 Logging 运行时镜像的最后版本。
+
 ## Logging v2 `0.2.0` 发布
 
 Logging v2 首次把事件用途与严重程度拆开：`kind` 只允许 `LOG`、`AUDIT`，`level` 只允许 `DEBUG`、`INFO`、`WARNING`、`ERROR`。运行时代码只支持 v2；`contracts/logging/v1` 保留为只读历史契约，不提供 HTTP、Kafka、spool 或 decoder 兼容。

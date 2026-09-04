@@ -1,5 +1,7 @@
 # stellarmesh-logging
 
+> `0.2.0` 是远程 Logging v2 客户端的最后版本。公共日志运行时已经退役；后续版本改为标准库结构化 stdout 辅助能力。
+
 `stellarmesh-logging` 为 Python 3.11 及以上项目提供 Logging v2 严格模型、标准库 `logging.Handler`、结构化日志门面和有界异步批量 HTTP 客户端。v2 使用 `kind=LOG|AUDIT` 表示事件种类，使用 `level=DEBUG|INFO|WARNING|ERROR` 表示严重程度。
 
 ```sh

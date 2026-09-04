@@ -1,5 +1,7 @@
 # Python SDK 接入教程
 
+> 本页当前记录已经冻结的 `stellarmesh-logging==0.2.0` 远程客户端，供现存项目迁移。公共日志运行时已经退役；新的轻量 `0.3.0` 将只提供标准库结构化 JSON Formatter。
+
 本教程只对应独立 distribution `stellarmesh-logging`。需要对象存储控制面、预签名直传、同步或异步文件客户端时，阅读[Python 对象存储 SDK 接入教程](storage.md)并安装独立的 `stellarmesh-storage`，不要假定安装日志包会附带对象存储能力。
 
 本教程对应 Python distribution `stellarmesh-logging`，import 名称为 `stellarmesh_logging`，要求 Python 3.11 及以上版本。
