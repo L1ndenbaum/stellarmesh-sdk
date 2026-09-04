@@ -25,9 +25,7 @@ jobs:
             sdk/go/gateway/loggingadapter/go.sum
             sdk/go/mq/kafka/go.sum
             sdk/go/objectstorage/go.sum
-            services/logging/go.sum
             services/storage/go.sum
-            sinks/logging/clickhouse/go.sum
 
       - name: 安装 Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -60,18 +58,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image: stellarmesh-sdk/logging-service
-            context: .
-            file: services/logging/Dockerfile
           - image: stellarmesh-sdk/storage-service
             context: .
             file: services/storage/Dockerfile
-          - image: stellarmesh-sdk/logging-clickhouse-sink
-            context: .
-            file: sinks/logging/clickhouse/Dockerfile
-          - image: stellarmesh-sdk/logging-clickhouse-migrate
-            context: sinks/logging/clickhouse
-            file: sinks/logging/clickhouse/Dockerfile.migrate
     steps:
       - name: 检出代码
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

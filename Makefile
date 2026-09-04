@@ -4,8 +4,8 @@ ROOT := $(CURDIR)
 PYTHON_LOGGING_DIR := sdk/python/logging
 PYTHON_STORAGE_DIR := sdk/python/storage
 UV ?= uv
-GO_PACKAGES := ./sdk/go/... ./sdk/go/gateway/... ./sdk/go/gateway/loggingadapter/... ./sdk/go/logging/... ./sdk/go/mq/kafka/... ./sdk/go/objectstorage/... ./services/logging/... ./services/storage/... ./sinks/logging/clickhouse/...
-GO_SOURCE_DIRS := sdk/go services/logging services/storage sinks/logging/clickhouse
+GO_PACKAGES := ./sdk/go/... ./sdk/go/gateway/... ./sdk/go/gateway/loggingadapter/... ./sdk/go/logging/... ./sdk/go/mq/kafka/... ./sdk/go/objectstorage/... ./services/storage/...
+GO_SOURCE_DIRS := sdk/go services/storage
 DOCKER_PROXY_ARGS := --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY --build-arg http_proxy --build-arg https_proxy --build-arg no_proxy
 GOPROXY ?= https://proxy.golang.org,direct
 GOSUMDB ?= sum.golang.org
@@ -18,8 +18,7 @@ export GOMODCACHE ?= $(ROOT)/.cache/go-mod
 .PHONY: bootstrap python-logging-bootstrap python-storage-bootstrap format check test race verify \
 	go-check go-test go-race python-logging-check python-logging-test \
 	python-storage-check python-storage-test shell-check go-module-consumer \
-	image-logging image-storage image-clickhouse-sink image-clickhouse-migrate images \
-	integration-logging integration-storage integration integration-aws
+	image-storage images integration-storage integration integration-aws
 
 bootstrap: python-logging-bootstrap python-storage-bootstrap
 
@@ -60,8 +59,6 @@ python-storage-check: python-storage-bootstrap
 	$(UV) pip check --python $(PYTHON_STORAGE_DIR)/.venv/bin/python
 
 shell-check:
-	sh -n services/logging/docker-entrypoint.sh
-	sh -n tests/integration/logging-pipeline.sh
 	sh -n tests/integration/storage-minio.sh
 	sh -n tests/go-module-consumer.sh
 	git diff --check
@@ -89,27 +86,15 @@ race: go-race
 
 verify: check test
 
-image-logging:
-	docker build --network=host $(DOCKER_GO_ARGS) -f services/logging/Dockerfile -t stellarmesh-logging-service:test .
-
 image-storage:
 	docker build --network=host $(DOCKER_GO_ARGS) -f services/storage/Dockerfile -t stellarmesh-storage-service:test .
 
-image-clickhouse-sink:
-	docker build --network=host $(DOCKER_GO_ARGS) -f sinks/logging/clickhouse/Dockerfile -t stellarmesh-logging-clickhouse-sink:test .
-
-image-clickhouse-migrate:
-	docker build -f sinks/logging/clickhouse/Dockerfile.migrate -t stellarmesh-logging-clickhouse-migrate:test sinks/logging/clickhouse
-
-images: image-logging image-storage image-clickhouse-sink image-clickhouse-migrate
-
-integration-logging: image-logging image-clickhouse-sink image-clickhouse-migrate
-	./tests/integration/logging-pipeline.sh
+images: image-storage
 
 integration-storage: python-storage-bootstrap image-storage
 	STELLARMESH_STORAGE_TEST_PYTHON=$(ROOT)/$(PYTHON_STORAGE_DIR)/.venv/bin/python ./tests/integration/storage-minio.sh
 
-integration: integration-logging integration-storage
+integration: integration-storage
 
 integration-aws:
 	STELLARMESH_STORAGE_AWS_INTEGRATION=1 go test ./sdk/go/objectstorage/s3store -run '^TestAWSManualIntegration$$' -count=1

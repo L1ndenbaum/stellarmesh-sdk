@@ -28,9 +28,7 @@ jobs:
             sdk/go/gateway/loggingadapter/go.sum
             sdk/go/mq/kafka/go.sum
             sdk/go/objectstorage/go.sum
-            services/logging/go.sum
             services/storage/go.sum
-            sinks/logging/clickhouse/go.sum
 
       - name: 运行格式、静态、单元、竞态与隔离消费检查
         run: make go-check go-test go-race go-module-consumer
@@ -92,17 +90,6 @@ jobs:
       - name: 验证脚本与差异格式
         run: make shell-check
 
-  integration-logging:
-    name: Logging 集成
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-
-      - name: 构建镜像并验证 Logging 链路
-        run: make integration-logging
-
   integration-storage:
     name: Storage 集成
     runs-on: ubuntu-24.04
@@ -140,7 +127,6 @@ jobs:
       - python-logging
       - python-storage
       - shell
-      - integration-logging
       - integration-storage
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -151,14 +137,12 @@ jobs:
           PYTHON_LOGGING_RESULT: ${{ needs['python-logging'].result }}
           PYTHON_STORAGE_RESULT: ${{ needs['python-storage'].result }}
           SHELL_RESULT: ${{ needs.shell.result }}
-          LOGGING_INTEGRATION_RESULT: ${{ needs['integration-logging'].result }}
           STORAGE_INTEGRATION_RESULT: ${{ needs['integration-storage'].result }}
         run: |
           if [ "$GO_RESULT" != "success" ] || \
              [ "$PYTHON_LOGGING_RESULT" != "success" ] || \
              [ "$PYTHON_STORAGE_RESULT" != "success" ] || \
              [ "$SHELL_RESULT" != "success" ] || \
-             [ "$LOGGING_INTEGRATION_RESULT" != "success" ] || \
              [ "$STORAGE_INTEGRATION_RESULT" != "success" ]; then
             echo "至少一项持续验证未成功" >&2
             exit 1
