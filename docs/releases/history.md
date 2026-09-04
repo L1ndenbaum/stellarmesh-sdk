@@ -2,6 +2,12 @@
 
 > 本文件保存旧版本拆分、失败处理和迁移背景。文中的“当前”“未发布”和版本矩阵均表示记录写入时的状态，不是现行发布指令；实际操作以[当前发布文档](../release.md)为准。
 
+## 轻量Logging `0.3.0`发布
+
+Go `sdk/go/logging/v0.3.0`删除Event、远程Client、Emitter、Kafka/DLQ和audit语义，改为零第三方依赖的`slog.Handler`安全装饰器。Python `stellarmesh-logging==0.3.0`删除HTTP、Pydantic、后台线程和远程Handler，改为无运行依赖的标准库单行JSON Formatter。
+
+两个语言包只负责脱敏、有界化、异常与不安全值转换，不统一项目日志Schema、Collector、Topic或ClickHouse表。Gateway Logging Adapter不再发布新版本，主干删除该Module；Gateway Core继续使用标准库`slog`。本次只创建Go与Python组件tag，不创建根tag，也不发布镜像。
+
 ## 公共日志运行时退役
 
 SDK 主干已经删除未被业务仓库采用的 `logging-service`、ClickHouse sink、迁移镜像及其发布目标。GHCR 中已经发布的 `0.2.0` 镜像、Logging v1/v2 契约和 Go/Python `0.2.0` 包保持不可变，供仍运行旧链路的 KGraph 完成后续迁移；删除主干源码不等于删除历史制品。

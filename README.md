@@ -9,10 +9,9 @@
 - `sdk/go/`：只依赖标准库的 Go HTTP、server 与环境配置基础能力。
 - `sdk/go/objectstorage/`：独立发布、namespace 绑定的进程内对象存储 Module。
 - `sdk/go/gateway/`：独立发布的 fail-close 声明式 Gateway、JWT 认证与 Redis 限流 Module。
-- `sdk/go/gateway/loggingadapter/`：独立发布的可选 Stellarmesh Logging 访问日志适配器。
-- `sdk/go/logging/`：独立发布、仅依赖标准库的 Logging v2 契约、异步客户端与 `slog.Handler`。
+- `sdk/go/logging/`：独立发布、仅依赖标准库的 `slog.Handler` 安全装饰器。
 - `sdk/go/mq/kafka/`：独立发布的轻量 Kafka Go Module，提供 PLAIN、SCRAM、TLS/mTLS、Publisher 和 Topic 检查。
-- `sdk/python/logging/`：独立发布的 `stellarmesh-logging` 日志包。
+- `sdk/python/logging/`：独立发布、无运行时第三方依赖的标准库 JSON Formatter。
 - `sdk/python/storage/`：独立发布的 `stellarmesh-storage` 同步与异步对象存储客户端。
 - `services/storage/`：签发 S3/MinIO 预签名请求的项目级控制面服务，不代理对象字节。
 

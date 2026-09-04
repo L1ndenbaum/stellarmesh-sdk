@@ -1,41 +1,33 @@
 # SDK 接入教程
 
-本目录按照仓库中可独立发布和被业务项目引用的 SDK 划分。当前发布六个 Go Module 和两个独立 Python distribution：
+本目录按可独立发布的组件划分：
 
-- [Go 父 SDK 接入教程](go/README.md)：对应 `sdk/go` Go Module，只包含标准库 HTTP 与环境配置能力；
-- [Go 对象存储 SDK 接入教程](go/object-storage.md)：对应独立的 `sdk/go/objectstorage` Go Module；
-- [Go 网关 SDK 接入教程](go/gateway.md)：对应独立的 `sdk/go/gateway` Go Module，包含基础 Gateway、JWT 认证和 Redis 限流；
-- [Go Logging SDK 接入教程](go/logging.md)：对应独立的 `sdk/go/logging` Go Module，只依赖标准库；
-- [Go Kafka SDK 接入教程](go/kafka.md)：对应独立的 `sdk/go/mq/kafka` Go module，只引入 Kafka、压缩和 SCRAM 相关依赖；
-- [Gateway Logging Adapter](go/gateway.md#stellarmesh-logging-adapter)：对应独立的 `sdk/go/gateway/loggingadapter` Go Module；
-- [Python 日志 SDK 接入教程](python/README.md)：对应 `sdk/python/logging` 中发布的 `stellarmesh-logging` 包；
-- [Python 对象存储 SDK 接入教程](python/storage.md)：对应 `sdk/python/storage` 中发布的 `stellarmesh-storage` 包。
+- [Go 父 SDK](go/README.md)：标准库 HTTP 与环境配置能力；
+- [Go 对象存储 SDK](go/object-storage.md)：namespace绑定的进程内对象存储；
+- [Go Gateway SDK](go/gateway.md)：声明式、fail-close网关与标准 `slog` 访问日志；
+- [Go Logging SDK](go/logging.md)：零第三方依赖的 `slog.Handler` 安全装饰器；
+- [Go Kafka SDK](go/kafka.md)：Kafka连接、Publisher与Topic检查；
+- [Python Logging SDK](python/README.md)：标准库 `logging` 的安全单行JSON Formatter；
+- [Python Storage SDK](python/storage.md)：通过storage-service获取预签名请求；
+- [storage-service部署](../storage-service.md)：项目级对象存储控制面。
 
-当前 `0.2.0` 日志包仍是冻结的远程 Logging v2 客户端，仅供已接入项目迁移；新的默认方向是 Go `log/slog` 或 Python `logging` 输出结构化单行 JSON，由项目自己的 Collector 完成持久缓冲和数据库投影。独立 [Gateway Module](go/gateway.md) 允许项目通过 `WithXxx` 选择路由、鉴权、限流和观测能力，安全执行顺序由 SDK 固定。
+## 日志默认路线
 
-Gateway 默认使用标准库 `slog` 写访问日志，不包含远程日志或 Sink 语义；已发布的 `sdk/go/gateway/loggingadapter@v0.2.0` 只为旧远程链路保留，不再作为新项目接入建议。
+Go和Python日志包只帮助项目安全地产生结构化日志，不发送HTTP、不持有service token、不创建后台线程，也不规定Kafka Topic、ClickHouse表或审计模型。
 
-独立 Go Object Storage Module适合持有项目凭据的进程内服务直接访问 S3；Python 对象存储包通过项目级 `storage-service` 获取预签名请求，内容不经过 Go 控制面。Storage v1 的公开定义位于 `contracts/storage/v1`，Go 服务实现位于 `services/storage/internal/storagev1`，不是业务项目可导入的 SDK package。独立 Kafka Module只提供连接、发布和 Topic 检查基础能力，不拥有业务 consumer group 或 offset 语义。SDK 不负责部署平台服务、创建 Bucket、配置 CORS/Policy/Lifecycle、创建 Kafka/ClickHouse 资源或执行迁移，也不读取业务项目的配置模块。
+```text
+Go log/slog 或 Python logging
+  -> 单行结构化 JSON stdout/stderr
+  -> 项目选择的 Vector 等 Collector
+  -> 项目自己的字段映射和数据库表
+```
 
-## 共同准备
+项目负责配置标准库的输出目标和最低级别。Collector负责批量、持久buffer、恢复重放和数据库不可用时的有界积压；数据库Schema、保留策略、DML凭据和migration继续归项目所有。普通运行日志采用at-least-once语义，必须接受重复和有限buffer最终写满的边界。
 
-接入日志 SDK 前，需要从业务项目自己的配置与 Secret 管理中取得：
+`contracts/logging/v1`、`contracts/logging/v2` 与旧Logging `0.2.0`只为现有项目迁移冻结保留，不是新项目的协议依赖。事务性审计应写入业务数据库或transactional outbox，不能依赖普通stdout链路。
 
-- `logging-service` 的 HTTP 地址，例如 `http://logging-service:8091`；
-- 分配给当前业务 `service` 的 token；
-- 稳定、唯一的 `service` 名称；
-- 当前项目使用的 SDK 固定版本。
+## 对象存储路线
 
-token 与 `service` 必须匹配。SDK 会把 token 放入 `X-Logging-Service-Token` 请求头，`logging-service` 会拒绝 token 无权代表的 `service`。
+持有项目对象存储凭据的Go进程可以直接使用`objectstorage` Module。Python或其他客户端通过项目级storage-service取得预签名请求，对象字节直接与S3/MinIO传输。Storage v1公开契约位于`contracts/storage/v1`，Bucket、Policy、CORS、Lifecycle、Secret和生产资源编排不属于SDK。
 
-正式环境必须使用已经发布的固定版本，不要直接引用可变分支。Go 与 Python SDK、`logging-service` 镜像应来自同一个发布 commit；完整发布规则见[发布与版本引用](../release.md)。
-
-接入对象存储时，还需要项目自己的逻辑 namespace、`storage-service` 地址与 token，或进程内 Go SDK 使用的项目 IAM Role/MinIO 凭据。Bucket 不作为业务请求参数，真实权限由项目 Policy 限制。
-
-## 语义边界
-
-业务线程调用 logger 时只把事件放入 SDK 的本地有界队列，不等待网络请求。因此 logger 返回 `true` 仅表示成功入队，不表示已经到达 `logging-service`。
-
-SDK 会对网络异常和少数临时 HTTP 状态执行有限次数重试，并在有界范围内尊重整数秒或 HTTP-date 形式的 `Retry-After`；所有尝试复用原 `event_id`。超过重试上限后事件会交给 drop callback，SDK 不提供本地持久队列，因此“业务进程到 logging-service”属于 best-effort，不能宣称整条链路都是 at-least-once。后台请求收到合法 `202` 后，表示 `logging-service` 已经获得 Kafka 全同步副本确认，或已经把批次原子提交到本地持久 spool；从该持久点到 sink 按 at-least-once 工作，仍可能产生重复事件，也不表示 ClickHouse 已完成写入。
-
-业务进程退出前必须显式关闭 SDK 客户端并给出排空超时。队列数量或累计序列化字节达到上限、事件非法、网络重试耗尽、响应不符合契约或关闭超时时，应通过 SDK 的 drop callback 接入业务项目自己的指标或本地降级日志。
+正式环境必须固定经过验证的Module版本、Python包版本和镜像digest。完整发布边界见[发布与版本引用](../release.md)。

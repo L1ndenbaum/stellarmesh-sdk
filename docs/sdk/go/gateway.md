@@ -2,7 +2,7 @@
 
 网关 SDK 是独立 Go Module `github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway`，适用于 Go 1.24 及以上版本。它返回标准 `http.Handler`，业务项目继续拥有 `main.go`、环境变量解析、路由表、upstream 地址和部署配置。SDK 不启动监听端口，也不提供可直接部署的公共 gateway 进程。
 
-当前 Gateway Core `v0.3.0` 默认通过标准库 `slog` 输出通用访问日志，不直接依赖 Stellarmesh Logging。远程 Logging 通过独立 `loggingadapter@v0.2.0` 按需接入；Adapter `v0.2.0` 只生成 Logging v2 的 `kind=LOG`，不会从路由、身份或状态码推断审计事件。
+当前 Gateway Core `v0.3.0` 默认通过标准库 `slog` 输出通用访问日志，不依赖 Stellarmesh Logging。项目通过`slog.SetDefault`或`WithSlogAccessLogger`选择结构化格式、等级和输出目标，再由项目自己的Collector采集。
 
 ## 安装固定版本
 
@@ -289,43 +289,6 @@ gateway.WithoutAccessLog()
 
 `WithAccessLogger` 继续允许项目注入自己的通用实现。三种配置入口占用同一组件槽位，不能同时声明，避免 Option 顺序决定日志行为。
 
-### Stellarmesh Logging Adapter
-
-需要把访问记录发送到 Stellarmesh Logging 时，额外安装独立 Module：
-
-```sh
-go get \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/loggingadapter@v0.2.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.2.0
-go mod tidy
-```
-
-然后由项目创建并管理 `logging.Emitter`，Adapter 只负责转换访问记录：
-
-```go
-accessLogger, err := loggingadapter.NewStellarmesh(loggingadapter.StellarmeshConfig{
-    Service: "example-gateway",
-    Emitter: logEmitter,
-    TraceIDProvider: func(ctx context.Context, record gateway.AccessLog) string {
-        return traceIDFromContext(ctx)
-    },
-})
-if err != nil {
-    return nil, err
-}
-
-handler, err := gateway.New(
-    gateway.WithRoutes(routes...),
-    gateway.WithUpstreams(upstreams...),
-    gateway.WithAccessLogger(accessLogger),
-)
-```
-
-Adapter 只调用已有 `logging.Emitter`，不创建 Client、队列、worker 或重试，也不拥有 Emitter 的关闭生命周期。它把 HTTP 状态映射为 `INFO`、`WARNING` 或 `ERROR`，并始终设置 `kind=LOG`。需要记录审计事件时，业务代码应显式调用 Logging SDK 的审计入口，不能把通用网关访问日志自动升级为审计。logging-service、Kafka、spool、ClickHouse 和 Sink 都是 Emitter 背后可选 Logging 实现的语义，不属于 Gateway Core 或 Adapter。
-
-Adapter 默认不写用户 ID 和角色；需要时显式设置 `IncludeIdentity`。请求 ID 始终保留在 metadata 中，不能默认冒充分布式链路 `trace_id`；只有 `TraceIDProvider` 返回的真实链路标识才写入 Event 的 `trace_id`。Emitter 拒绝事件只产生访问日志旁路失败，不改变 HTTP 响应。
-
 `WithObserver` 接收请求完成、决策组件故障和访问日志失败三类低基数事件。Observer 和 AccessLogger 的错误或 panic 都不会改变业务响应。项目可以在 Observer 外部适配 Prometheus，标签只应使用路由名、upstream、状态和固定组件名，不应使用 path、用户 ID、请求 ID 或原始错误文本。
 
 ## 健康检查和测试
@@ -351,8 +314,8 @@ Adapter 默认不写用户 ID 和角色；需要时显式设置 `IncludeIdentity
 `v0.3.0` 删除 Gateway Core 中的 `WithAccessLogEmitter` 和对 Stellarmesh Logging 的直接依赖，改为默认使用标准库 `slog`。升级项目需要：
 
 1. 检查默认 CLI 访问日志的容量与日志等级，或显式调用 `WithoutAccessLog()`；
-2. 把旧 `WithAccessLogEmitter` 替换为独立 `loggingadapter.NewStellarmesh` 与 `WithAccessLogger`；
-3. 只有确实需要远程 Stellarmesh Logging 的项目才增加 Adapter 与 Logging Module 依赖；
-4. 验证访问日志失败仍不会改变业务响应，身份字段仍默认关闭，`request_id` 不会冒充 `trace_id`。
+2. 删除远程Emitter、Client和关闭生命周期，使用默认AccessLogger或注入项目自己的`WithAccessLogger`；
+3. 在composition root配置标准库JSON Handler和日志等级，再交给项目Collector采集；
+4. 验证访问日志失败仍不会改变业务响应，身份字段仍默认关闭。
 
 本次 SDK 不包含共享 gateway 可执行程序，也不包含服务发现、动态配置、配置热更新、自动重试、熔断、WAF、缓存、灰度路由或管理控制面。这些能力应在出现明确的跨项目需求后独立设计。

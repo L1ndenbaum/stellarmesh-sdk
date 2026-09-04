@@ -12,7 +12,8 @@
 | Go Kafka | `sdk/go/mq/kafka/v0.1.0` | 轻量 Kafka 连接与 Publisher |
 | Python Storage | `sdk/python/storage/v0.1.1` | `stellarmesh-storage==0.1.1` |
 | storage-service | 根镜像 tag `v0.2.0` | 当前公开 Storage v1 镜像 |
-| 旧 Go/Python Logging | `0.2.0` | 冻结的远程 Logging v2 客户端，只供迁移 |
+| Go Logging | `sdk/go/logging/v0.3.0` | `slog.Handler`安全装饰器 |
+| Python Logging | `sdk/python/logging/v0.3.0` | `stellarmesh-logging==0.3.0` JSON Formatter |
 | 旧 Gateway Logging Adapter | `0.2.0` | 冻结的远程日志适配器，只供迁移 |
 | 旧 Logging 运行时镜像 | 根镜像 tag `v0.2.0` | 最后版本，不再构建新版本 |
 
@@ -33,6 +34,23 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 - Go 与 Python组件 tag 不触发镜像构建，根 tag 也不触发 Python 发布。
 
 发布工作流必须从公共 Go Proxy 或实际构建出的 wheel/sdist验证制品，不能依赖仓库 `go.work`、本地 `replace` 或可变源码目录。公开 GHCR 镜像可以匿名拉取；生产环境仍应固定已验证的 manifest digest。
+
+## Logging `0.3.0`发布
+
+轻量Go与Python Logging包从同一个经过验证的commit发布，但使用两个独立tag：
+
+```sh
+git tag -a sdk/go/logging/v0.3.0 -m '发布 Logging Go SDK v0.3.0'
+git push origin sdk/go/logging/v0.3.0
+
+git tag -a sdk/python/logging/v0.3.0 \
+  -m '发布 stellarmesh-logging v0.3.0'
+git push origin sdk/python/logging/v0.3.0
+```
+
+先推送`dev`并等待完整持续验证成功，再确认两个远端tag均不存在。Go tag触发公共Proxy smoke；Python tag只构建一次wheel/sdist，同一artifact依次发布TestPyPI和需要审批的正式PyPI。不创建根`v0.3.0`或Gateway Adapter tag，也不重发任何镜像。
+
+若tag已经推送但必须修改源码、workflow、锁文件或制品内容，应发布`0.3.1`，不得移动、删除或复用`0.3.0`。
 
 ## 旧日志制品边界
 
