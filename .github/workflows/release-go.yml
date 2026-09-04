@@ -5,7 +5,6 @@ on:
     tags:
       - "sdk/go/v*.*.*"
       - "sdk/go/gateway/v*.*.*"
-      - "sdk/go/gateway/loggingadapter/v*.*.*"
       - "sdk/go/logging/v*.*.*"
       - "sdk/go/mq/kafka/v*.*.*"
       - "sdk/go/objectstorage/v*.*.*"

@@ -25,7 +25,6 @@ jobs:
           go-version: "1.24.x"
           cache-dependency-path: |
             sdk/go/gateway/go.sum
-            sdk/go/gateway/loggingadapter/go.sum
             sdk/go/mq/kafka/go.sum
             sdk/go/objectstorage/go.sum
             services/storage/go.sum
