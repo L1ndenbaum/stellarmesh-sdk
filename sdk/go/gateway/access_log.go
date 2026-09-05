@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"reflect"
 	"time"
@@ -112,10 +113,8 @@ func accessLogStateFromContext(ctx context.Context) *accessLogState {
 
 func cloneAccessLog(accessLog AccessLog) AccessLog {
 	accessLog.Roles = append([]string(nil), accessLog.Roles...)
-	accessLog.RateLimitResult = make(map[RateLimitScope]string, len(accessLog.RateLimitResult))
-	for scope, result := range accessLog.RateLimitResult {
-		accessLog.RateLimitResult[scope] = result
-	}
+	// 旁路日志可以持有自己的副本；先复制原 map，不能覆盖后再遍历。
+	accessLog.RateLimitResult = maps.Clone(accessLog.RateLimitResult)
 	return accessLog
 }
 

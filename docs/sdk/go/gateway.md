@@ -4,6 +4,8 @@
 
 当前 Gateway Core `v0.3.0` 默认通过标准库 `slog` 输出通用访问日志，不依赖 Stellarmesh Logging。项目通过`slog.SetDefault`或`WithSlogAccessLogger`选择结构化格式、等级和输出目标，再由项目自己的Collector采集。
 
+主干准备 `v0.3.1`（尚未发布），修复访问日志中 `rate_limit_result` 被错误清空的问题。当前公开版本仍是 `v0.3.0`；以下安装命令继续引用已发布版本。
+
 ## 安装固定版本
 
 只使用网关能力的项目直接安装独立 Module：
@@ -308,6 +310,10 @@ gateway.WithoutAccessLog()
 ## 从 `v0.1.0` 升级到 `v0.2.0`
 
 `v0.1.0` 默认返回带 `code`、`message`、`data`、`timestamp` 和 `error_reason` 的 Stellarmesh JSON envelope；`v0.2.0` 改为协议中立的纯文本。升级前应检查调用方、探针和前端是否解析默认错误正文或健康响应。需要保留原结构时，先在项目仓库实现上面的两个响应器并完成契约测试，再升级 Module。已经显式配置 `WithErrorResponder` 的项目继续保留自己的错误正文，并会在响应器执行前获得 SDK 设置的 `Retry-After`。
+
+## `v0.3.1` 访问日志修正
+
+待发布的 `v0.3.1` 保留各已执行限流阶段的 `allowed`、`rejected`、`error`、`disabled` 结果，默认 slog 输出会包含相应 `rate_limit_result`。请求提前结束时不补造尚未执行阶段的结果。自定义 `AccessLogger` 获得独立的结果 map 和 Roles slice，修改日志副本不会改写请求原始状态；日志错误或 panic 仍属于旁路故障，不改变响应。
 
 ## 从 `v0.2.0` 升级到 `v0.3.0`
 

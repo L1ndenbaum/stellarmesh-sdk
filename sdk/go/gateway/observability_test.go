@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -84,6 +85,64 @@ func TestSlogAccessLoggerLevelsAndIdentity(t *testing.T) {
 	attributes := slogRecordAttributes(records[0])
 	if attributes["user_id"] != "user-1" {
 		t.Fatalf("attributes = %#v", attributes)
+	}
+	results, ok := attributes["rate_limit_result"].([]slog.Attr)
+	if !ok || len(results) != 1 || !results[0].Equal(slog.String("client_ip", "allowed")) {
+		t.Fatalf("rate_limit_result = %#v", attributes["rate_limit_result"])
+	}
+}
+
+func TestRequestAccessLogPreservesRateLimitDecisions(t *testing.T) {
+	for _, item := range []struct {
+		name    string
+		limiter RateLimiter
+		status  int
+		want    map[RateLimitScope]string
+	}{
+		{name: "disabled", status: http.StatusNoContent, want: map[RateLimitScope]string{RateLimitScopeClientIP: "disabled", RateLimitScopeUpstream: "disabled"}},
+		{name: "allowed", limiter: RateLimiterFunc(func(context.Context, RateLimitRequest) (RateLimitDecision, error) {
+			return RateLimitDecision{Allowed: true}, nil
+		}), status: http.StatusNoContent, want: map[RateLimitScope]string{RateLimitScopeClientIP: "allowed", RateLimitScopeUpstream: "disabled"}},
+		{name: "rejected", limiter: RateLimiterFunc(func(context.Context, RateLimitRequest) (RateLimitDecision, error) {
+			return RateLimitDecision{Allowed: false}, nil
+		}), status: http.StatusTooManyRequests, want: map[RateLimitScope]string{RateLimitScopeClientIP: "rejected"}},
+		{name: "error", limiter: RateLimiterFunc(func(context.Context, RateLimitRequest) (RateLimitDecision, error) {
+			return RateLimitDecision{}, errors.New("unavailable")
+		}), status: http.StatusServiceUnavailable, want: map[RateLimitScope]string{RateLimitScopeClientIP: "error"}},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			var logs []AccessLog
+			options := []Option{
+				WithRoutes(publicRoute()),
+				withTestUpstreams(map[string]http.Handler{"backend": http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })}),
+				WithAccessLogger(AccessLoggerFunc(func(_ context.Context, event AccessLog) error { logs = append(logs, event); return nil })),
+			}
+			if item.limiter != nil {
+				options = append(options, WithClientIPRateLimiter(item.limiter))
+			}
+			gateway, err := New(options...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := httptest.NewRecorder()
+			gateway.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://gateway/public", nil))
+			if response.Code != item.status || len(logs) != 1 {
+				t.Fatalf("status = %d, logs = %d", response.Code, len(logs))
+			}
+			if !maps.Equal(logs[0].RateLimitResult, item.want) {
+				t.Fatalf("rate limits = %#v, want %#v", logs[0].RateLimitResult, item.want)
+			}
+		})
+	}
+}
+
+func TestAccessLogCopyOwnsMutableFields(t *testing.T) {
+	original := AccessLog{Roles: []string{"reader"}, RateLimitResult: map[RateLimitScope]string{RateLimitScopeClientIP: "allowed"}}
+	copied := cloneAccessLog(original)
+	copied.Roles[0] = "changed"
+	copied.RateLimitResult[RateLimitScopeClientIP] = "changed"
+	if original.Roles[0] != "reader" || original.RateLimitResult[RateLimitScopeClientIP] != "allowed" {
+		t.Fatalf("original mutated: %#v", original)
 	}
 }
 

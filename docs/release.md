@@ -43,6 +43,10 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 
 未来发布时，先推送经过完整验证的源码并等待持续验证成功，确认目标 tag 不存在后，再从同一 commit 创建两个组件 tag。Go tag 验证公共代理制品和共享清洗样例；Python tag 构建一次 wheel/sdist，检查通过后使用同一 artifact 依次发布 TestPyPI 与正式 PyPI。发布后验证真实制品，再更新已发布矩阵。不创建根 tag、不重发日志镜像。
 
+## 待发布的 Gateway `0.3.1`
+
+主干准备 `sdk/go/gateway/v0.3.1`，修复访问日志复制时丢失 `RateLimitResult` 的问题。已执行限流阶段的 `allowed`、`rejected`、`error` 或 `disabled` 结果将正常输出，尚未执行的阶段不补造结果；日志副本的 map 和 Roles 与原始状态隔离。公开接口和鉴权、限流决策不变。该版本尚未创建或推送 tag，发布后再更新上方矩阵。
+
 ## 旧日志制品边界
 
 以下历史制品仍可按原版本引用，但不再接收新功能或重建：
