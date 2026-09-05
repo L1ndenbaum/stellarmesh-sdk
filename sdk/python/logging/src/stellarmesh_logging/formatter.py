@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import logging
 import math
-import re
 import traceback
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Mapping
 from datetime import UTC, date, datetime
 from enum import Enum
 from typing import Any
@@ -35,6 +33,13 @@ _BUILTIN_SENSITIVE_KEYS = (
     "secret",
     "session",
     "token",
+    "accesstoken",
+    "refreshtoken",
+    "idtoken",
+    "sessiontoken",
+    "csrftoken",
+    "xsrftoken",
+    "setcookie",
 )
 
 _RESERVED_OUTPUT_FIELDS = frozenset(
@@ -94,7 +99,7 @@ class JSONFormatter(logging.Formatter):
             if not normalized:
                 raise ValueError("extra_sensitive_keys 必须包含字母或数字")
             sensitive_keys.append(normalized)
-        self._sensitive_keys = tuple(sensitive_keys)
+        self._sensitive_keys = frozenset(sensitive_keys)
 
     def format(self, record: logging.LogRecord) -> str:
         budget = _Budget(self._max_attributes)
@@ -173,81 +178,48 @@ class JSONFormatter(logging.Formatter):
     ) -> object:
         if depth > self._max_depth:
             return _TRUNCATED
-        if isinstance(value, str):
+        # Enum 是显式值转换；其余容器仅接受内置类型，不调用业务迭代器。
+        if isinstance(value, Enum):
+            return self._sanitize(value.value, depth, budget, seen)
+        if type(value) is str:
             return _truncate_utf8(value, self._max_string_bytes)
         if isinstance(value, BaseException):
             return _truncate_utf8(
                 _safe_exception_message(value), self._max_string_bytes
             )
-        if isinstance(value, bytes):
+        if type(value) is bytes:
             return f"<bytes:{len(value)}>"
-        if value is None or isinstance(value, (bool, int)):
+        if value is None or type(value) in (bool, int):
             return value
-        if isinstance(value, float):
+        if type(value) is float:
             return value if math.isfinite(value) else _UNSERIALIZABLE
-        if isinstance(value, Enum):
-            return self._sanitize(value.value, depth, budget, seen)
-        if isinstance(value, (datetime, date, UUID)):
+        if type(value) in (datetime, date, UUID):
             return _truncate_utf8(str(value), self._max_string_bytes)
-        if dataclasses.is_dataclass(value) and not isinstance(value, type):
-            try:
-                mapped = {
-                    field.name: getattr(value, field.name)
-                    for field in dataclasses.fields(value)
-                }
-            except Exception:  # noqa: BLE001 - 日志数据必须安全失败。
-                return _UNSERIALIZABLE
-            return self._sanitize(mapped, depth, budget, seen)
-        if isinstance(value, Mapping):
-            return self._sanitize_mapping(value, depth, budget, seen)
-        if isinstance(value, Sequence) and not isinstance(
-            value, (str, bytes, bytearray)
-        ):
-            return self._sanitize_sequence(value, depth, budget, seen)
-        return _UNSERIALIZABLE
-
-    def _sanitize_mapping(
-        self,
-        value: Mapping[object, object],
-        depth: int,
-        budget: _Budget,
-        seen: set[int],
-    ) -> object:
+        if type(value) not in (dict, list, tuple):
+            return _UNSERIALIZABLE
         if id(value) in seen:
             return _UNSERIALIZABLE
         seen.add(id(value))
-        result: dict[str, object] = {}
         try:
-            for raw_key, nested in value.items():
-                if not budget.consume():
-                    break
-                key = _safe_key(raw_key)
-                result[key] = self._sanitize_keyed(key, nested, depth + 1, budget, seen)
-            return result
-        except Exception:  # noqa: BLE001 - 任意 Mapping 实现都不能打断业务流程。
-            return _UNSERIALIZABLE
-        finally:
-            seen.remove(id(value))
-
-    def _sanitize_sequence(
-        self,
-        value: Sequence[object],
-        depth: int,
-        budget: _Budget,
-        seen: set[int],
-    ) -> object:
-        if id(value) in seen:
-            return _UNSERIALIZABLE
-        seen.add(id(value))
-        result: list[object] = []
-        try:
+            if isinstance(value, dict):
+                result: dict[str, object] = {}
+                for key, nested in value.items():
+                    if not budget.consume():
+                        break
+                    if type(key) is not str:
+                        return _UNSERIALIZABLE
+                    result[key] = self._sanitize_keyed(
+                        key, nested, depth + 1, budget, seen
+                    )
+                return result
+            sequence: list[object] = []
+            # 上面的精确类型检查排除了自定义 Sequence 和容器子类。
+            assert isinstance(value, (list, tuple))
             for nested in value:
                 if not budget.consume():
                     break
-                result.append(self._sanitize(nested, depth + 1, budget, seen))
-            return result
-        except Exception:  # noqa: BLE001 - 任意 Sequence 实现都不能打断业务流程。
-            return _UNSERIALIZABLE
+                sequence.append(self._sanitize(nested, depth + 1, budget, seen))
+            return sequence
         finally:
             seen.remove(id(value))
 
@@ -269,8 +241,7 @@ class JSONFormatter(logging.Formatter):
         }
 
     def _is_sensitive_key(self, key: str) -> bool:
-        normalized = _normalize_key(key)
-        return any(candidate in normalized for candidate in self._sensitive_keys)
+        return _normalize_key(key) in self._sensitive_keys
 
 
 def _safe_message(record: logging.LogRecord) -> str:
@@ -287,15 +258,12 @@ def _safe_exception_message(value: BaseException) -> str:
         return _UNSERIALIZABLE
 
 
-def _safe_key(value: object) -> str:
-    try:
-        return str(value)
-    except Exception:  # noqa: BLE001 - 自定义 key 也必须安全失败。
-        return _UNSERIALIZABLE
-
-
 def _normalize_key(key: str) -> str:
-    return re.sub(r"[\W_]", "", key, flags=re.UNICODE).lower()
+    return "".join(
+        character.lower()
+        for character in key
+        if character.isalpha() or character.isdecimal()
+    )
 
 
 def _truncate_utf8(value: str, limit: int) -> str:
@@ -312,12 +280,12 @@ def _truncate_utf8(value: str, limit: int) -> str:
 
 
 def _byte_limit(name: str, value: int) -> int:
-    if isinstance(value, bool) or value < len(_TRUNCATED):
+    if type(value) is not int or value < len(_TRUNCATED):
         raise ValueError(f"{name} 必须能够容纳截断标记")
     return value
 
 
 def _positive_limit(name: str, value: int) -> int:
-    if isinstance(value, bool) or value < 1:
+    if type(value) is not int or value < 1:
         raise ValueError(f"{name} 必须是正整数")
     return value

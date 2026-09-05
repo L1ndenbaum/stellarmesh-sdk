@@ -6,12 +6,14 @@
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging
 ```
 
-`v0.3.0`要求Go 1.24及以上，只依赖标准库。它装饰项目已有的`slog.Handler`，提供脱敏和有界化；它不创建Logger、不选择stdout/stderr、不实现远程Client，也不定义项目字段或数据库Schema。
+本教程对应待发布的 `v0.4.0`；当前公共版本仍是 `v0.3.0`。`v0.4.0` 要求Go 1.24及以上，只依赖标准库。它装饰项目已有的`slog.Handler`，提供脱敏和有界化；它不创建Logger、不选择stdout/stderr、不实现远程Client，也不定义项目字段或数据库Schema。
 
 ## 安装
 
+发布前在本仓库通过 `go.work` 验证；以下命令仅在 `v0.4.0` 正式发布后使用。
+
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.3.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.4.0
 go mod tidy
 ```
 
@@ -70,24 +72,25 @@ safe, err := stellarlogging.NewSanitizingHandler(base, stellarlogging.HandlerOpt
 })
 ```
 
-`ContextAttrs`只是一条注入接口，不规定context key或字段名。回调和下游Handler的panic会被转换为稳定错误，不会从标准库Logger调用传播到业务流程；项目如果需要统计Handler失败，应在自己控制的下游Handler或观测层记录指标，不能假定一条`slog.Info`返回代表日志已经落盘。
+`ContextAttrs` 只是一条注入接口，不规定 context key 或字段名。它和下游 Handler 的 panic 正常传播，SDK 不再导出两个 panic 错误类别。下游普通错误原样返回；标准 `slog.Logger` 不向业务日志调用者返回 Handler 错误，输出错误观测由项目负责。
 
-## 安全边界
+## 字段清洗
 
-默认限制如下：
+完整规则以[跨语言清洗约定](../../../contracts/logging/sanitization.md)为准。默认消息和字符串各 `16KiB`、项目节点 `64`、深度 `8`。固定字段、上下文字段、当前属性、具名组和嵌套容器共享节点预算；`WithGroup` 不再绕过脱敏或深度，匿名组不额外计层级。
 
-| 配置 | 默认值 | 说明 |
-| --- | ---: | --- |
-| `MaxMessageBytes` | `16KiB` | message UTF-8字节上限 |
-| `MaxStringBytes` | `16KiB` | 字符串字段UTF-8字节上限 |
-| `MaxAttributes` | `64` | 单条记录的项目属性预算 |
-| `MaxDepth` | `8` | 嵌套结构深度 |
+敏感字段按规范化后的名称精确匹配：`apiKey`、`API-KEY`、`access_token` 等会脱敏，`token_count`、`session_id` 不会被子串误伤。额外项目凭据名称通过 `ExtraSensitiveKeys` 配置。规则不扫描 message 和错误文本。
 
-内置敏感字段覆盖password、secret、token、authorization、cookie、API key、client secret、private key等常见变体。匹配前会把key转小写并移除非字母数字字符，因此`apiKey`、`api_key`、`API-KEY`使用同一规则。`ExtraSensitiveKeys`只能扩展默认集合，不能关闭默认脱敏。
+支持标准标量、时间、duration、error、字符串键 map、slice、array 和 `LogValuer`；普通业务 struct 或 pointer 不再自动 JSON 展开，也不调用未知对象的 `MarshalJSON` 或 `String()`。不支持的值输出 `[UNSERIALIZABLE]`。复杂对象应转换为少量明确字段，或实现标准库 `LogValuer`。
 
-敏感值输出`[REDACTED]`，不可安全序列化的值输出`[UNSERIALIZABLE]`，超限字符串以`[TRUNCATED]`结尾。`error`值转换为受限的`Error()`文本，非有限浮点数不会直接进入JSON。装饰器支持`WithAttrs`、`WithGroup`、`LogValuer`和嵌套group，且不会修改调用方传入的attribute slice或map。
+SDK 不修改调用方数据；`WithAttrs` 复制顶层列表，调用方不能在日志输出时并发修改嵌套容器。等级与输出格式继续由标准库控制，包括原生 `WARN` 等级名称。
 
-SDK只按key脱敏，不扫描任意message或错误文本中的Secret。项目仍应避免把Authorization、Cookie、请求体、响应体和凭据拼入message。
+## 从 `v0.3.0` 迁移
+
+1. 检查依赖隐式 struct/pointer 编码的调用，改为显式属性或 `LogValuer`。
+2. 检查此前依赖敏感词子串匹配的项目字段，使用 `ExtraSensitiveKeys` 添加准确名称。
+3. 移除 `ErrContextAttrsPanic`、`ErrHandlerPanic` 引用；项目自行处理回调与输出 Handler 的故障。
+4. 按包含组节点的新预算检查重要字段是否被截断；优先输出 service、request ID 等必要字段。
+5. 在项目 Collector 中验证语言等级映射与字段落库；不需要恢复远程 Client。
 
 ## Collector与可靠性
 

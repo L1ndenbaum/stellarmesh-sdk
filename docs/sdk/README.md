@@ -11,6 +11,8 @@
 - [Python Storage SDK](python/storage.md)：通过storage-service获取预签名请求；
 - [storage-service部署](../storage-service.md)：项目级对象存储控制面。
 
+主干 Logging `0.4.0` 尚未发布，当前已发布版本仍为 `0.3.0`。升级前阅读[字段清洗约定](../../contracts/logging/sanitization.md)及语言教程中的迁移说明。
+
 ## 日志默认路线
 
 Go和Python日志包只帮助项目安全地产生结构化日志，不发送HTTP、不持有service token、不创建后台线程，也不规定Kafka Topic、ClickHouse表或审计模型。

@@ -1,11 +1,13 @@
 # Python Logging SDK 接入教程
 
-`stellarmesh-logging==0.3.0`要求Python 3.11及以上，没有运行时第三方依赖。它只提供标准库`logging.Formatter`，不拥有Handler、stream、后台线程、远程服务或数据库。
+本教程对应待发布的 `stellarmesh-logging==0.4.0`，当前公共版本仍为 `0.3.0`。它要求Python 3.11及以上，没有运行时第三方依赖。它只提供标准库`logging.Formatter`，不拥有Handler、stream、后台线程、远程服务或数据库。
 
 ## 安装
 
+发布前从仓库根目录执行 `python -m pip install ./sdk/python/logging`；以下命令仅在正式发布后使用。
+
 ```sh
-python -m pip install stellarmesh-logging==0.3.0
+python -m pip install stellarmesh-logging==0.4.0
 ```
 
 ## 配置结构化stdout
@@ -42,11 +44,15 @@ logger.info(
 
 ## 脱敏和限制
 
-Formatter默认限制message和字符串为`16KiB`、项目属性为64项、嵌套深度为8。敏感key先转小写并移除非字母数字字符，再匹配password、secret、token、authorization、cookie、API key、client secret、private key等常见形式。`extra_sensitive_keys`只扩展默认集合。
+完整规则以[跨语言清洗约定](../../../contracts/logging/sanitization.md)为准。默认消息和字符串各 `16KiB`、项目节点 `64`、深度 `8`；固定字段、当前字段和所有嵌套容器共用预算。敏感字段规范化后精确匹配，`token_count`、`session_id` 不再因子串匹配而被遮盖。`extra_sensitive_keys` 可添加项目自己的准确凭据名称。
 
-敏感值输出`[REDACTED]`，不可序列化值输出`[UNSERIALIZABLE]`，截断值以`[TRUNCATED]`结尾。Formatter不会修改调用方的mapping或sequence，也不会扫描message内容；项目不得主动把Secret拼入日志消息。
+支持内置标量、dict/list/tuple、日期时间、UUID、Enum、异常和 bytes；dataclass、自定义 Mapping/Sequence 与容器子类不再自动展开。敏感值输出 `[REDACTED]`，不支持的值输出 `[UNSERIALIZABLE]`，超深或超长值使用 `[TRUNCATED]`。Formatter 不扫描消息或异常文本中的凭据。
 
 日志等级由标准库Logger和Handler控制。Formatter不实现第二套`minimum_level`，也不会关闭调用方的stream。多进程或fork应用应在自己的进程初始化边界安装Handler，避免重复注册。
+
+## 从 `0.3.0` 迁移
+
+将 dataclass 或自定义容器显式转换为少量内置字典字段；检查此前依赖敏感词子串匹配的凭据名称，并添加到 `extra_sensitive_keys`。固定字段只复制顶层结构，项目不能在输出时并发修改嵌套容器。支持类型的消息、异常编码失败仍安全降级，输出 stream 和项目扩展代码的错误由项目负责。
 
 ## Collector与迁移
 

@@ -38,7 +38,7 @@ def _record(
 
 
 def test_version_and_basic_record_are_stable_single_line_json() -> None:
-    assert __version__ == "0.3.0"
+    assert __version__ == "0.4.0"
     formatter = JSONFormatter(static_fields={"service": "backend"})
 
     payload = formatter.format(

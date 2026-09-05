@@ -57,7 +57,7 @@ func TestSanitizingHandlerProducesBoundedSafeJSON(t *testing.T) {
 		MaxMessageBytes:    32,
 		MaxStringBytes:     32,
 		MaxAttributes:      16,
-		MaxDepth:           2,
+		MaxDepth:           3,
 		ExtraSensitiveKeys: []string{"tenant credential"},
 		ContextAttrs: func(context.Context) []slog.Attr {
 			return []slog.Attr{slog.String("request_id", "request-1")}
@@ -171,32 +171,6 @@ func TestSanitizingHandlerDelegatesLevelAndErrors(t *testing.T) {
 	}
 }
 
-func TestSanitizingHandlerIsolatesPanics(t *testing.T) {
-	next := &failureHandler{enabled: true, panics: true}
-	handler, err := NewSanitizingHandler(next, HandlerOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	record := slog.NewRecord(time.Now(), slog.LevelInfo, "message", 0)
-	if err := handler.Handle(context.Background(), record); !errors.Is(err, ErrHandlerPanic) {
-		t.Fatalf("Handle() error = %v", err)
-	} else if err.Error() != ErrHandlerPanic.Error() {
-		t.Fatalf("Handler panic 泄露了内部文本: %v", err)
-	}
-
-	handler, err = NewSanitizingHandler(slog.NewJSONHandler(&bytes.Buffer{}, nil), HandlerOptions{
-		ContextAttrs: func(context.Context) []slog.Attr { panic("context token") },
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := handler.Handle(context.Background(), record); !errors.Is(err, ErrContextAttrsPanic) {
-		t.Fatalf("ContextAttrs panic error = %v", err)
-	} else if err.Error() != ErrContextAttrsPanic.Error() {
-		t.Fatalf("ContextAttrs panic 泄露了内部文本: %v", err)
-	}
-}
-
 func TestSanitizingHandlerRejectsInvalidConfiguration(t *testing.T) {
 	var nilHandler *typedNilHandler
 	for name, testCase := range map[string]struct {
@@ -221,20 +195,19 @@ func TestSanitizingHandlerRejectsInvalidConfiguration(t *testing.T) {
 
 func TestSanitizingHandlerLimitsAttributesAndRecursiveValues(t *testing.T) {
 	var output bytes.Buffer
-	handler, err := NewSanitizingHandler(slog.NewJSONHandler(&output, nil), HandlerOptions{
-		MaxAttributes: 2,
-		MaxDepth:      2,
-	})
+	handler, err := NewSanitizingHandler(slog.NewJSONHandler(&output, nil), HandlerOptions{MaxAttributes: 2, MaxDepth: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	value := &recursiveValue{}
 	value.Child = value
-	slog.New(handler).Info("done", "one", 1, "two", 2, "three", 3, "recursive", value)
-
+	slog.New(handler).Info("done", "recursive", value, "two", 2, "three", 3)
 	var record map[string]any
 	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
 		t.Fatal(err)
+	}
+	if record["recursive"] != unserializableValue || record["two"] != float64(2) {
+		t.Fatalf("record = %#v", record)
 	}
 	if _, ok := record["three"]; ok {
 		t.Fatal("属性上限后仍输出后续字段")

@@ -1,0 +1,197 @@
+[
+  {
+    "name": "敏感字段精确匹配",
+    "attrs": [
+      {
+        "key": "apiKey",
+        "value": "hidden"
+      },
+      {
+        "key": "API-KEY",
+        "value": "hidden"
+      },
+      {
+        "key": "Authorization",
+        "value": "hidden"
+      },
+      {
+        "key": "access_token",
+        "value": "hidden"
+      },
+      {
+        "key": "refreshToken",
+        "value": "hidden"
+      },
+      {
+        "key": "id-token",
+        "value": "hidden"
+      },
+      {
+        "key": "session_token",
+        "value": "hidden"
+      },
+      {
+        "key": "csrfToken",
+        "value": "hidden"
+      },
+      {
+        "key": "xsrf_token",
+        "value": "hidden"
+      },
+      {
+        "key": "set-cookie",
+        "value": "hidden"
+      },
+      {
+        "key": "token_count",
+        "value": 123
+      },
+      {
+        "key": "prompt_tokens",
+        "value": 456
+      },
+      {
+        "key": "session_id",
+        "value": "session-1"
+      }
+    ],
+    "want": {
+      "apiKey": "[REDACTED]",
+      "API-KEY": "[REDACTED]",
+      "Authorization": "[REDACTED]",
+      "access_token": "[REDACTED]",
+      "refreshToken": "[REDACTED]",
+      "id-token": "[REDACTED]",
+      "session_token": "[REDACTED]",
+      "csrfToken": "[REDACTED]",
+      "xsrf_token": "[REDACTED]",
+      "set-cookie": "[REDACTED]",
+      "token_count": 123,
+      "prompt_tokens": 456,
+      "session_id": "session-1"
+    }
+  },
+  {
+    "name": "项目扩展与嵌套脱敏",
+    "options": {
+      "extra_sensitive_keys": [
+        "tenant credential"
+      ]
+    },
+    "attrs": [
+      {
+        "key": "metadata",
+        "value": {
+          "tenant_credential": "hidden",
+          "clientSecret": "hidden",
+          "credential_count": 2
+        }
+      }
+    ],
+    "want": {
+      "metadata": {
+        "tenant_credential": "[REDACTED]",
+        "clientSecret": "[REDACTED]",
+        "credential_count": 2
+      }
+    }
+  },
+  {
+    "name": "容器共享属性预算",
+    "options": {
+      "max_attributes": 4
+    },
+    "attrs": [
+      {
+        "key": "metadata",
+        "value": {
+          "items": [
+            1,
+            2,
+            3
+          ]
+        }
+      },
+      {
+        "key": "later",
+        "value": 4
+      }
+    ],
+    "want": {
+      "metadata": {
+        "items": [
+          1,
+          2
+        ]
+      }
+    }
+  },
+  {
+    "name": "深度边界",
+    "options": {
+      "max_depth": 2
+    },
+    "attrs": [
+      {
+        "key": "metadata",
+        "value": {
+          "nested": {
+            "value": "hidden"
+          }
+        }
+      }
+    ],
+    "want": {
+      "metadata": {
+        "nested": {
+          "value": "[TRUNCATED]"
+        }
+      }
+    }
+  },
+  {
+    "name": "固定字段共享预算",
+    "options": {
+      "max_attributes": 3
+    },
+    "static_fields": [
+      {
+        "key": "service",
+        "value": "test"
+      }
+    ],
+    "attrs": [
+      {
+        "key": "metadata",
+        "value": {
+          "value": 1
+        }
+      },
+      {
+        "key": "later",
+        "value": 2
+      }
+    ],
+    "want": {
+      "service": "test",
+      "metadata": {
+        "value": 1
+      }
+    }
+  },
+  {
+    "name": "UTF8字符串截断",
+    "options": {
+      "max_string_bytes": 16
+    },
+    "attrs": [
+      {
+        "key": "text",
+        "value": "你好世界你好世界"
+      }
+    ],
+    "want": {
+      "text": "你[TRUNCATED]"
+    }
+  }
+]

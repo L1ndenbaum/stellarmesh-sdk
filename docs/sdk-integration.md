@@ -2,6 +2,8 @@
 
 ## 日志接入
 
+主干正在准备 Logging `0.4.0`，当前公开版本仍为 `0.3.0`。新清洗行为见[共享约定](../contracts/logging/sanitization.md)；原生等级差异（如 Go `WARN` 与 Python `WARNING`）需要项目 Collector 显式映射。
+
 新项目不部署Stellarmesh公共logging-service。应用使用Go `log/slog`或Python `logging`输出结构化单行JSON，项目再选择Vector等Collector持久化到自己的数据库或文件。
 
 Go示例：

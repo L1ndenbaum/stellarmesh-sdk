@@ -20,7 +20,7 @@ go mod tidy
 按需阅读对应教程：
 
 - [Go 网关 SDK](gateway.md)：`sdk/go/gateway@v0.3.0`，提供声明式 Gateway、JWT 认证、Redis 限流与标准库访问日志；
-- [Go Logging SDK](logging.md)：`sdk/go/logging@v0.3.0`，提供零第三方依赖的 `slog.Handler` 安全装饰器；
+- [Go Logging SDK](logging.md)：已发布 `v0.3.0`，主干准备 `v0.4.0`，提供零第三方依赖的 `slog.Handler` 字段清洗装饰器；
 - [Go Kafka SDK](kafka.md)：`sdk/go/mq/kafka@v0.1.0`，提供连接、认证、Publisher 和 Topic 检查；
 - [Go 对象存储 SDK](object-storage.md)：`sdk/go/objectstorage@v0.1.0`，提供 S3/MinIO 进程内客户端。
 

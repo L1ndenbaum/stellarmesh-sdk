@@ -73,7 +73,7 @@ run_local_consumer() {
 				;;
 		esac
 		GOWORK=off go mod tidy
-		GOWORK=off go run .
+		GOWORK=off go run . "$repository_root/contracts/logging/sanitization-cases.json"
 		if [ "$component" = "logging" ]; then
 			module_graph=$(GOWORK=off go list -m all)
 			if printf '%s\n' "$module_graph" | grep -Eq \
@@ -230,7 +230,7 @@ run_public() {
 		cd "$consumer_dir"
 		go mod edit -require="$module_path@$module_version"
 		run_go_public go mod tidy
-		run_go_public go run .
+		run_go_public go run . "$repository_root/contracts/logging/sanitization-cases.json"
 	)
 }
 

@@ -4,6 +4,7 @@
 
 ## 仓库内容
 
+- `contracts/logging/sanitization.md`：Go/Python Logging `0.4.0` 的字段清洗约定与共享样例（待发布）。
 - `contracts/logging/v1/`、`contracts/logging/v2/`：只读冻结的历史远程日志契约，仅供仍运行 `0.2.0` 的项目迁移。
 - `contracts/storage/v1/`：Storage 控制面 OpenAPI、访问配置 Schema、共享限制与测试数据。
 - `sdk/go/`：只依赖标准库的 Go HTTP、server 与环境配置基础能力。

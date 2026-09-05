@@ -2,6 +2,6 @@
 
 from .formatter import JSONFormatter
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 __all__ = ["JSONFormatter", "__version__"]

@@ -17,7 +17,7 @@
 | 旧 Gateway Logging Adapter | `0.2.0` | 冻结的远程日志适配器，只供迁移 |
 | 旧 Logging 运行时镜像 | 根镜像 tag `v0.2.0` | 最后版本，不再构建新版本 |
 
-旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升 patch，不能移动、删除、覆盖或强推已经发布的 tag。历史拆分和兼容记录见[历史发布记录](releases/history.md)。
+旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。历史拆分和兼容记录见[历史发布记录](releases/history.md)。
 
 ## 当前日志方向
 
@@ -35,22 +35,13 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 
 发布工作流必须从公共 Go Proxy 或实际构建出的 wheel/sdist验证制品，不能依赖仓库 `go.work`、本地 `replace` 或可变源码目录。公开 GHCR 镜像可以匿名拉取；生产环境仍应固定已验证的 manifest digest。
 
-## Logging `0.3.0`发布
+## 待发布的 Logging `0.4.0`
 
-轻量Go与Python Logging包从同一个经过验证的commit发布，但使用两个独立tag：
+主干准备 Go Logging `sdk/go/logging/v0.4.0` 与 Python Logging `sdk/python/logging/v0.4.0`，尚未创建或推送 tag。上方矩阵继续表示实际已发布版本；修改源码版本不等于制品已发布。
 
-```sh
-git tag -a sdk/go/logging/v0.3.0 -m '发布 Logging Go SDK v0.3.0'
-git push origin sdk/go/logging/v0.3.0
+本次收窄自动类型展开、改为精确敏感字段匹配、统一分组与容器预算，并删除 Go 的两个 panic 错误类别。它是破坏性变更，迁移步骤见[Go 教程](sdk/go/logging.md)、[Python 教程](sdk/python/README.md)和[共享清洗约定](../contracts/logging/sanitization.md)。仅修复兼容行为时提升 patch；缩减公开行为时提升 minor，不覆盖任何既有 tag。
 
-git tag -a sdk/python/logging/v0.3.0 \
-  -m '发布 stellarmesh-logging v0.3.0'
-git push origin sdk/python/logging/v0.3.0
-```
-
-先推送`dev`并等待完整持续验证成功，再确认两个远端tag均不存在。Go tag触发公共Proxy smoke；Python tag只构建一次wheel/sdist，同一artifact依次发布TestPyPI和需要审批的正式PyPI。不创建根`v0.3.0`或Gateway Adapter tag，也不重发任何镜像。
-
-若tag已经推送但必须修改源码、workflow、锁文件或制品内容，应发布`0.3.1`，不得移动、删除或复用`0.3.0`。
+未来发布时，先推送经过完整验证的源码并等待持续验证成功，确认目标 tag 不存在后，再从同一 commit 创建两个组件 tag。Go tag 验证公共代理制品和共享清洗样例；Python tag 构建一次 wheel/sdist，检查通过后使用同一 artifact 依次发布 TestPyPI 与正式 PyPI。发布后验证真实制品，再更新已发布矩阵。不创建根 tag、不重发日志镜像。
 
 ## 旧日志制品边界
 

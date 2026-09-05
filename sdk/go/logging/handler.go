@@ -1,15 +1,14 @@
 package logging
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math"
 	"reflect"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -19,34 +18,19 @@ const (
 	defaultMaxStringBytes  = 16 * 1024
 	defaultMaxAttributes   = 64
 	defaultMaxDepth        = 8
-
-	redactedValue       = "[REDACTED]"
-	unserializableValue = "[UNSERIALIZABLE]"
-	truncatedValue      = "[TRUNCATED]"
-)
-
-var (
-	// ErrContextAttrsPanic 表示项目提供的上下文字段回调发生 panic。
-	ErrContextAttrsPanic = errors.New("logging ContextAttrs callback panicked")
-	// ErrHandlerPanic 表示被装饰的 slog Handler 发生 panic。
-	ErrHandlerPanic = errors.New("decorated slog Handler panicked")
+	redactedValue          = "[REDACTED]"
+	unserializableValue    = "[UNSERIALIZABLE]"
+	truncatedValue         = "[TRUNCATED]"
 )
 
 var builtinSensitiveKeys = []string{
-	"apikey",
-	"authorization",
-	"clientsecret",
-	"cookie",
-	"credential",
-	"jwt",
-	"password",
-	"privatekey",
-	"secret",
-	"session",
-	"token",
+	"apikey", "authorization", "clientsecret", "cookie", "credential",
+	"jwt", "password", "privatekey", "secret", "session", "token",
+	"accesstoken", "refreshtoken", "idtoken", "sessiontoken", "csrftoken",
+	"xsrftoken", "setcookie",
 }
 
-// ContextAttrs 从请求上下文提取项目自己的稳定字段。
+// ContextAttrs 从请求上下文提取项目自己的稳定字段；回调的 panic 由项目负责。
 type ContextAttrs func(context.Context) []slog.Attr
 
 // HandlerOptions 配置结构化字段的安全边界。
@@ -64,7 +48,7 @@ type scopedAttr struct {
 	attr   slog.Attr
 }
 
-// SanitizingHandler 在记录交给下游 Handler 前完成脱敏和有界化。
+// SanitizingHandler 清洗支持的字段，不拥有输出流、等级或项目扩展点的错误策略。
 type SanitizingHandler struct {
 	next          slog.Handler
 	options       HandlerOptions
@@ -78,94 +62,61 @@ func NewSanitizingHandler(next slog.Handler, options HandlerOptions) (slog.Handl
 	if isNil(next) {
 		return nil, errors.New("logging slog Handler is required")
 	}
-	normalized, sensitiveKeys, err := normalizeOptions(options)
+	normalized, keys, err := normalizeOptions(options)
 	if err != nil {
 		return nil, err
 	}
-	return &SanitizingHandler{
-		next:          next,
-		options:       normalized,
-		sensitiveKeys: sensitiveKeys,
-	}, nil
+	return &SanitizingHandler{next: next, options: normalized, sensitiveKeys: keys}, nil
 }
 
-// Enabled 完全沿用下游 Handler 的等级判断。
+// Enabled 完全沿用下游 Handler 的等级判断与 panic 行为。
 func (handler *SanitizingHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return handler.next.Enabled(ctx, level)
 }
 
-// Handle 清洗当前记录并把下游 panic 转换为错误。
-func (handler *SanitizingHandler) Handle(ctx context.Context, record slog.Record) (err error) {
-	defer func() {
-		if recover() != nil {
-			err = ErrHandlerPanic
-		}
-	}()
-	if !handler.next.Enabled(ctx, record.Level) {
+// Handle 只隔离字段编码失败；项目回调和下游 Handler 的 panic 正常传播。
+func (handler *SanitizingHandler) Handle(ctx context.Context, record slog.Record) error {
+	if !handler.Enabled(ctx, record.Level) {
 		return nil
 	}
-
-	message := truncateUTF8(record.Message, handler.options.MaxMessageBytes)
-	sanitized := slog.NewRecord(record.Time, record.Level, message, record.PC)
-	remaining := handler.options.MaxAttributes
-	cleanedAttrs := make([]slog.Attr, 0, remaining)
-
+	state := sanitizer{handler: handler, remaining: handler.options.MaxAttributes}
+	var fields []*logField
 	for _, scoped := range handler.attrs {
-		if remaining == 0 {
+		if state.remaining == 0 {
 			break
 		}
-		if attr, used, ok := handler.sanitizeScopedAttr(scoped, handler.options.MaxDepth, remaining); ok {
-			appendMergedAttr(&cleanedAttrs, attr)
-			remaining -= used
-		}
+		state.add(&fields, scoped.groups, scoped.attr, 1)
 	}
-
-	if remaining > 0 && handler.options.ContextAttrs != nil {
-		contextAttrs, contextErr := callContextAttrs(handler.options.ContextAttrs, ctx)
-		if contextErr != nil {
-			return contextErr
-		}
-		for _, attr := range contextAttrs {
-			if remaining == 0 {
+	if state.remaining > 0 && handler.options.ContextAttrs != nil {
+		for _, attr := range handler.options.ContextAttrs(ctx) {
+			if state.remaining == 0 {
 				break
 			}
-			scoped := scopedAttr{groups: append([]string(nil), handler.groups...), attr: attr}
-			if cleaned, used, ok := handler.sanitizeScopedAttr(scoped, handler.options.MaxDepth, remaining); ok {
-				appendMergedAttr(&cleanedAttrs, cleaned)
-				remaining -= used
-			}
+			state.add(&fields, handler.groups, attr, 1)
 		}
 	}
-
-	if remaining > 0 {
-		record.Attrs(func(attr slog.Attr) bool {
-			if remaining == 0 {
-				return false
-			}
-			scoped := scopedAttr{groups: append([]string(nil), handler.groups...), attr: attr}
-			if cleaned, used, ok := handler.sanitizeScopedAttr(scoped, handler.options.MaxDepth, remaining); ok {
-				appendMergedAttr(&cleanedAttrs, cleaned)
-				remaining -= used
-			}
-			return remaining > 0
-		})
-	}
-	sanitized.AddAttrs(cleanedAttrs...)
-
+	record.Attrs(func(attr slog.Attr) bool {
+		if state.remaining == 0 {
+			return false
+		}
+		state.add(&fields, handler.groups, attr, 1)
+		return state.remaining > 0
+	})
+	sanitized := slog.NewRecord(record.Time, record.Level, truncateUTF8(record.Message, handler.options.MaxMessageBytes), record.PC)
+	sanitized.AddAttrs(renderFields(fields)...)
 	return handler.next.Handle(ctx, sanitized)
 }
 
-// WithAttrs 返回携带独立固定字段的装饰器，不修改调用方 slice。
+// WithAttrs 返回独立的字段列表，不修改调用方 slice；嵌套值仍由调用方持有。
 func (handler *SanitizingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	cloned := handler.clone()
-	groups := append([]string(nil), handler.groups...)
 	for _, attr := range attrs {
-		cloned.attrs = append(cloned.attrs, scopedAttr{groups: groups, attr: attr})
+		cloned.attrs = append(cloned.attrs, scopedAttr{groups: handler.groups, attr: attr})
 	}
 	return cloned
 }
 
-// WithGroup 返回把后续字段放入指定组的装饰器。
+// WithGroup 的路径在每条记录中与普通具名组共同参与脱敏、深度和预算检查。
 func (handler *SanitizingHandler) WithGroup(name string) slog.Handler {
 	if name == "" {
 		return handler
@@ -176,13 +127,214 @@ func (handler *SanitizingHandler) WithGroup(name string) slog.Handler {
 }
 
 func (handler *SanitizingHandler) clone() *SanitizingHandler {
-	return &SanitizingHandler{
-		next:          handler.next,
-		options:       handler.options,
-		sensitiveKeys: append([]string(nil), handler.sensitiveKeys...),
-		attrs:         append([]scopedAttr(nil), handler.attrs...),
-		groups:        append([]string(nil), handler.groups...),
+	cloned := *handler
+	cloned.attrs = append([]scopedAttr(nil), handler.attrs...)
+	cloned.groups = append([]string(nil), handler.groups...)
+	return &cloned
+}
+
+// logField 只保留预算内的输出节点，使共享组路径只消耗一次预算。
+type logField struct {
+	key      string
+	value    slog.Value
+	group    bool
+	children []*logField
+}
+
+type sanitizer struct {
+	handler   *SanitizingHandler
+	remaining int
+}
+
+func (state *sanitizer) consume() bool {
+	if state.remaining == 0 {
+		return false
 	}
+	state.remaining--
+	return true
+}
+
+func (state *sanitizer) add(target *[]*logField, groups []string, attr slog.Attr, depth int) {
+	if state.remaining == 0 || attr.Equal(slog.Attr{}) {
+		return
+	}
+	if len(groups) > 0 {
+		group := state.group(target, groups[0], depth)
+		if group.value.Kind() == slog.KindGroup {
+			state.add(&group.children, groups[1:], attr, depth+1)
+		}
+		return
+	}
+	// 敏感值不求值，避免 LogValuer 或嵌套字段在被丢弃前执行。
+	if attr.Key != "" && (state.handler.sensitiveKey(attr.Key) || depth > state.handler.options.MaxDepth) {
+		state.consume()
+		*target = append(*target, &logField{key: attr.Key, value: state.placeholder(attr.Key, depth)})
+		return
+	}
+	value := attr.Value.Resolve()
+	if value.Kind() == slog.KindGroup {
+		if len(value.Group()) == 0 {
+			return
+		}
+		children := target
+		childDepth := depth
+		if attr.Key != "" {
+			group := state.group(target, attr.Key, depth)
+			children = &group.children
+			childDepth++
+		}
+		for _, child := range value.Group() {
+			if state.remaining == 0 {
+				break
+			}
+			state.add(children, nil, child, childDepth)
+		}
+		return
+	}
+	state.consume()
+	*target = append(*target, &logField{key: attr.Key, value: slog.AnyValue(state.clean(value.Any(), depth))})
+}
+
+func (state *sanitizer) placeholder(key string, depth int) slog.Value {
+	if state.handler.sensitiveKey(key) {
+		return slog.StringValue(redactedValue)
+	}
+	if depth > state.handler.options.MaxDepth {
+		return slog.StringValue(truncatedValue)
+	}
+	return slog.GroupValue()
+}
+
+func (state *sanitizer) group(target *[]*logField, key string, depth int) *logField {
+	for _, field := range *target {
+		if field.group && field.key == key {
+			return field
+		}
+	}
+	state.consume()
+	field := &logField{key: key, value: state.placeholder(key, depth), group: true}
+	*target = append(*target, field)
+	return field
+}
+
+func renderFields(fields []*logField) []slog.Attr {
+	attrs := make([]slog.Attr, 0, len(fields))
+	for _, field := range fields {
+		value := field.value
+		if field.group && value.Kind() == slog.KindGroup {
+			value = slog.GroupValue(renderFields(field.children)...)
+		}
+		attrs = append(attrs, slog.Attr{Key: field.key, Value: value})
+	}
+	return attrs
+}
+
+func (state *sanitizer) clean(value any, depth int) any {
+	if depth > state.handler.options.MaxDepth {
+		return truncatedValue
+	}
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case time.Time:
+		return typed
+	case time.Duration:
+		return typed
+	case error:
+		return truncateUTF8(safeErrorText(typed), state.handler.options.MaxStringBytes)
+	case slog.Value:
+		return state.cleanSlog(typed, depth)
+	case slog.LogValuer:
+		return state.cleanSlog(slog.AnyValue(typed), depth)
+	}
+	// 只遍历数据类型，不调用任意业务对象的 MarshalJSON、String 或指针解引用。
+	reflected := reflect.ValueOf(value)
+	switch reflected.Kind() {
+	case reflect.String:
+		return truncateUTF8(reflected.String(), state.handler.options.MaxStringBytes)
+	case reflect.Bool:
+		return reflected.Bool()
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return reflected.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		return reflected.Uint()
+	case reflect.Float32, reflect.Float64:
+		number := reflected.Float()
+		if math.IsNaN(number) || math.IsInf(number, 0) {
+			return unserializableValue
+		}
+		if reflected.Kind() == reflect.Float32 {
+			return float32(number)
+		}
+		return number
+	case reflect.Map:
+		if reflected.Type().Key().Kind() != reflect.String {
+			return unserializableValue
+		}
+		if reflected.IsNil() {
+			return nil
+		}
+		result := make(map[string]any)
+		iterator := reflected.MapRange()
+		for state.remaining > 0 && iterator.Next() {
+			state.consume()
+			key := iterator.Key().String()
+			if state.handler.sensitiveKey(key) {
+				result[key] = redactedValue
+			} else {
+				result[key] = state.clean(iterator.Value().Interface(), depth+1)
+			}
+		}
+		return result
+	case reflect.Slice, reflect.Array:
+		if reflected.Kind() == reflect.Slice && reflected.Type().Elem().Kind() == reflect.Uint8 {
+			return fmt.Sprintf("<bytes:%d>", reflected.Len())
+		}
+		if reflected.Kind() == reflect.Slice && reflected.IsNil() {
+			return nil
+		}
+		result := make([]any, 0, min(reflected.Len(), state.remaining))
+		for index := 0; index < reflected.Len() && state.consume(); index++ {
+			result = append(result, state.clean(reflected.Index(index).Interface(), depth+1))
+		}
+		return result
+	default:
+		return unserializableValue
+	}
+}
+
+func (state *sanitizer) cleanSlog(value slog.Value, depth int) any {
+	value = value.Resolve()
+	if value.Kind() != slog.KindGroup {
+		return state.clean(value.Any(), depth)
+	}
+	var fields []*logField
+	for _, attr := range value.Group() {
+		state.add(&fields, nil, attr, depth+1)
+	}
+	return fieldsObject(fields)
+}
+
+func fieldsObject(fields []*logField) map[string]any {
+	result := make(map[string]any)
+	for _, field := range fields {
+		if field.group && field.value.Kind() == slog.KindGroup {
+			result[field.key] = fieldsObject(field.children)
+		} else {
+			result[field.key] = field.value.Any()
+		}
+	}
+	return result
+}
+
+func (handler *SanitizingHandler) sensitiveKey(key string) bool {
+	normalized := normalizeKey(key)
+	for _, candidate := range handler.sensitiveKeys {
+		if normalized == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeOptions(options HandlerOptions) (HandlerOptions, []string, error) {
@@ -220,188 +372,8 @@ func normalizeOptions(options HandlerOptions) (HandlerOptions, []string, error) 
 	return options, sensitiveKeys, nil
 }
 
-func (handler *SanitizingHandler) sanitizeScopedAttr(scoped scopedAttr, maxDepth, remaining int) (slog.Attr, int, bool) {
-	attr, used, ok := handler.sanitizeAttr(scoped.attr, 1, maxDepth, remaining)
-	if !ok {
-		return slog.Attr{}, 0, false
-	}
-	for index := len(scoped.groups) - 1; index >= 0; index-- {
-		if scoped.groups[index] == "" {
-			continue
-		}
-		attr = slog.Attr{Key: scoped.groups[index], Value: slog.GroupValue(attr)}
-	}
-	return attr, used, true
-}
-
-func appendMergedAttr(target *[]slog.Attr, attr slog.Attr) {
-	if attr.Value.Kind() != slog.KindGroup {
-		*target = append(*target, attr)
-		return
-	}
-	for index := range *target {
-		existing := &(*target)[index]
-		if existing.Key != attr.Key || existing.Value.Kind() != slog.KindGroup {
-			continue
-		}
-		children := append([]slog.Attr(nil), existing.Value.Group()...)
-		for _, child := range attr.Value.Group() {
-			appendMergedAttr(&children, child)
-		}
-		existing.Value = slog.GroupValue(children...)
-		return
-	}
-	*target = append(*target, attr)
-}
-
-func (handler *SanitizingHandler) sanitizeAttr(attr slog.Attr, depth, maxDepth, remaining int) (slog.Attr, int, bool) {
-	if remaining < 1 || attr.Key == "" && attr.Value.Kind() != slog.KindGroup {
-		return slog.Attr{}, 0, false
-	}
-	if handler.sensitiveKey(attr.Key) {
-		return slog.String(attr.Key, redactedValue), 1, true
-	}
-	if depth > maxDepth {
-		return slog.String(attr.Key, truncatedValue), 1, true
-	}
-
-	value := attr.Value.Resolve()
-	if value.Kind() != slog.KindGroup {
-		return slog.Any(attr.Key, handler.sanitizeValue(slogValue(value), depth, maxDepth)), 1, true
-	}
-
-	children := make([]slog.Attr, 0, len(value.Group()))
-	used := 0
-	for _, child := range value.Group() {
-		if used >= remaining {
-			break
-		}
-		cleaned, childUsed, ok := handler.sanitizeAttr(child, depth+1, maxDepth, remaining-used)
-		if ok {
-			children = append(children, cleaned)
-			used += childUsed
-		}
-	}
-	if len(children) == 0 {
-		return slog.Attr{}, 0, false
-	}
-	return slog.Attr{Key: attr.Key, Value: slog.GroupValue(children...)}, used, true
-}
-
-func (handler *SanitizingHandler) sanitizeValue(value any, depth, maxDepth int) any {
-	if depth > maxDepth {
-		return truncatedValue
-	}
-	switch typed := value.(type) {
-	case error:
-		return truncateUTF8(safeErrorText(typed), handler.options.MaxStringBytes)
-	case map[string]any:
-		result := make(map[string]any, len(typed))
-		count := 0
-		for key, nested := range typed {
-			if count >= handler.options.MaxAttributes {
-				break
-			}
-			if handler.sensitiveKey(key) {
-				result[key] = redactedValue
-			} else {
-				result[key] = handler.sanitizeValue(nested, depth+1, maxDepth)
-			}
-			count++
-		}
-		return result
-	case []any:
-		limit := len(typed)
-		if limit > handler.options.MaxAttributes {
-			limit = handler.options.MaxAttributes
-		}
-		result := make([]any, 0, limit)
-		for _, nested := range typed[:limit] {
-			result = append(result, handler.sanitizeValue(nested, depth+1, maxDepth))
-		}
-		return result
-	case string:
-		return truncateUTF8(typed, handler.options.MaxStringBytes)
-	case []byte:
-		return fmt.Sprintf("<bytes:%d>", len(typed))
-	case float32:
-		if math.IsNaN(float64(typed)) || math.IsInf(float64(typed), 0) {
-			return unserializableValue
-		}
-		return typed
-	case float64:
-		if math.IsNaN(typed) || math.IsInf(typed, 0) {
-			return unserializableValue
-		}
-		return typed
-	case json.Number:
-		return typed
-	case nil, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return typed
-	default:
-		normalized, err := normalizeJSONValue(typed)
-		if err != nil {
-			return unserializableValue
-		}
-		return handler.sanitizeValue(normalized, depth, maxDepth)
-	}
-}
-
-func (handler *SanitizingHandler) sensitiveKey(key string) bool {
-	normalized := normalizeKey(key)
-	for _, candidate := range handler.sensitiveKeys {
-		if strings.Contains(normalized, candidate) {
-			return true
-		}
-	}
-	return false
-}
-
-func callContextAttrs(callback ContextAttrs, ctx context.Context) (attrs []slog.Attr, err error) {
-	defer func() {
-		if recover() != nil {
-			err = ErrContextAttrsPanic
-		}
-	}()
-	return callback(ctx), nil
-}
-
-func normalizeJSONValue(value any) (any, error) {
-	payload, err := json.Marshal(value)
-	if err != nil {
-		return nil, err
-	}
-	var normalized any
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.UseNumber()
-	if err := decoder.Decode(&normalized); err != nil {
-		return nil, err
-	}
-	return normalized, nil
-}
-
-func slogValue(value slog.Value) any {
-	switch value.Kind() {
-	case slog.KindBool:
-		return value.Bool()
-	case slog.KindDuration:
-		return value.Duration()
-	case slog.KindFloat64:
-		return value.Float64()
-	case slog.KindInt64:
-		return value.Int64()
-	case slog.KindString:
-		return value.String()
-	case slog.KindTime:
-		return value.Time()
-	case slog.KindUint64:
-		return value.Uint64()
-	default:
-		return value.Any()
-	}
-}
-
 func truncateUTF8(value string, limit int) string {
+	value = strings.ToValidUTF8(value, "\uFFFD")
 	if len(value) <= limit {
 		return value
 	}
