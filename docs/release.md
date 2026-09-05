@@ -8,12 +8,12 @@
 | --- | --- | --- |
 | 父 Go SDK | `sdk/go/v0.5.0` | 标准库 HTTP 与环境配置基础能力 |
 | Go Object Storage | `sdk/go/objectstorage/v0.1.0` | namespace 绑定的对象存储能力 |
-| Go Gateway Core | `sdk/go/gateway/v0.3.0` | 通用 `slog` 访问日志 |
+| Go Gateway Core | `sdk/go/gateway/v0.3.1` | 通用 `slog` 访问日志，保留限流结果 |
 | Go Kafka | `sdk/go/mq/kafka/v0.1.0` | 轻量 Kafka 连接与 Publisher |
 | Python Storage | `sdk/python/storage/v0.1.1` | `stellarmesh-storage==0.1.1` |
 | storage-service | 根镜像 tag `v0.2.0` | 当前公开 Storage v1 镜像 |
-| Go Logging | `sdk/go/logging/v0.3.0` | `slog.Handler`安全装饰器 |
-| Python Logging | `sdk/python/logging/v0.3.0` | `stellarmesh-logging==0.3.0` JSON Formatter |
+| Go Logging | `sdk/go/logging/v0.4.0` | `slog.Handler`安全装饰器 |
+| Python Logging | `sdk/python/logging/v0.4.0` | `stellarmesh-logging==0.4.0` JSON Formatter |
 | 旧 Gateway Logging Adapter | `0.2.0` | 冻结的远程日志适配器，只供迁移 |
 | 旧 Logging 运行时镜像 | 根镜像 tag `v0.2.0` | 最后版本，不再构建新版本 |
 
@@ -35,17 +35,21 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 
 发布工作流必须从公共 Go Proxy 或实际构建出的 wheel/sdist验证制品，不能依赖仓库 `go.work`、本地 `replace` 或可变源码目录。公开 GHCR 镜像可以匿名拉取；生产环境仍应固定已验证的 manifest digest。
 
-## 待发布的 Logging `0.4.0`
+## Logging `0.4.0` 与 Gateway `0.3.1`
 
-主干准备 Go Logging `sdk/go/logging/v0.4.0` 与 Python Logging `sdk/python/logging/v0.4.0`，尚未创建或推送 tag。上方矩阵继续表示实际已发布版本；修改源码版本不等于制品已发布。
+三个组件已从同一源码 `2494919ce5d84d2710267959ca1ebf8fc7577469` 发布，组件 tag 均保持不可变：
 
-本次收窄自动类型展开、改为精确敏感字段匹配、统一分组与容器预算，并删除 Go 的两个 panic 错误类别。它是破坏性变更，迁移步骤见[Go 教程](sdk/go/logging.md)、[Python 教程](sdk/python/README.md)和[共享清洗约定](../contracts/logging/sanitization.md)。仅修复兼容行为时提升 patch；缩减公开行为时提升 minor，不覆盖任何既有 tag。
+- Go Logging：`sdk/go/logging/v0.4.0`；
+- Python Logging：`sdk/python/logging/v0.4.0`，正式 PyPI 安装 `stellarmesh-logging==0.4.0`；
+- Gateway Core：`sdk/go/gateway/v0.3.1`。
 
-未来发布时，先推送经过完整验证的源码并等待持续验证成功，确认目标 tag 不存在后，再从同一 commit 创建两个组件 tag。Go tag 验证公共代理制品和共享清洗样例；Python tag 构建一次 wheel/sdist，检查通过后使用同一 artifact 依次发布 TestPyPI 与正式 PyPI。发布后验证真实制品，再更新已发布矩阵。不创建根 tag、不重发日志镜像。
+Logging 本次收窄自动类型展开、改为精确敏感字段匹配、统一分组与容器预算，并删除 Go 的两个 panic 错误类别。它是破坏性变更，迁移步骤见[Go 教程](sdk/go/logging.md)、[Python 教程](sdk/python/README.md)和[共享清洗约定](../contracts/logging/sanitization.md)。
 
-## 待发布的 Gateway `0.3.1`
+Gateway 修复访问日志复制时丢失 `RateLimitResult` 的问题，保留已执行限流阶段的结果；日志副本的 map 和 Roles 与原始状态隔离。公开接口和鉴权、限流决策不变。
 
-主干准备 `sdk/go/gateway/v0.3.1`，修复访问日志复制时丢失 `RateLimitResult` 的问题。已执行限流阶段的 `allowed`、`rejected`、`error` 或 `disabled` 结果将正常输出，尚未执行的阶段不补造结果；日志副本的 map 和 Roles 与原始状态隔离。公开接口和鉴权、限流决策不变。该版本尚未创建或推送 tag，发布后再更新上方矩阵。
+源码持续验证、两个 Go tag 的公共消费者工作流，以及 Python 构建、TestPyPI、正式 PyPI 工作流均已通过。发布后另在全新环境验证公共 Go Proxy/checksum database 消费及正式 PyPI 安装、版本元数据、公开格式化 API 和嵌套脱敏输出。本次没有创建根 tag 或重新发布镜像。
+
+未来发布仍须先推送已验证源码并等待持续验证成功，再确认目标 tag 不存在、创建组件 tag。Python 使用同一份构建 artifact 依次发布 TestPyPI 与正式 PyPI；发布后验证真实制品，再更新已发布矩阵。
 
 ## 旧日志制品边界
 
