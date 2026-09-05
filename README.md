@@ -30,6 +30,8 @@ make integration
 
 `make bootstrap` 按两个独立 `uv.lock` 创建 Python 3.11 环境。`make verify` 会执行 Go 格式检查、`go vet`、Go 测试、两个 Python 项目的 Ruff、mypy、pytest、依赖兼容检查、Shell 语法检查与 `git diff --check`。`make race` 运行全部 Go 竞态检查。`make images` 构建 storage-service，`make integration` 验证 MinIO 最小权限、预签名直传、Multipart、版本删除、readiness 故障恢复和优雅关闭。测试结束后清理临时容器、网络和 Secret，不要求仓库提供 Compose。
 
+本地与 Python 发布流程的 mypy 只检查各包的 `src/`、`tests/`，构建后可以直接重新验证，无需删除 `build/` 或已有制品。
+
 ## 生产责任边界
 
 本仓库拥有 SDK 与 Storage v1 协议。日志表、解析规则、保留策略、Collector 配置及其数据库凭据由采用该能力的业务项目拥有；生产资源和迁移执行由业务部署或 `server-infrastructure` 编排。对象存储 Bucket、Policy、CORS、Versioning、Lifecycle、Secret、镜像 digest、迁移时机和发布顺序同样不属于 SDK。常驻服务不得持有管理员或迁移凭据，不会自动创建 Bucket，也不会在启动时自动执行数据库迁移。

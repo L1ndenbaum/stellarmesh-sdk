@@ -45,14 +45,14 @@ python-logging-check: python-logging-bootstrap
 	$(UV) lock --project $(PYTHON_LOGGING_DIR) --check
 	$(UV) run --project $(PYTHON_LOGGING_DIR) --frozen ruff check $(PYTHON_LOGGING_DIR)
 	$(UV) run --project $(PYTHON_LOGGING_DIR) --frozen ruff format --check $(PYTHON_LOGGING_DIR)
-	$(UV) run --project $(PYTHON_LOGGING_DIR) --frozen mypy $(PYTHON_LOGGING_DIR)
+	$(UV) run --project $(PYTHON_LOGGING_DIR) --frozen mypy $(PYTHON_LOGGING_DIR)/src $(PYTHON_LOGGING_DIR)/tests
 	$(UV) pip check --python $(PYTHON_LOGGING_DIR)/.venv/bin/python
 
 python-storage-check: python-storage-bootstrap
 	$(UV) lock --project $(PYTHON_STORAGE_DIR) --check
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff check $(PYTHON_STORAGE_DIR)
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff format --check $(PYTHON_STORAGE_DIR)
-	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen mypy $(PYTHON_STORAGE_DIR)
+	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen mypy $(PYTHON_STORAGE_DIR)/src $(PYTHON_STORAGE_DIR)/tests
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff check tests/integration/storage-pipeline.py
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff format --check tests/integration/storage-pipeline.py
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen mypy --strict tests/integration/storage-pipeline.py

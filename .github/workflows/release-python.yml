@@ -87,7 +87,7 @@ jobs:
           uv lock --project "$PACKAGE_PATH" --check
           uv run --project "$PACKAGE_PATH" --frozen ruff check "$PACKAGE_PATH"
           uv run --project "$PACKAGE_PATH" --frozen ruff format --check "$PACKAGE_PATH"
-          uv run --project "$PACKAGE_PATH" --frozen mypy "$PACKAGE_PATH"
+          uv run --project "$PACKAGE_PATH" --frozen mypy "$PACKAGE_PATH/src" "$PACKAGE_PATH/tests"
           (
             cd "$PACKAGE_PATH"
             uv run --frozen pytest
