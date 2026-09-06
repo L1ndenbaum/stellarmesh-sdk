@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stellarmesh-logging"
-version = "0.4.0"
-description = "Safe JSON formatter for Python standard-library logging"
+version = "0.5.0"
+description = "Safe JSON and pretty formatters for Python standard-library logging"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []

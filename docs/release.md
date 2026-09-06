@@ -37,6 +37,8 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 
 ## Logging `0.4.0` 与 Gateway `0.3.1`
 
+主干另行准备 Python Logging `0.5.0`：新增 `PrettyFormatter`，与 JSON 共用字段清洗，不修改现有 JSON 输出契约。需发布后更新上方已发布矩阵，不能以本地构建代替公共制品验证；Go Logging 继续使用 `0.4.0`。
+
 三个组件已从同一源码 `2494919ce5d84d2710267959ca1ebf8fc7577469` 发布，组件 tag 均保持不可变：
 
 - Go Logging：`sdk/go/logging/v0.4.0`；

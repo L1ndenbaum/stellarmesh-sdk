@@ -4,7 +4,7 @@
 
 ## 仓库内容
 
-- `contracts/logging/sanitization.md`：Go/Python Logging `0.4.0` 的字段清洗约定与共享样例（待发布）。
+- `contracts/logging/sanitization.md`：Go/Python Logging 共用的字段清洗约定与样例，Python `0.5.0` 双格式继续遵循同一安全边界。
 - `contracts/logging/v1/`、`contracts/logging/v2/`：只读冻结的历史远程日志契约，仅供仍运行 `0.2.0` 的项目迁移。
 - `contracts/storage/v1/`：Storage 控制面 OpenAPI、访问配置 Schema、共享限制与测试数据。
 - `sdk/go/`：只依赖标准库的 Go HTTP、server 与环境配置基础能力。
@@ -12,7 +12,7 @@
 - `sdk/go/gateway/`：独立发布的 fail-close 声明式 Gateway、JWT 认证与 Redis 限流 Module。
 - `sdk/go/logging/`：独立发布、仅依赖标准库的 `slog.Handler` 安全装饰器。
 - `sdk/go/mq/kafka/`：独立发布的轻量 Kafka Go Module，提供 PLAIN、SCRAM、TLS/mTLS、Publisher 和 Topic 检查。
-- `sdk/python/logging/`：独立发布、无运行时第三方依赖的标准库 JSON Formatter。
+- `sdk/python/logging/`：独立发布、无运行时第三方依赖的标准库 JSON／Pretty Formatter；格式由应用选择。
 - `sdk/python/storage/`：独立发布的 `stellarmesh-storage` 同步与异步对象存储客户端。
 - `services/storage/`：签发 S3/MinIO 预签名请求的项目级控制面服务，不代理对象字节。
 

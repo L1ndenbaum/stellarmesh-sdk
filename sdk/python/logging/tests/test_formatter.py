@@ -4,6 +4,7 @@ import io
 import json
 import logging
 import math
+from importlib.metadata import version
 
 import pytest
 
@@ -38,7 +39,7 @@ def _record(
 
 
 def test_version_and_basic_record_are_stable_single_line_json() -> None:
-    assert __version__ == "0.4.0"
+    assert __version__ == version("stellarmesh-logging")
     formatter = JSONFormatter(static_fields={"service": "backend"})
 
     payload = formatter.format(

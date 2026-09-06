@@ -1,4 +1,4 @@
-"""标准库 logging 的安全单行 JSON Formatter。"""
+"""标准库 logging 的安全字段处理与输出格式。"""
 
 from __future__ import annotations
 
@@ -65,8 +65,8 @@ class _Budget:
         return True
 
 
-class JSONFormatter(logging.Formatter):
-    """把 LogRecord 编码为有界、脱敏的单行 JSON。"""
+class _SafeFormatter(logging.Formatter):
+    """两种展示共享同一安全边界；不修改调用方的 LogRecord 或容器。"""
 
     def __init__(
         self,
@@ -101,7 +101,7 @@ class JSONFormatter(logging.Formatter):
             sensitive_keys.append(normalized)
         self._sensitive_keys = frozenset(sensitive_keys)
 
-    def format(self, record: logging.LogRecord) -> str:
+    def _record_fields(self, record: logging.LogRecord) -> dict[str, object]:
         budget = _Budget(self._max_attributes)
         result: dict[str, object] = {
             "time": datetime.fromtimestamp(record.created, UTC)
@@ -136,26 +136,7 @@ class JSONFormatter(logging.Formatter):
             }
         if record.exc_info:
             result["exception"] = self._exception(record.exc_info)
-
-        try:
-            return json.dumps(
-                result,
-                ensure_ascii=False,
-                allow_nan=False,
-                separators=(",", ":"),
-            )
-        except (TypeError, ValueError, OverflowError):
-            # 最后一道防线保证异常日志本身不会破坏业务日志调用。
-            return json.dumps(
-                {
-                    "time": result["time"],
-                    "level": result["level"],
-                    "msg": _UNSERIALIZABLE,
-                    "logger": result["logger"],
-                },
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
+        return result
 
     def _sanitize_keyed(
         self,
@@ -242,6 +223,78 @@ class JSONFormatter(logging.Formatter):
 
     def _is_sensitive_key(self, key: str) -> bool:
         return _normalize_key(key) in self._sensitive_keys
+
+
+class JSONFormatter(_SafeFormatter):
+    """把 LogRecord 编码为有界、脱敏的单行 JSON。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        result = self._record_fields(record)
+        try:
+            return json.dumps(
+                result, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+            )
+        except (TypeError, ValueError, OverflowError):
+            # 最后一道防线保证异常日志本身不会破坏业务日志调用。
+            return json.dumps(
+                {
+                    "time": result["time"],
+                    "level": result["level"],
+                    "msg": _UNSERIALIZABLE,
+                    "logger": result["logger"],
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+
+
+class PrettyFormatter(_SafeFormatter):
+    """展示相同的安全字段；不加入颜色，异常堆栈在读取时可直接分行阅读。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        result = self._record_fields(record)
+        prefix = (
+            f"{_pretty_text(result['time'])} {_pretty_text(result['level'])} "
+            f"[{_pretty_text(result['logger'])}]"
+        )
+        parts = [prefix, _pretty_text(result["msg"])]
+        try:
+            for key, value in result.items():
+                if key in {"time", "level", "msg", "logger", "exception"}:
+                    continue
+                # 值保持类型可辨识，控制字符不会被终端执行；清洗不因格式而分叉。
+                encoded = json.dumps(
+                    value, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+                )
+                name = (
+                    key if key.isidentifier() else json.dumps(key, ensure_ascii=False)
+                )
+                parts.append(f"{_pretty_text(name)}={_pretty_text(encoded)}")
+            output = " ".join(parts)
+            exception = result.get("exception")
+            if isinstance(exception, dict):
+                output += (
+                    f"\n  {_pretty_text(exception['type'])}: "
+                    f"{_pretty_text(exception['message'])}"
+                )
+                # 仅 Formatter 自己引入结构换行；堆栈内容的终端控制字符仍转义。
+                for line in str(exception["traceback"]).split("\n"):
+                    if line:
+                        output += f"\n    {_pretty_text(line)}"
+            return output
+        except (TypeError, ValueError, OverflowError):
+            return f"{prefix} {_UNSERIALIZABLE}"
+
+
+def _pretty_text(value: object) -> str:
+    if not isinstance(value, str):
+        return _UNSERIALIZABLE
+    return "".join(
+        character
+        if character.isprintable()
+        else json.dumps(character, ensure_ascii=True)[1:-1]
+        for character in value
+    )
 
 
 def _safe_message(record: logging.LogRecord) -> str:

@@ -15,7 +15,7 @@
 | `sdk/go/gateway/` | 声明式Gateway、JWT、Redis限流与通用`slog`访问日志 | 独立Go Module |
 | `sdk/go/logging/` | `slog.Handler`安全装饰器 | 独立Go Module |
 | `sdk/go/mq/kafka/` | Kafka连接、Publisher、Topic检查和TLS/SASL | 独立Go Module |
-| `sdk/python/logging/` | Python标准库安全单行JSON Formatter | `stellarmesh-logging` |
+| `sdk/python/logging/` | Python 标准库安全 JSON／Pretty Formatter | `stellarmesh-logging` |
 | `sdk/python/storage/` | Storage v1同步与异步客户端 | `stellarmesh-storage` |
 | `contracts/logging/sanitization.md` | 轻量字段清洗约定与跨语言样例 | 随仓库版本 |
 | `contracts/storage/v1/` | Storage控制面OpenAPI、Schema与共享限制 | 随仓库版本 |
@@ -71,7 +71,7 @@ Python或其他客户端
 - Go父SDK、Gateway、Logging、Kafka和Object Storage分别发布；
 - Python Logging与Storage分别发布；
 - `stellarmesh-logging 0.3.0`与Go Logging `v0.3.0`是破坏性轻量版本，不兼容旧远程API；
-- 主干准备 Logging `0.4.0`，收窄隐式类型展开并改变匹配与 panic 策略；发布前不能按新版本从公共仓库安装；
+- Logging `0.4.0` 已发布；Python 主干准备 `0.5.0`，新增共用安全字段处理的 PrettyFormatter，格式与环境配置由应用决定；
 - 冻结的Logging v1/v2契约只供仍运行`0.2.0`的项目迁移；
 - Storage v1的OpenAPI、Schema、服务和Python客户端仍须保持契约测试一致；
 - 已经推送的tag、PyPI包和GHCR镜像永不覆盖或移动。

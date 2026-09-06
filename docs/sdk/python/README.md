@@ -1,13 +1,13 @@
 # Python Logging SDK 接入教程
 
-本教程对应待发布的 `stellarmesh-logging==0.4.0`，当前公共版本仍为 `0.3.0`。它要求Python 3.11及以上，没有运行时第三方依赖。它只提供标准库`logging.Formatter`，不拥有Handler、stream、后台线程、远程服务或数据库。
+本教程对应待发布的 `stellarmesh-logging==0.5.0`，当前公共版本为 `0.4.0`。它要求 Python 3.11 及以上，没有运行时第三方依赖。它提供安全的 `JSONFormatter` 与 `PrettyFormatter`，不拥有 Handler、stream、环境变量、后台线程、远程服务或数据库。
 
 ## 安装
 
 发布前从仓库根目录执行 `python -m pip install ./sdk/python/logging`；以下命令仅在正式发布后使用。
 
 ```sh
-python -m pip install stellarmesh-logging==0.4.0
+python -m pip install stellarmesh-logging==0.5.0
 ```
 
 ## 配置结构化stdout
@@ -41,6 +41,20 @@ logger.info(
 基础输出字段是`time`、`level`、`msg`和`logger`。`static_fields`适合service、environment等进程级稳定字段，`LogRecord.extra`适合项目自己的请求或业务字段。`time`、`level`、`msg`、`logger`、`source`和`exception`不能被覆盖。
 
 `include_source=True`时增加文件、行号和函数。异常输出为`exception.type`、`exception.message`与`exception.traceback`；换行由JSON转义，因此一条记录始终只占一个物理行。输出使用紧凑UTF-8 JSON，并拒绝NaN和Infinity。
+
+## 本地可读输出
+
+需要人直接阅读日志时，由应用选择 `PrettyFormatter`，无需更改 Logger 调用：
+
+```python
+from stellarmesh_logging import PrettyFormatter
+
+handler.setFormatter(PrettyFormatter(static_fields={"service": "orders-api"}))
+```
+
+输出包含 UTC 时间、级别、Logger、消息与附加 `key=value` 字段；嵌套字段采用紧凑表示，异常堆栈缩进分行。默认不加入 ANSI 颜色，消息、字段和堆栈中的终端控制字符会转义。应用可定义 `LOG_FORMAT=pretty|json`，本地默认 pretty、生产显式 JSON；SDK 不读取该配置，也不自动探测 TTY 或 Collector。
+
+两个 Formatter 接受相同的构造参数，共享同一字段清洗与预算实现。pretty 不降低脱敏保护，也不修改调用方记录；JSON 原有字段及单行契约保持不变。若改动环境配置，应重启进程或重新创建容器使之生效。不要同时向 stdout 和 stderr 输出同一事件的两种格式。
 
 ## 脱敏和限制
 
