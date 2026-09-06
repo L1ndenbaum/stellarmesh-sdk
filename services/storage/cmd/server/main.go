@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,8 +21,16 @@ import (
 )
 
 func main() {
+	// 日志先于业务配置初始化，配置错误不能退回 INFO 级的 log.Fatal 桥接。
+	logger, err := observability.NewLogger(os.Stdout, os.Getenv("LOG_LEVEL"), os.Getenv("LOG_FORMAT"))
+	slog.SetDefault(logger)
+	if err != nil {
+		logger.Error("invalid logging configuration", "error", err)
+		os.Exit(1)
+	}
 	if err := run(); err != nil {
-		log.Fatal(err)
+		logger.Error("storage service failed", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -72,11 +80,12 @@ func run() (result error) {
 
 	handler := httpapi.NewHandler(registry, policy, health)
 	server := httpserver.New(cfg.HTTPServerConfig(), httpapi.NewRouter(handler, metrics))
+	server.ErrorLog = slog.NewLogLogger(slog.Default().Handler(), slog.LevelError)
 	serverErrors := make(chan error, 1)
 	go func() {
 		serverErrors <- server.ListenAndServe()
 	}()
-	log.Printf("stellarmesh storage service listening on %s", cfg.Addr)
+	slog.Info("storage service listening", "addr", cfg.Addr)
 	select {
 	case <-signalCtx.Done():
 	case serveErr := <-serverErrors:

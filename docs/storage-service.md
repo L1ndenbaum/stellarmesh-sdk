@@ -92,6 +92,14 @@ Region 和凭据使用标准 AWS 配置链。至少提供 `AWS_REGION` 或 `AWS_
 
 端点、TTL、访问文件或授权非法时服务直接退出。只设置 `STELLARMESH_STORAGE_PRESIGN_ENDPOINT` 而不设置内部 Endpoint 会被拒绝。生产对外预签名地址通常是 HTTPS 域名；CORS 是否允许浏览器直传由 Bucket 或对象存储网关配置负责。
 
+## 日志格式与级别
+
+从镜像 `0.3.0` 起，服务读取 `LOG_FORMAT=pretty|json` 和 `LOG_LEVEL=debug|info|warn|warning|error`，默认 `pretty` 与 `info`。本地可直接阅读文本，生产或采集验收显式使用 JSON；修改环境配置后重新创建容器。非法参数导致非零退出，不回显非法输入。
+
+服务入口通过标准库 `slog.TextHandler`／`slog.JSONHandler` 选择展示，并复用 Go Logging `v0.4.0` 的安全 Handler。两种格式具有同样的字段脱敏和预算；SDK 不扫描消息或 error 文本中的凭据，应用不能把凭据拼接进消息。日志在业务配置读取前初始化，启动失败与 HTTP server 错误使用 ERROR，正常启动使用 INFO；不额外记录请求正文或访问日志。
+
+这项依赖只属于可执行服务，`objectstorage` SDK 不增加日志依赖。服务不读取 dotenv 文件；环境变量、输出展示和生产采集启用由调用项目负责。这里没有 `LOG_ENABLED`，格式选择也不自动启用 Collector。
+
 ## 4. readiness 与 fail-close
 
 readiness 初始为 false。服务启动后立即对全部 namespace 执行只读 `HeadBucket` 检查，并按配置间隔重复；全部成功后才变为 ready。任何一个 namespace 失败都会把聚合状态降为 false。受保护路由在认证后检查 readiness，not-ready 时直接返回 `503`，不会继续签名或调用 S3。

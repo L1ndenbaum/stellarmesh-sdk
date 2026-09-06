@@ -4,6 +4,7 @@ go 1.24
 
 require (
 	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.5.0
+	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.4.0
 	github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage v0.1.0
 	github.com/aws/aws-sdk-go-v2/config v1.32.37
 	github.com/go-chi/chi/v5 v5.2.3

@@ -1,5 +1,7 @@
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.5.0 h1:IFSYneQ8KwliQZCVjbU1x9zi8vn6AaQAEaOLPqrc47U=
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go v0.5.0/go.mod h1:/kB8QtJnrUb8ec9aw0RmxkQvNSvH4JvZnJQE6GOEiiY=
+github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.4.0 h1:Tua4MpKU1dPxQ5jCgZG2MdQZ/Kv8NwsWa/9nxRbiAvE=
+github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging v0.4.0/go.mod h1:fkTP5YWMkQtsdttZi9MMuD9vCb3k4XFcIMATtG/6qao=
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage v0.1.0 h1:7sZ/SXAL3zbIcv2pRxotlKjNf1sxf1n5UELNdAG1nXU=
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage v0.1.0/go.mod h1:+xk/bEAunbOysPU6DL2hQce4CNhulb3gk7BHUxpWIy0=
 github.com/aws/aws-sdk-go-v2 v1.43.6 h1:RrmFcqCBxkJuf7g1axVo5krB4jM/AO8r5e5oujrgdoQ=
