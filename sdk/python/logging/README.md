@@ -1,10 +1,9 @@
 # stellarmesh-logging
 
-`stellarmesh-logging` 为 Python 3.11 及以上项目提供标准库 `logging` 的安全 `JSONFormatter` 与 `PrettyFormatter`。主干准备 `0.5.0`，当前公共版本为 `0.4.0`；不包含远程 Client、HTTP token、后台线程、Kafka、spool、数据库表或日志级别策略，也没有运行时第三方依赖。
+`stellarmesh-logging` 为 Python 3.11 及以上项目提供标准库 `logging` 的安全 `JSONFormatter` 与 `PrettyFormatter`。当前公共版本为 `0.5.0`；不包含远程 Client、HTTP token、后台线程、Kafka、spool、数据库表或日志级别策略，也没有运行时第三方依赖。
 
 ```sh
-# 从本仓库根目录安装待发布源码
-pip install ./sdk/python/logging
+pip install stellarmesh-logging==0.5.0
 ```
 
 ```python

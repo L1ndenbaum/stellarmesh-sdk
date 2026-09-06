@@ -71,7 +71,7 @@ Python或其他客户端
 - Go父SDK、Gateway、Logging、Kafka和Object Storage分别发布；
 - Python Logging与Storage分别发布；
 - `stellarmesh-logging 0.3.0`与Go Logging `v0.3.0`是破坏性轻量版本，不兼容旧远程API；
-- Logging `0.4.0` 已发布；Python 主干准备 `0.5.0`，新增共用安全字段处理的 PrettyFormatter，格式与环境配置由应用决定；
+- Go Logging `0.4.0` 与 Python Logging `0.5.0` 已发布；Python 新增共用安全字段处理的 PrettyFormatter，格式与环境配置由应用决定；
 - 冻结的Logging v1/v2契约只供仍运行`0.2.0`的项目迁移；
 - Storage v1的OpenAPI、Schema、服务和Python客户端仍须保持契约测试一致；
 - 已经推送的tag、PyPI包和GHCR镜像永不覆盖或移动。

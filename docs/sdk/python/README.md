@@ -1,10 +1,10 @@
 # Python Logging SDK 接入教程
 
-本教程对应待发布的 `stellarmesh-logging==0.5.0`，当前公共版本为 `0.4.0`。它要求 Python 3.11 及以上，没有运行时第三方依赖。它提供安全的 `JSONFormatter` 与 `PrettyFormatter`，不拥有 Handler、stream、环境变量、后台线程、远程服务或数据库。
+本教程对应已发布的 `stellarmesh-logging==0.5.0`。它要求 Python 3.11 及以上，没有运行时第三方依赖。它提供安全的 `JSONFormatter` 与 `PrettyFormatter`，不拥有 Handler、stream、环境变量、后台线程、远程服务或数据库。
 
 ## 安装
 
-发布前从仓库根目录执行 `python -m pip install ./sdk/python/logging`；以下命令仅在正式发布后使用。
+从正式 PyPI 安装固定版本：
 
 ```sh
 python -m pip install stellarmesh-logging==0.5.0

@@ -11,7 +11,7 @@
 - [Python Storage SDK](python/storage.md)：通过storage-service获取预签名请求；
 - [storage-service部署](../storage-service.md)：项目级对象存储控制面。
 
-当前 Go/Python Logging 已发布 `0.4.0`，主干为 Python 准备 `0.5.0` 双格式支持；Go 安全 Handler 不需要为格式切换升级。升级前阅读[字段清洗约定](../../contracts/logging/sanitization.md)及语言教程中的迁移说明。
+当前 Go Logging 已发布 `0.4.0`，Python Logging 已发布 `0.5.0` 双格式支持；Go 安全 Handler 不需要为格式切换升级。升级前阅读[字段清洗约定](../../contracts/logging/sanitization.md)及语言教程中的迁移说明。
 
 ## 日志默认路线
 

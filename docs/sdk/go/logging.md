@@ -6,11 +6,11 @@
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging
 ```
 
-本教程对应待发布的 `v0.4.0`；当前公共版本仍是 `v0.3.0`。`v0.4.0` 要求Go 1.24及以上，只依赖标准库。它装饰项目已有的`slog.Handler`，提供脱敏和有界化；它不创建Logger、不选择stdout/stderr、不实现远程Client，也不定义项目字段或数据库Schema。
+本教程对应已发布的 `v0.4.0`。它要求Go 1.24及以上，只依赖标准库。它装饰项目已有的`slog.Handler`，提供脱敏和有界化；它不创建Logger、不选择stdout/stderr、不实现远程Client，也不定义项目字段或数据库Schema。
 
 ## 安装
 
-发布前在本仓库通过 `go.work` 验证；以下命令仅在 `v0.4.0` 正式发布后使用。
+从公共 Go Module 安装固定版本：
 
 ```sh
 go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.4.0

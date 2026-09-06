@@ -11,9 +11,9 @@
 | Go Gateway Core | `sdk/go/gateway/v0.3.1` | 通用 `slog` 访问日志，保留限流结果 |
 | Go Kafka | `sdk/go/mq/kafka/v0.1.0` | 轻量 Kafka 连接与 Publisher |
 | Python Storage | `sdk/python/storage/v0.1.1` | `stellarmesh-storage==0.1.1` |
-| storage-service | 根镜像 tag `v0.2.0` | 当前公开 Storage v1 镜像 |
+| storage-service | 根镜像 tag `v0.3.0` | Storage v1，支持 pretty／JSON 与日志级别 |
 | Go Logging | `sdk/go/logging/v0.4.0` | `slog.Handler`安全装饰器 |
-| Python Logging | `sdk/python/logging/v0.4.0` | `stellarmesh-logging==0.4.0` JSON Formatter |
+| Python Logging | `sdk/python/logging/v0.5.0` | `stellarmesh-logging==0.5.0` Pretty／JSON Formatter |
 | 旧 Gateway Logging Adapter | `0.2.0` | 冻结的远程日志适配器，只供迁移 |
 | 旧 Logging 运行时镜像 | 根镜像 tag `v0.2.0` | 最后版本，不再构建新版本 |
 
@@ -21,7 +21,7 @@
 
 ## 当前日志方向
 
-SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新项目使用语言标准库输出结构化单行 JSON，再由项目自己的 Vector 等 Collector 完成持久缓冲、重放和数据库投影。日志表、字段映射、保留策略和数据库 migration 属于业务项目，不属于公共 SDK。
+SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新项目使用语言标准库，本地可选择 pretty，采集时输出结构化单行 JSON，再由项目自己的 Vector 等 Collector 完成持久缓冲、重放和数据库投影。日志表、字段映射、保留策略和数据库 migration 属于业务项目，不属于公共 SDK。
 
 `contracts/logging/v1`、`contracts/logging/v2` 与 Logging `0.2.0` 制品暂时冻结一个迁移周期。它们不是新项目的接入标准，也不会随新的轻量日志包继续演进。
 
@@ -35,9 +35,25 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 
 发布工作流必须从公共 Go Proxy 或实际构建出的 wheel/sdist验证制品，不能依赖仓库 `go.work`、本地 `replace` 或可变源码目录。公开 GHCR 镜像可以匿名拉取；生产环境仍应固定已验证的 manifest digest。
 
-## Logging `0.4.0` 与 Gateway `0.3.1`
+## Python Logging `0.5.0` 与 storage-service `0.3.0`
 
-主干另行准备 Python Logging `0.5.0`：新增 `PrettyFormatter`，与 JSON 共用字段清洗，不修改现有 JSON 输出契约。需发布后更新上方已发布矩阵，不能以本地构建代替公共制品验证；Go Logging 继续使用 `0.4.0`。
+两个制品已从源码 `7c08afe519d73db528c7b3010c780c28b8313fce` 正式发布：
+
+- Python Logging `0.5.0` 新增 `PrettyFormatter`，与 JSON 共用字段清洗、预算及异常处理，不修改现有 JSON 输出契约。公开安装命令为 `python -m pip install stellarmesh-logging==0.5.0`。
+- storage-service `0.3.0` 读取应用层 `LOG_LEVEL` 与 `LOG_FORMAT`，默认 `info`／`pretty`，采集环境应显式使用 `json`；标准库 Text／JSON Handler 共用 Go Logging `0.4.0` 的安全装饰器。启动、退出及 HTTP 服务错误明确使用 ERROR 级别。
+- Go Logging 保持 `0.4.0`，Object Storage SDK、旧日志运行时镜像和其他组件未重新发布。
+
+[Python 发布工作流](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/34023002746)已完成构建、TestPyPI 与正式 PyPI；[镜像发布工作流](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/34023002871)已完成验证、双架构镜像、SBOM 与 provenance。
+
+公开镜像固定引用为：
+
+```text
+ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service@sha256:fbc59a34a34072b4c5f800e36553312ff2b711b4ba309ffed074b83ec1b13a33
+```
+
+发布后已在全新 Python 环境从正式 PyPI 安装并验证版本元数据、两种 Formatter 与脱敏；使用空临时 `DOCKER_CONFIG` 匿名检查、拉取公开镜像，确认 `linux/amd64`、`linux/arm64` manifest，并使用该公开镜像通过 Storage v1／MinIO 集成与 pretty／JSON 启动错误检查。上述为公开制品与本地容器验证，不代表业务生产环境已部署或 Collector 链路已验收。
+
+## Logging `0.4.0` 与 Gateway `0.3.1`
 
 三个组件已从同一源码 `2494919ce5d84d2710267959ca1ebf8fc7577469` 发布，组件 tag 均保持不可变：
 
