@@ -31,6 +31,7 @@ interface ClientOptions {
   auth?: AuthOptions;
   transform?: ResponseTransform;
 }
+
 function createClient(options: ClientOptions): ConfigurableHttpClient {
   const transport = createTransport(options.baseURL);
   const session = createAuthCoordinator(options.auth);

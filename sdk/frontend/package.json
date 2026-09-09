@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
+    "@stylistic/eslint-plugin": "5.10.0",
     "@types/node": "24.7.0",
     "esbuild": "0.28.2",
     "eslint": "9.39.1",

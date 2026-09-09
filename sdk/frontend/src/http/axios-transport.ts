@@ -10,6 +10,7 @@ export function normalizeHeaders(headers: object): Record<string, string> {
   }
   return result;
 }
+
 export function mergeHeaders(
   ...headers: (Readonly<Record<string, string>> | undefined)[]
 ): Record<string, string> {
@@ -17,6 +18,7 @@ export function mergeHeaders(
   for (const value of headers) if (value) result.set(value);
   return normalizeHeaders(result.toJSON());
 }
+
 export function normalizeError(error: unknown): HttpClientError {
   if (error instanceof HttpClientError) return error;
   if (!axios.isAxiosError(error)) {
@@ -61,9 +63,11 @@ export function normalizeError(error: unknown): HttpClientError {
     cause: error,
   });
 }
+
 export function createTransport(baseURL?: string): AxiosInstance {
   return axios.create({ baseURL, timeout: 0 });
 }
+
 export async function send(
   instance: AxiosInstance,
   request: HttpRequest,

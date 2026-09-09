@@ -9,12 +9,14 @@ import { chromium } from '@playwright/test';
 const directory = await mkdtemp(join(tmpdir(), 'stellarmesh-browser-'));
 const servers = [];
 let browser;
+
 async function serve(handler) {
   const server = createServer(handler);
   servers.push(server);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   return `http://127.0.0.1:${server.address().port}`;
 }
+
 try {
   await build({
     entryPoints: ['src/index.ts'],

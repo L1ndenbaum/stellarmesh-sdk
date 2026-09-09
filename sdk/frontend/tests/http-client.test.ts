@@ -13,7 +13,9 @@ type Handler = (
   req: IncomingMessage,
   res: ServerResponse,
 ) => void | Promise<void>;
+
 const servers: Server[] = [];
+
 async function serve(handler: Handler): Promise<string> {
   const server = createServer((req, res) => {
     void handler(req, res);
@@ -25,10 +27,12 @@ async function serve(handler: Handler): Promise<string> {
     throw new Error('无法启动测试服务');
   return `http://127.0.0.1:${address.port}`;
 }
+
 function json(res: ServerResponse, data: unknown, status = 200) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -36,6 +40,7 @@ function deferred<T>() {
   });
   return { promise, resolve };
 }
+
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(

@@ -21,6 +21,12 @@ const patient = await apiClient.post<{ name: string }, { id: number }>(
 
 详细行为、鉴权与对象传输示例见仓库[前端 SDK 接入教程](../../docs/sdk/frontend/README.md)。打包制品不包含该仓库文档，可通过源码仓库查看。
 
+## 代码排版
+
+顶层 `interface`、`type`、函数、类、枚举及带声明的 `export` 前后保留一个空行；是否导出不改变这些声明的间距要求。连续 import、纯重导出、接口成员和函数内部语句不强制逐条插入空行，说明注释与对应声明保持相邻。
+
+ESLint 的 `@stylistic/padding-line-between-statements` 负责检查和自动补齐空行，Prettier 负责其余排版并将多个连续空行压为一个。`npm run format` 先运行 ESLint 自动修复，再运行 Prettier；`npm run check` 会拦截缺失空行的声明。
+
 ## 本地开发
 
 使用 Node 24 和 npm，在本目录执行：

@@ -7,10 +7,12 @@ export interface ApiEnvelope<T> {
   message: string;
   data?: T | null;
 }
+
 export interface EnvelopeOptions {
   isSuccess?(code: number | string): boolean;
   allowNonEnvelope?: boolean;
 }
+
 export function flattenEnvelopeResponse(
   options: EnvelopeOptions = {},
 ): ResponseTransform {

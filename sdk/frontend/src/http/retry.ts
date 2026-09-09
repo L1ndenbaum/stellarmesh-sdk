@@ -2,11 +2,13 @@ import { canceledError, type HttpClientError } from './errors.js';
 import type { HttpRequest, RetryOptions } from './types.js';
 
 export type RetryPolicy = Required<RetryOptions>;
+
 export const defaultRetry: RetryPolicy = {
   maxRetries: 0,
   baseDelayMs: 300,
   maxDelayMs: 10_000,
 };
+
 export function validateNumber(
   value: number,
   name: string,
@@ -20,6 +22,7 @@ export function validateNumber(
     throw new RangeError(`${name} 必须为非负${integer ? '整数' : '有限数值'}`);
   }
 }
+
 export function retryDelay(
   error: HttpClientError,
   request: HttpRequest,
@@ -54,6 +57,7 @@ export function retryDelay(
   );
   return Math.max(minimum, Math.random() * ceiling);
 }
+
 export function waitForRetry(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const cleanup = () => signal?.removeEventListener('abort', abort);

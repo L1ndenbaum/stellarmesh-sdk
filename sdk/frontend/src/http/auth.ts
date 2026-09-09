@@ -22,6 +22,7 @@ export function isTrustedTarget(
     return false;
   }
 }
+
 export function createAuthCoordinator(options?: AuthOptions) {
   let version = 0;
   let outcome: string | null = null;
