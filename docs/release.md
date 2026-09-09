@@ -19,6 +19,12 @@
 
 旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。历史拆分和兼容记录见[历史发布记录](releases/history.md)。
 
+## 前端 HTTP 源码初版
+
+`sdk/frontend/` 新增 `stellarmesh-sdk` 源码版本 `0.1.0`，尚未发布 npm，因此不加入上方已发布制品矩阵。本次提供 ESM JavaScript、类型声明与隔离 tarball 消费验证；没有 npm 发布工作流，不创建或推送前端发布 tag。
+
+本地制品验证使用 `make frontend-verify`。正式发布前需另行确认 npm 包名归属、发布身份和组件 tag 触发规则；发布时复用已验证的不可变制品，并从实际 registry 安装验收。详细使用和兼容边界见[前端 HTTP SDK](sdk/frontend/README.md)。
+
 ## 当前日志方向
 
 SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新项目使用语言标准库，本地可选择 pretty，采集时输出结构化单行 JSON，再由项目自己的 Vector 等 Collector 完成持久缓冲、重放和数据库投影。日志表、字段映射、保留策略和数据库 migration 属于业务项目，不属于公共 SDK。

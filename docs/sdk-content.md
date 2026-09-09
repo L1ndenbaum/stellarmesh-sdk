@@ -10,6 +10,7 @@
 
 | 路径 | 内容 | 发布形式 |
 | --- | --- | --- |
+| `sdk/frontend/` | Axios HTTP、信封处理、鉴权刷新、重试与对象传输 | ESM npm 包，源码 `0.1.0` 尚未发布 |
 | `sdk/go/` | 环境配置、JSON请求解码与HTTP server基础能力 | Go Module |
 | `sdk/go/objectstorage/` | namespace绑定的对象模型与S3适配器 | 独立Go Module |
 | `sdk/go/gateway/` | 声明式Gateway、JWT、Redis限流与通用`slog`访问日志 | 独立Go Module |
@@ -23,6 +24,10 @@
 | `contracts/logging/v1/`、`contracts/logging/v2/` | 冻结的旧远程日志契约 | 只读历史 |
 
 已经退役的公共logging-service、ClickHouse sink、迁移镜像和Gateway Logging Adapter只存在于`0.2.0`历史tag及其不可变制品中，不再位于主干或未来发布矩阵。
+
+## 前端 HTTP
+
+[前端 HTTP SDK](sdk/frontend/README.md)使用不可变链式配置，业务 API 和对象存储共享实现、使用独立实例。普通请求直接返回处理后的响应体，metadata 入口保留 status 和 headers。项目注入会话与成功码策略，SDK 不读取浏览器存储，不包含业务 DTO、分页兼容、上传会话或 React 状态。
 
 ## 轻量日志组件
 

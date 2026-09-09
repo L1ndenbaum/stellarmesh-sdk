@@ -1,5 +1,9 @@
 # 接入 SDK
 
+## 前端 HTTP 接入
+
+[前端 HTTP SDK](sdk/frontend/README.md)的源码初版 `0.1.0` 位于 `sdk/frontend/`，尚未发布 npm。项目分别装配鉴权 API、公共 API 和对象存储实例，注入配置与会话回调。对象存储实例只发送签发结果所要求的 URL、方法和 headers；业务 DTO、分片调度、会话确认和页面状态继续由项目负责。
+
 ## 日志接入
 
 当前公开 Go Logging 为 `0.4.0`，Python Logging 为 `0.5.0`，支持两种输出格式。应用在本地选择 pretty、采集时选择 JSON；SDK 不读取环境配置。清洗行为见[共享约定](../contracts/logging/sanitization.md)；原生等级差异（如 Go `WARN` 与 Python `WARNING`）需要项目 Collector 显式映射。

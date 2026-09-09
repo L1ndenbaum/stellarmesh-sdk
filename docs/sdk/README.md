@@ -2,6 +2,7 @@
 
 本目录按可独立发布的组件划分：
 
+- [前端 HTTP SDK](frontend/README.md)：Axios 客户端、可选信封解包、鉴权刷新及对象字节传输；源码 `0.1.0` 尚未发布；
 - [Go 父 SDK](go/README.md)：标准库 HTTP 与环境配置能力；
 - [Go 对象存储 SDK](go/object-storage.md)：namespace绑定的进程内对象存储；
 - [Go Gateway SDK](go/gateway.md)：声明式、fail-close网关与标准 `slog` 访问日志；

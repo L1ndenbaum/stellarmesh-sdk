@@ -4,6 +4,8 @@ ROOT := $(CURDIR)
 PYTHON_LOGGING_DIR := sdk/python/logging
 PYTHON_STORAGE_DIR := sdk/python/storage
 UV ?= uv
+NPM ?= npm
+FRONTEND_DIR := sdk/frontend
 GO_PACKAGES := ./sdk/go/... ./sdk/go/gateway/... ./sdk/go/logging/... ./sdk/go/mq/kafka/... ./sdk/go/objectstorage/... ./services/storage/...
 GO_SOURCE_DIRS := sdk/go services/storage
 DOCKER_PROXY_ARGS := --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY --build-arg http_proxy --build-arg https_proxy --build-arg no_proxy
@@ -18,9 +20,11 @@ export GOMODCACHE ?= $(ROOT)/.cache/go-mod
 .PHONY: bootstrap python-logging-bootstrap python-storage-bootstrap format check test race verify \
 	go-check go-test go-race python-logging-check python-logging-test \
 	python-storage-check python-storage-test shell-check go-module-consumer \
-	image-storage images integration-storage integration integration-aws
+	image-storage images integration-storage integration integration-aws \
+	frontend-bootstrap frontend-browser-bootstrap frontend-format frontend-check \
+	frontend-build frontend-test frontend-browser-test frontend-consumer frontend-verify
 
-bootstrap: python-logging-bootstrap python-storage-bootstrap
+bootstrap: python-logging-bootstrap python-storage-bootstrap frontend-bootstrap frontend-browser-bootstrap
 
 python-logging-bootstrap:
 	$(UV) sync --project $(PYTHON_LOGGING_DIR) --frozen
@@ -28,7 +32,33 @@ python-logging-bootstrap:
 python-storage-bootstrap:
 	$(UV) sync --project $(PYTHON_STORAGE_DIR) --frozen
 
-format:
+frontend-bootstrap:
+	$(NPM) --prefix $(FRONTEND_DIR) ci
+
+frontend-browser-bootstrap: frontend-bootstrap
+	cd $(FRONTEND_DIR) && $(NPM) exec -- playwright install chromium
+
+frontend-format:
+	$(NPM) --prefix $(FRONTEND_DIR) run format
+
+frontend-check:
+	$(NPM) --prefix $(FRONTEND_DIR) run check
+
+frontend-build:
+	$(NPM) --prefix $(FRONTEND_DIR) run build
+
+frontend-test:
+	$(NPM) --prefix $(FRONTEND_DIR) test
+
+frontend-browser-test: frontend-build
+	$(NPM) --prefix $(FRONTEND_DIR) run test:browser
+
+frontend-consumer: frontend-build
+	$(NPM) --prefix $(FRONTEND_DIR) run test:consumer
+
+frontend-verify: frontend-check frontend-test frontend-browser-test frontend-consumer
+
+format: frontend-format
 	gofmt -w $$(rg --files $(GO_SOURCE_DIRS) -g '*.go')
 	$(UV) run --project $(PYTHON_LOGGING_DIR) --frozen ruff check $(PYTHON_LOGGING_DIR) --fix
 	$(UV) run --project $(PYTHON_LOGGING_DIR) --frozen ruff format $(PYTHON_LOGGING_DIR)
@@ -63,7 +93,7 @@ shell-check:
 	sh -n tests/go-module-consumer.sh
 	git diff --check
 
-check: go-check python-logging-check python-storage-check shell-check
+check: go-check python-logging-check python-storage-check shell-check frontend-check
 
 go-test:
 	go test $(GO_PACKAGES)
@@ -74,7 +104,7 @@ python-logging-test: python-logging-bootstrap
 python-storage-test: python-storage-bootstrap
 	cd $(PYTHON_STORAGE_DIR) && $(UV) run --frozen pytest
 
-test: go-test python-logging-test python-storage-test go-module-consumer
+test: go-test python-logging-test python-storage-test go-module-consumer frontend-test frontend-browser-test frontend-consumer
 
 go-module-consumer:
 	./tests/go-module-consumer.sh
