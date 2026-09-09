@@ -39,7 +39,7 @@ await apiClient.post<void>('/session/logout');
 - `request<TRequest, TResponse>` 接受 `{ method, url, data, ...options }`；无请求体可写 `request<TResponse>`。
 - 请求选项支持 `params`、`headers`、`timeout`、`maxRetries`、`retryable`、`signal`、`auth`、`responseMode`、`responseType`、`onUploadProgress`、`onDownloadProgress`。
 - 优先级为请求选项、实例配置、SDK 默认值。headers 按大小写不敏感名称合并；SDK 注入的 Bearer Token 覆盖同名请求头。
-- `withResponseTransform` 替换当前响应转换器，不追加无限拦截器链。公共接口不暴露 Axios 实例。
+- `withResponseTransform` 替换当前响应转换器，不追加无限拦截器链。转换器可返回同步值或 Promise，两种响应入口均等待转换完成；取消请求停止等待，但不会强行终止转换器自身的任务。公共接口不暴露 Axios 实例。
 
 ## 信封和响应类型
 

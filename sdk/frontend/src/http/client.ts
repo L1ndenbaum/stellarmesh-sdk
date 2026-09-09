@@ -105,7 +105,10 @@ function createClient(options: ClientOptions): ConfigurableHttpClient {
         (request.responseType === undefined || request.responseType === 'json')
       ) {
         try {
-          response.data = options.transform(response.data, response);
+          response.data = await abortable(
+            Promise.resolve(options.transform(response.data, response)),
+            request.signal,
+          );
         } catch (cause) {
           if (cause instanceof HttpClientError) throw cause;
           throw new HttpClientError('响应转换失败', {

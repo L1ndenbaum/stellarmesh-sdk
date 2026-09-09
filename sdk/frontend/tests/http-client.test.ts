@@ -102,6 +102,44 @@ describe('公开 HTTP 契约', () => {
     });
   });
 
+  it('异步响应转换在普通与 metadata 入口一致，失败和取消保持统一错误', async () => {
+    const origin = await serve((_req, res) => json(res, { value: 1 }));
+    const client = httpClient
+      .withBaseURL(origin)
+      .withResponseTransform(async () => ({ id: 7 }));
+    expect(await client.get('/')).toEqual({ id: 7 });
+    expect(
+      await client.requestWithMetadata({ method: 'GET', url: '/' }),
+    ).toMatchObject({ data: { id: 7 } });
+    const failure = new Error('异步转换失败');
+    await expect(
+      client
+        .withResponseTransform(async () => {
+          throw failure;
+        })
+        .get('/'),
+    ).rejects.toMatchObject({ kind: 'response-format', cause: failure });
+    const started = deferred<void>();
+    const pending = deferred<unknown>();
+    const controller = new AbortController();
+    const canceled = expect(
+      client
+        .withResponseTransform(() => {
+          started.resolve();
+          return pending.promise;
+        })
+        .requestWithMetadata({
+          method: 'GET',
+          url: '/',
+          signal: controller.signal,
+        }),
+    ).rejects.toMatchObject({ kind: 'canceled' });
+    await started.promise;
+    controller.abort();
+    await canceled;
+    pending.resolve(null);
+  });
+
   it('业务失败不因 HTTP 200 成功，且不触发重试', async () => {
     let calls = 0;
     const origin = await serve((_req, res) => {
