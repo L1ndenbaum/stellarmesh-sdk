@@ -40,8 +40,12 @@ try {
   await writeFile(
     join(directory, 'consumer.ts'),
     `
-import { httpClient, createAuthSession, flattenEnvelopeResponse } from 'stellarmesh-sdk';
-import type { AuthSession, AuthSessionContext, HttpClient, HttpResponse } from 'stellarmesh-sdk';
+import { httpClient, createAuthSession, flattenEnvelopeResponse, HttpMethod, ResponseType } from 'stellarmesh-sdk';
+import type { AuthSession, AuthSessionContext, HttpClient, HttpResponse, HttpMethod as HttpMethodType, ResponseType as ResponseTypeType } from 'stellarmesh-sdk';
+const method: HttpMethodType = HttpMethod.PUT;
+const responseType: ResponseTypeType = ResponseType.TEXT;
+export const literalMethod: HttpMethod = 'GET';
+export const literalResponseType: ResponseType = 'json';
 const auth: AuthSession = createAuthSession({
   getSessionEpoch: () => 'request-session',
   getAccessToken: () => null,
@@ -53,7 +57,7 @@ export function check(): Promise<{ id: number }> {
   return client.post<{ name: string }, { id: number }>('/items', { name: 'a' }, {authRecovery: false});
 }
 export function metadata(): Promise<HttpResponse<string>> {
-  return client.requestWithMetadata<Blob, string>({method: 'PUT', url: '/', data: new Blob()});
+  return client.requestWithMetadata<Blob, string>({method, responseType, url: '/', data: new Blob()});
 }
 `,
   );
@@ -81,7 +85,9 @@ export function metadata(): Promise<HttpResponse<string>> {
       '-e',
       `
     import assert from 'node:assert/strict';
-    import { httpClient, createAuthSession, flattenEnvelopeResponse, HttpClientError } from 'stellarmesh-sdk';
+    import { httpClient, createAuthSession, flattenEnvelopeResponse, HttpClientError, HttpMethod, ResponseType } from 'stellarmesh-sdk';
+    assert.equal(HttpMethod.GET, 'GET');
+    assert.equal(ResponseType.JSON, 'json');
     const auth = createAuthSession({getSessionEpoch: () => 1, getAccessToken: () => null});
     assert.equal(typeof httpClient.withAuth(auth).withTimeout(10).post, 'function');
     assert.equal(typeof httpClient.post, 'function');

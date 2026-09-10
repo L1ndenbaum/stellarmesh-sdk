@@ -1,9 +1,25 @@
 import type { AuthSession } from './auth.js';
 import type { HttpClientError } from './errors.js';
 
-export type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+export const HttpMethod = {
+  GET: 'GET',
+  HEAD: 'HEAD',
+  POST: 'POST',
+  PUT: 'PUT',
+  PATCH: 'PATCH',
+  DELETE: 'DELETE',
+} as const;
 
-export type ResponseType = 'json' | 'text' | 'blob' | 'arraybuffer';
+export type HttpMethod = (typeof HttpMethod)[keyof typeof HttpMethod];
+
+export const ResponseType = {
+  JSON: 'json',
+  TEXT: 'text',
+  BLOB: 'blob',
+  ARRAYBUFFER: 'arraybuffer',
+} as const;
+
+export type ResponseType = (typeof ResponseType)[keyof typeof ResponseType];
 
 export type HttpHeaders = Readonly<Record<string, string>>;
 

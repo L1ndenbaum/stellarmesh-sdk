@@ -41,6 +41,22 @@ await apiClient.post<void>('/session/logout');
 - 优先级为请求选项、实例配置、SDK 默认值。headers 按大小写不敏感名称合并；SDK 注入的 Bearer Token 覆盖同名请求头。
 - `withResponseTransform` 替换当前响应转换器，不追加无限拦截器链。转换器可返回同步值或 Promise，两种响应入口均等待转换完成；取消请求停止等待，但不会强行终止转换器自身的任务。公共接口不暴露 Axios 实例。
 
+请求方法和响应类型可使用运行时常量；同名类型由 `as const` 对象派生，保留原字符串字面量的兼容性：
+
+```ts
+import { HttpMethod, ResponseType } from 'stellarmesh-sdk';
+
+const method: HttpMethod = HttpMethod.GET;
+const responseType: ResponseType = ResponseType.JSON;
+const data = await apiClient.request<Patient>({
+  method,
+  url: '/patients/1',
+  responseType,
+});
+```
+
+响应类型常量为 `JSON`、`TEXT`、`BLOB`、`ARRAYBUFFER`，对应值仍为 `json`、`text`、`blob`、`arraybuffer`。只引用类型时仍可使用 `import type`。
+
 ## 信封和响应类型
 
 普通请求返回 `Promise<TResponse>`，其中 `TResponse` 指最终数据。未启用转换时返回 HTTP 响应体，不返回 AxiosResponse；启用信封处理后返回信封内的 `data`。

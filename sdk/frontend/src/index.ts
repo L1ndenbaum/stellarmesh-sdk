@@ -1,4 +1,5 @@
 export { httpClient } from './http/client.js';
+export { HttpMethod, ResponseType } from './http/types.js';
 export { createAuthSession } from './http/auth.js';
 export type { AuthSession } from './http/auth.js';
 export { flattenEnvelopeResponse } from './http/envelope.js';
@@ -14,13 +15,11 @@ export type {
   HttpClient,
   HttpBodyMethod,
   HttpHeaders,
-  HttpMethod,
   HttpProgress,
   HttpRequest,
   HttpRequestOptions,
   HttpResponse,
   ResponseContext,
   ResponseTransform,
-  ResponseType,
   RetryOptions,
 } from './http/types.js';
