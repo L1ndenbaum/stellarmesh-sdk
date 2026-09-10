@@ -23,6 +23,8 @@
 
 `sdk/frontend/` 新增 `stellarmesh-sdk` 源码版本 `0.1.0`，尚未发布 npm，因此不加入上方已发布制品矩阵。本次提供 ESM JavaScript、类型声明与隔离 tarball 消费验证；没有 npm 发布工作流，不创建或推送前端发布 tag。
 
+未发布初版的认证装配现已统一为 `createAuthSession` 与 `withAuth(auth, bindingOptions)`，新增必需的会话 epoch、显式共享及恢复开关，旧 `withAuth(options)` 不再兼容。使用前阅读[认证接口迁移](sdk/frontend/README.md#未发布初版的认证接口迁移)及项目凭证条件提交示例。
+
 本地制品验证使用 `make frontend-verify`。正式发布前需另行确认 npm 包名归属、发布身份和组件 tag 触发规则；发布时复用已验证的不可变制品，并从实际 registry 安装验收。详细使用和兼容边界见[前端 HTTP SDK](sdk/frontend/README.md)。
 
 ## 当前日志方向

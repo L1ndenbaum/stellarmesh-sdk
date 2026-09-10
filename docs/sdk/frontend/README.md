@@ -109,6 +109,64 @@ const otherApiClient = httpClient.withBaseURL(apiBaseURL).withAuth(auth);
 
 这些限制只约束 SDK 自动注入的 Token。调用方手动设置的 Authorization、Cookie、请求地址和服务器重定向仍由调用方与服务器负责；初版不提供浏览器跨站 Cookie 鉴权配置。会话对象不应作为 SSR 进程级单例。
 
+## 项目会话适配器的条件提交示例
+
+下面演示同步内存状态的完整提交边界。`refreshAndValidate` 由项目实现，使用对应 epoch 的刷新凭证调用独立刷新客户端，只把明确的凭证失效转换为 `null`，其余异常抛出。
+
+```ts
+import {
+  createAuthSession,
+  HttpClientError,
+  type AuthSessionEpoch,
+} from 'stellarmesh-sdk';
+
+function createProjectSession(
+  refreshAndValidate: (epoch: AuthSessionEpoch) => Promise<string | null>,
+) {
+  let state: { epoch: number; accessToken: string | null } = {
+    epoch: 0,
+    accessToken: null,
+  };
+
+  function assertEpoch(expected: AuthSessionEpoch) {
+    if (state.epoch !== expected) {
+      throw new HttpClientError('会话已变化', { kind: 'session-changed' });
+    }
+  }
+
+  function replaceSession(accessToken: string | null) {
+    state = { epoch: state.epoch + 1, accessToken };
+  }
+
+  const auth = createAuthSession({
+    getSessionEpoch: () => state.epoch,
+    getAccessToken: () => state.accessToken,
+    refreshSession: async ({ epoch }) => {
+      const accessToken = await refreshAndValidate(epoch);
+      assertEpoch(epoch);
+      if (accessToken === null) return null;
+      if (!accessToken.trim()) throw new Error('刷新返回了空 Token');
+      // 检查与写入之间没有 await；正常刷新保留原 epoch。
+      state = { ...state, accessToken };
+      return accessToken;
+    },
+    onUnauthorized: (_error, { epoch }) => {
+      assertEpoch(epoch);
+      // 退出也更换 epoch，使其他旧请求失效。
+      replaceSession(null);
+    },
+  });
+
+  return { auth, replaceSession };
+}
+```
+
+项目在登录成功、用户主动退出和切换账号时调用 `replaceSession`；SSR 每个用户请求单独创建这个适配器。示例中的 epoch 只在该适配器生命周期内递增，不能将同一个认证会话对象绑定到重新从零计数的状态。
+
+若真实凭证保存在异步存储中，不能把示例中的赋值简单替换为 `await save(...)`。必须在存储实际提交点对 epoch 条件写入，或让保存、退出和账号切换共同使用同一把锁；检查后再等待写入，仍可能覆盖后来登录的账号。异步清理同样必须在实际删除前核对 epoch。UI 跳转等延迟副作用也应受对应 epoch 约束。
+
+SDK 只能在异步阶段结束或下一次发送前检测变化，不会订阅项目登录事件、撤销已发出的写操作，或取消共享刷新中的项目保存任务。项目需要立即停止页面请求时，仍应自行触发相应 `AbortController`。
+
 ## 超时、重试和取消
 
 默认 `timeout: 0`、`maxRetries: 0`。`withTimeout(ms)` 是每次 Axios 传输尝试的超时，不是独立 TCP/TLS 建连超时，也不包含刷新和退避等待。调用方可通过 `signal` 限制整个操作的生命周期。

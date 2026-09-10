@@ -453,3 +453,341 @@ describe('显式共享认证会话', () => {
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 });
+
+describe('登录会话生命周期', () => {
+  it('读取 Token 期间切换账号时不发送旧请求', async () => {
+    let epoch = 1;
+    let requests = 0;
+    const started = deferred();
+    const token = deferred<string>();
+    const origin = await serve((_req, res) => {
+      requests++;
+      json(res, true);
+    });
+    const onUnauthorized = vi.fn();
+    const client = httpClient.withBaseURL(origin).withAuth(
+      createAuthSession({
+        getSessionEpoch: () => epoch,
+        getAccessToken: () => {
+          started.resolve();
+          return token.promise;
+        },
+        onUnauthorized,
+      }),
+    );
+    const result = expect(
+      client.post<object, void>('/', {}),
+    ).rejects.toMatchObject({ kind: 'session-changed' });
+    await started.promise;
+    epoch = 2;
+    token.resolve('account-b');
+    await result;
+    expect(requests).toBe(0);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it.each([200, 401])(
+    '会话变化后到达的 HTTP %i 不交付旧结果也不恢复',
+    async (status) => {
+      let epoch = 1;
+      const received = deferred();
+      const respond = deferred();
+      const origin = await serve(async (_req, res) => {
+        received.resolve();
+        await respond.promise;
+        json(res, { owner: 'a' }, status);
+      });
+      const refreshSession = vi.fn(async () => 'b');
+      const onUnauthorized = vi.fn();
+      const client = httpClient.withBaseURL(origin).withAuth(
+        createAuthSession({
+          getSessionEpoch: () => epoch,
+          getAccessToken: () => 'a',
+          refreshSession,
+          onUnauthorized,
+        }),
+      );
+      const result = expect(client.get('/')).rejects.toMatchObject({
+        kind: 'session-changed',
+      });
+      await received.promise;
+      epoch = 2;
+      respond.resolve();
+      await result;
+      expect(refreshSession).not.toHaveBeenCalled();
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    },
+  );
+
+  it('异步响应转换期间切换会话，不向 metadata 交付旧数据', async () => {
+    let epoch = 'a';
+    const started = deferred();
+    const transformed = deferred<unknown>();
+    const origin = await serve((_req, res) => json(res, true));
+    const client = httpClient
+      .withBaseURL(origin)
+      .withAuth(
+        createAuthSession({
+          getSessionEpoch: () => epoch,
+          getAccessToken: () => 'a',
+        }),
+      )
+      .withResponseTransform(() => {
+        started.resolve();
+        return transformed.promise;
+      });
+    const result = expect(
+      client.requestWithMetadata({ method: 'GET', url: '/' }),
+    ).rejects.toMatchObject({ kind: 'session-changed' });
+    await started.promise;
+    epoch = 'b';
+    transformed.resolve({ owner: 'a' });
+    await result;
+  });
+
+  it('普通退避期间退出，后续发送前终止旧请求', async () => {
+    let epoch = 1;
+    let requests = 0;
+    const deciding = deferred();
+    const origin = await serve((_req, res) => {
+      requests++;
+      res.setHeader('Retry-After', '1');
+      json(res, {}, 503);
+    });
+    const client = httpClient
+      .withBaseURL(origin)
+      .withMaxRetries(1)
+      .withAuth(
+        createAuthSession({
+          getSessionEpoch: () => epoch,
+          getAccessToken: () => 'a',
+          shouldRefresh: () => {
+            deciding.resolve();
+            return false;
+          },
+        }),
+      );
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const result = expect(client.get('/')).rejects.toMatchObject({
+        kind: 'session-changed',
+      });
+      await deciding.promise;
+      epoch = 2;
+      await vi.advanceTimersByTimeAsync(1000);
+      await result;
+      expect(requests).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('旧账号刷新完成不能重放写请求或清理新账号正在共享的刷新', async () => {
+    let epoch = 'a';
+    let token = 'a-old';
+    const startedA = deferred();
+    const startedB = deferred();
+    const finishA = deferred<string>();
+    const finishB = deferred<string>();
+    const secondB = deferred();
+    const seen: { url: string; token?: string }[] = [];
+    const origin = await serve((req, res) => {
+      seen.push({ url: req.url!, token: req.headers.authorization });
+      if (req.url === '/b2' && req.headers.authorization === 'Bearer b-old')
+        secondB.resolve();
+      json(
+        res,
+        true,
+        req.headers.authorization === 'Bearer b-fresh' ? 200 : 401,
+      );
+    });
+    const refreshSession = vi.fn(async ({ epoch: expected }) => {
+      if (expected === 'a') {
+        startedA.resolve();
+        return finishA.promise;
+      }
+      startedB.resolve();
+      token = await finishB.promise;
+      return token;
+    });
+    const onUnauthorized = vi.fn();
+    const auth = createAuthSession({
+      getSessionEpoch: () => epoch,
+      getAccessToken: () => token,
+      refreshSession,
+      onUnauthorized,
+    });
+    const client = httpClient.withBaseURL(origin).withAuth(auth);
+    const old = expect(
+      client.post<object, void>('/a', { owner: 'a' }),
+    ).rejects.toMatchObject({ kind: 'session-changed' });
+    await startedA.promise;
+    epoch = 'b';
+    token = 'b-old';
+    const first = client.get('/b1');
+    await startedB.promise;
+    finishA.resolve('a-fresh');
+    await old;
+    const second = client.withTimeout(1000).get('/b2');
+    await secondB.promise;
+    finishB.resolve('b-fresh');
+    expect(await Promise.all([first, second])).toEqual([true, true]);
+    expect(refreshSession).toHaveBeenCalledTimes(2);
+    expect(seen.filter((request) => request.url === '/a')).toEqual([
+      { url: '/a', token: 'Bearer a-old' },
+    ]);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it.each(['null', 'network'] as const)(
+    '旧刷新返回 %s 时不失效新会话',
+    async (outcome) => {
+      let epoch = 1;
+      const started = deferred();
+      const finish = deferred();
+      const origin = await serve((_req, res) => json(res, {}, 401));
+      const onUnauthorized = vi.fn();
+      const client = httpClient.withBaseURL(origin).withAuth(
+        createAuthSession({
+          getSessionEpoch: () => epoch,
+          getAccessToken: () => 'a',
+          onUnauthorized,
+          refreshSession: async () => {
+            started.resolve();
+            await finish.promise;
+            if (outcome === 'network')
+              throw new HttpClientError('旧刷新失败', { kind: 'network' });
+            return null;
+          },
+        }),
+      );
+      const result = expect(client.get('/')).rejects.toMatchObject({
+        kind: 'session-changed',
+      });
+      await started.promise;
+      epoch = 2;
+      finish.resolve();
+      await result;
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    },
+  );
+
+  it('项目在实际保存时检查 epoch，旧刷新不能覆盖新账号凭证', async () => {
+    let credentials = { epoch: 'a', token: 'a-old' };
+    const waitingForStorage = deferred();
+    const storageAvailable = deferred();
+    const origin = await serve((_req, res) => json(res, {}, 401));
+    const onUnauthorized = vi.fn();
+    const auth = createAuthSession({
+      getSessionEpoch: () => credentials.epoch,
+      getAccessToken: () => credentials.token,
+      refreshSession: async ({ epoch }) => {
+        const nextToken = 'a-fresh';
+        waitingForStorage.resolve();
+        await storageAvailable.promise;
+        // 模拟项目条件提交：异步准备完成后，在同一临界区内检查并修改。
+        if (credentials.epoch !== epoch)
+          throw new HttpClientError('保存所属会话已变化', {
+            kind: 'session-changed',
+          });
+        credentials = { ...credentials, token: nextToken };
+        return nextToken;
+      },
+      onUnauthorized,
+    });
+    const result = expect(
+      httpClient.withBaseURL(origin).withAuth(auth).get('/'),
+    ).rejects.toMatchObject({ kind: 'session-changed' });
+    await waitingForStorage.promise;
+    credentials = { epoch: 'b', token: 'b-token' };
+    storageAvailable.resolve();
+    await result;
+    expect(credentials).toEqual({ epoch: 'b', token: 'b-token' });
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('项目异步退出的条件清理不能删除新账号凭证', async () => {
+    let credentials = { epoch: 'a', token: 'a-old' };
+    const clearing = deferred();
+    const commit = deferred();
+    const origin = await serve((_req, res) => json(res, {}, 401));
+    const auth = createAuthSession({
+      getSessionEpoch: () => credentials.epoch,
+      getAccessToken: () => credentials.token,
+      refreshSession: async () => null,
+      onUnauthorized: async (_error, { epoch }) => {
+        clearing.resolve();
+        await commit.promise;
+        if (credentials.epoch !== epoch)
+          throw new HttpClientError('清理所属会话已变化', {
+            kind: 'session-changed',
+          });
+        credentials = { epoch: 'logged-out', token: '' };
+      },
+    });
+    const result = expect(
+      httpClient.withBaseURL(origin).withAuth(auth).get('/'),
+    ).rejects.toMatchObject({ kind: 'session-changed' });
+    await clearing.promise;
+    credentials = { epoch: 'b', token: 'b-token' };
+    commit.resolve();
+    await result;
+    expect(credentials).toEqual({ epoch: 'b', token: 'b-token' });
+  });
+
+  it('退出回调可以推进 epoch，新登录不会复用旧通知状态', async () => {
+    let epoch = 1;
+    const origin = await serve((_req, res) => json(res, {}, 401));
+    const onUnauthorized = vi.fn((_error, context) => {
+      expect(context.epoch).toBe(epoch);
+      epoch++;
+    });
+    const client = httpClient.withBaseURL(origin).withAuth(
+      createAuthSession({
+        getSessionEpoch: () => epoch,
+        getAccessToken: () => 'token',
+        refreshSession: async () => null,
+        onUnauthorized,
+      }),
+    );
+    await expect(client.get('/a')).rejects.toMatchObject({ status: 401 });
+    epoch = 3;
+    await expect(client.get('/b')).rejects.toMatchObject({ status: 401 });
+    expect(onUnauthorized).toHaveBeenCalledTimes(2);
+    expect(
+      onUnauthorized.mock.calls.map(([, context]) => context.epoch),
+    ).toEqual([1, 3]);
+  });
+
+  it('一个派生客户端取消等待，不取消另一客户端共享的刷新', async () => {
+    const allOld = deferred();
+    let requests = 0;
+    const finish = deferred<string>();
+    const origin = await serve((req, res) => {
+      if (req.headers.authorization !== 'Bearer fresh') {
+        requests++;
+        if (requests === 2) allOld.resolve();
+        json(res, {}, 401);
+      } else json(res, true);
+    });
+    const refreshSession = vi.fn(() => finish.promise);
+    const client = httpClient.withBaseURL(origin).withAuth(
+      createAuthSession({
+        getSessionEpoch: () => 1,
+        getAccessToken: () => 'old',
+        refreshSession,
+      }),
+    );
+    const controller = new AbortController();
+    const canceled = expect(
+      client.withTimeout(1000).get('/a', { signal: controller.signal }),
+    ).rejects.toMatchObject({ kind: 'canceled' });
+    const other = client.get('/b');
+    await allOld.promise;
+    controller.abort();
+    await canceled;
+    finish.resolve('fresh');
+    expect(await other).toBe(true);
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+  });
+});
