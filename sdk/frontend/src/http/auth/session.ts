@@ -1,19 +1,13 @@
 import axios from 'axios';
-import { normalizeError } from './axios-transport.js';
-import { HttpClientError } from './errors.js';
+import { normalizeError } from '../transport/axios-transport.js';
+import { HttpClientError } from '../error/http-client-error.js';
 import type {
   AuthBindingOptions,
+  AuthSession,
   AuthSessionContext,
   AuthSessionEpoch,
   AuthSessionOptions,
-} from './types.js';
-
-declare const authSessionBrand: unique symbol;
-
-/** 仅由 createAuthSession 创建；可跨客户端共享，但不能跨用户请求共享。 */
-export interface AuthSession {
-  readonly [authSessionBrand]: true;
-}
+} from './contracts.js';
 
 interface RefreshRound {
   refresh?: Promise<string | null>;

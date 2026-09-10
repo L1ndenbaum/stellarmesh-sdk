@@ -1,5 +1,7 @@
-import { canceledError, type HttpClientError } from './errors.js';
-import type { HttpRequest, RetryOptions } from './types.js';
+import { canceledError } from '../error/cancellation.js';
+import type { HttpClientError } from '../error/http-client-error.js';
+import type { HttpRequest } from '../request/contracts.js';
+import type { RetryOptions } from './contracts.js';
 
 export type RetryPolicy = Required<RetryOptions>;
 

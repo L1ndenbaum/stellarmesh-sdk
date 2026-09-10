@@ -25,6 +25,44 @@ const patient = await apiClient.post<{ name: string }, { id: number }>(
 
 详细行为、鉴权与对象传输示例见仓库[前端 SDK 接入教程](../../docs/sdk/frontend/README.md)。打包制品不包含该仓库文档，可通过源码仓库查看。
 
+## 代码组织
+
+`src/http/` 按功能归档，契约与对应实现放在同一目录：
+
+```text
+src/
+├── index.ts
+└── http/
+    ├── auth/
+    │   ├── contracts.ts
+    │   └── session.ts
+    ├── client/
+    │   ├── contracts.ts
+    │   └── client.ts
+    ├── request/
+    │   └── contracts.ts
+    ├── response/
+    │   ├── contracts.ts
+    │   └── envelope.ts
+    ├── retry/
+    │   ├── contracts.ts
+    │   └── policy.ts
+    ├── transport/
+    │   └── axios-transport.ts
+    └── error/
+        ├── http-client-error.ts
+        └── cancellation.ts
+```
+
+- `contracts.ts` 定义所属功能供其他模块依赖的接口；实现文件使用具体名称。只有契约的功能允许暂时只有一个文件，不预建空实现。
+- `request` 定义请求方法、请求头、进度和请求选项；`response` 定义响应读取方式、返回结构与转换接口。`HttpMethod`、`ResponseType` 的运行时常量与同名派生类型保持相邻。
+- `client` 负责客户端接口、配置派生和请求执行；`auth` 负责认证会话契约、工厂和刷新协调；`retry` 区分公开配置与内部策略；`transport` 承载 Axios 适配。
+- 信封适配器的专属类型与实现共同放在 `response/envelope.ts`；错误类、构造选项及类型守卫共同放在 `error/http-client-error.ts`，取消和等待辅助函数放在 `error/cancellation.ts`。不要求每个功能都创建契约文件。
+- 契约不引用客户端、认证协调器或 Axios 实现；认证契约通过类型导入引用错误类。认证会话的品牌声明与公开接口放在一起，私有刷新状态留在实现内。
+- 内部直接引用具体文件，保留 ESM `.js` 路径及 `import type`，不通过包根入口或功能目录的聚合入口引用自身。`src/index.ts` 是唯一公开入口，不提供内部子路径导出。
+
+这里的契约属于前端 HTTP API；仓库根目录 `contracts/` 继续负责跨语言公共协议，不在功能目录重复定义共享协议。行为测试继续通过包根入口验证公开契约，不依赖内部文件布局。
+
 ## 代码排版
 
 顶层 `interface`、`type`、函数、类、枚举及带声明的 `export` 前后保留一个空行；是否导出不改变这些声明的间距要求。连续 import、纯重导出、接口成员和函数内部语句不强制逐条插入空行，说明注释与对应声明保持相邻。

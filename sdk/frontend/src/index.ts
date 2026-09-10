@@ -1,25 +1,38 @@
-export { httpClient } from './http/client.js';
-export { HttpMethod, ResponseType } from './http/types.js';
-export { createAuthSession } from './http/auth.js';
-export type { AuthSession } from './http/auth.js';
-export { flattenEnvelopeResponse } from './http/envelope.js';
-export type { ApiEnvelope, EnvelopeOptions } from './http/envelope.js';
-export { HttpClientError, isHttpClientError } from './http/errors.js';
-export type { HttpErrorKind, HttpClientErrorOptions } from './http/errors.js';
+export { httpClient } from './http/client/client.js';
 export type {
-  AuthBindingOptions,
-  AuthSessionContext,
-  AuthSessionEpoch,
-  AuthSessionOptions,
   ConfigurableHttpClient,
   HttpClient,
   HttpBodyMethod,
+} from './http/client/contracts.js';
+export { HttpMethod } from './http/request/contracts.js';
+export type {
   HttpHeaders,
   HttpProgress,
   HttpRequest,
   HttpRequestOptions,
+} from './http/request/contracts.js';
+export { ResponseType } from './http/response/contracts.js';
+export type {
   HttpResponse,
   ResponseContext,
   ResponseTransform,
-  RetryOptions,
-} from './http/types.js';
+} from './http/response/contracts.js';
+export { createAuthSession } from './http/auth/session.js';
+export type {
+  AuthSession,
+  AuthBindingOptions,
+  AuthSessionContext,
+  AuthSessionEpoch,
+  AuthSessionOptions,
+} from './http/auth/contracts.js';
+export type { RetryOptions } from './http/retry/contracts.js';
+export { flattenEnvelopeResponse } from './http/response/envelope.js';
+export type { ApiEnvelope, EnvelopeOptions } from './http/response/envelope.js';
+export {
+  HttpClientError,
+  isHttpClientError,
+} from './http/error/http-client-error.js';
+export type {
+  HttpErrorKind,
+  HttpClientErrorOptions,
+} from './http/error/http-client-error.js';

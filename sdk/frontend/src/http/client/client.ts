@@ -3,26 +3,25 @@ import {
   mergeHeaders,
   normalizeError,
   send,
-} from './axios-transport.js';
-import { getAuthCoordinator, isTrustedTarget } from './auth.js';
-import type { AuthSession } from './auth.js';
-import { abortable, HttpClientError, throwIfCanceled } from './errors.js';
+} from '../transport/axios-transport.js';
+import { getAuthCoordinator, isTrustedTarget } from '../auth/session.js';
+import type { AuthBindingOptions, AuthSession } from '../auth/contracts.js';
+import { abortable, throwIfCanceled } from '../error/cancellation.js';
+import { HttpClientError } from '../error/http-client-error.js';
 import {
   defaultRetry,
   retryDelay,
   validateNumber,
   waitForRetry,
-} from './retry.js';
-import type { RetryPolicy } from './retry.js';
+} from '../retry/policy.js';
+import type { RetryPolicy } from '../retry/policy.js';
 import type {
-  AuthBindingOptions,
-  ConfigurableHttpClient,
   HttpHeaders,
   HttpRequest,
   HttpRequestOptions,
-  HttpResponse,
-  ResponseTransform,
-} from './types.js';
+} from '../request/contracts.js';
+import type { HttpResponse, ResponseTransform } from '../response/contracts.js';
+import type { ConfigurableHttpClient } from './contracts.js';
 
 interface ClientOptions {
   baseURL?: string;
