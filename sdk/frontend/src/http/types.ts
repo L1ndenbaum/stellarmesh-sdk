@@ -1,3 +1,6 @@
+import type { AuthSession } from './auth.js';
+import type { HttpClientError } from './errors.js';
+
 export type HttpMethod = 'GET' | 'HEAD' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export type ResponseType = 'json' | 'text' | 'blob' | 'arraybuffer';
@@ -26,11 +29,27 @@ export type ResponseTransform = (
   context: ResponseContext,
 ) => unknown;
 
-export interface AuthOptions {
+export type AuthSessionEpoch = string | number;
+
+export interface AuthSessionContext {
+  readonly epoch: AuthSessionEpoch;
+}
+
+export interface AuthSessionOptions {
+  /** 登录、退出、切换账号时更换且不可复用；正常 Token 刷新不更换。 */
+  getSessionEpoch(): AuthSessionEpoch;
   getAccessToken(): string | null | Promise<string | null>;
-  /** 成功时持久化新会话并返回 access token；null 表示会话无法恢复。 */
-  refreshSession?(): Promise<string | null>;
-  onUnauthorized?(error: unknown): void | Promise<void>;
+  /** 按 epoch 条件保存后返回新 Token；null 确认失效，异常仅使本次操作失败。 */
+  refreshSession?(context: AuthSessionContext): Promise<string | null>;
+  shouldRefresh?(error: HttpClientError): boolean;
+  /** 项目在实际清理凭证时也必须检查 epoch，避免异步清理影响新会话。 */
+  onUnauthorized?(
+    error: HttpClientError,
+    context: AuthSessionContext,
+  ): void | Promise<void>;
+}
+
+export interface AuthBindingOptions {
   trustedOrigins?: readonly string[];
 }
 
@@ -49,6 +68,8 @@ export interface HttpRequestOptions {
   retryable?: boolean;
   signal?: AbortSignal;
   auth?: boolean;
+  /** false 仅关闭认证恢复重放和未授权通知，仍正常注入凭证。 */
+  authRecovery?: boolean;
   responseMode?: 'transformed' | 'raw';
   responseType?: ResponseType;
   onUploadProgress?(progress: HttpProgress): void;
@@ -108,6 +129,9 @@ export interface ConfigurableHttpClient extends HttpClient {
   withTimeout(timeout: number): ConfigurableHttpClient;
   withMaxRetries(maxRetries: number): ConfigurableHttpClient;
   withRetry(options: RetryOptions): ConfigurableHttpClient;
-  withAuth(options: AuthOptions): ConfigurableHttpClient;
+  withAuth(
+    session: AuthSession,
+    options?: AuthBindingOptions,
+  ): ConfigurableHttpClient;
   withResponseTransform(transform: ResponseTransform): ConfigurableHttpClient;
 }

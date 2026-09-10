@@ -33,11 +33,11 @@ await apiClient.post<void>('/session/logout');
 
 示例中的 `controller` 由调用方创建。接口是普通 TypeScript API，不读取环境变量、浏览器存储，不依赖 React、路由器或项目上下文。业务层可依赖结构化 `HttpClient` 接口并注入测试实现。
 
-- `withBaseURL`、`withHeaders`、`withTimeout`、`withMaxRetries`、`withRetry`、`withAuth`、`withResponseTransform` 均返回新实例，不改变原对象；应复用配置完成后的实例。派生实例拥有独立刷新状态，SSR 必须按用户请求隔离会话实例。
+- `withBaseURL`、`withHeaders`、`withTimeout`、`withMaxRetries`、`withRetry`、`withAuth`、`withResponseTransform` 均返回新实例，不改变原对象；应复用配置完成后的实例。普通配置派生保留相同认证会话引用；只有显式装配另一 `AuthSession` 才更换刷新状态。SSR 必须按用户请求创建认证会话。
 - `post<TRequest, TResponse>`、`put<TRequest, TResponse>`、`patch<TRequest, TResponse>` 接受请求体；无请求体时使用 `post<TResponse>(url)` 等重载。双泛型不支持省略其中一个。
 - `get<TResponse>`、`head<TResponse>`、`delete<TResponse>` 不接受请求体。需要 DELETE 请求体时使用 `request<TRequest, TResponse>`。
 - `request<TRequest, TResponse>` 接受 `{ method, url, data, ...options }`；无请求体可写 `request<TResponse>`。
-- 请求选项支持 `params`、`headers`、`timeout`、`maxRetries`、`retryable`、`signal`、`auth`、`responseMode`、`responseType`、`onUploadProgress`、`onDownloadProgress`。
+- 请求选项支持 `params`、`headers`、`timeout`、`maxRetries`、`retryable`、`signal`、`auth`、`authRecovery`、`responseMode`、`responseType`、`onUploadProgress`、`onDownloadProgress`。
 - 优先级为请求选项、实例配置、SDK 默认值。headers 按大小写不敏感名称合并；SDK 注入的 Bearer Token 覆盖同名请求头。
 - `withResponseTransform` 替换当前响应转换器，不追加无限拦截器链。转换器可返回同步值或 Promise，两种响应入口均等待转换完成；取消请求停止等待，但不会强行终止转换器自身的任务。公共接口不暴露 Axios 实例。
 
@@ -68,28 +68,46 @@ const client = httpClient.withResponseTransform(
 ## 鉴权和并发刷新
 
 ```ts
-const apiClient = httpClient
-  .withBaseURL(apiBaseURL)
-  .withAuth({
-    getAccessToken: () => session.getAccessToken(),
-    refreshSession: async () => {
-      const token = await session.refreshAccessToken();
-      // 项目负责保存新会话，当前请求使用返回的新 Token 重放。
-      return token;
-    },
-    onUnauthorized: error => session.handleUnauthorized(error),
-  });
+import { createAuthSession, httpClient } from 'stellarmesh-sdk';
+
+const auth = createAuthSession({
+  getSessionEpoch: () => session.getEpoch(),
+  getAccessToken: () => session.getAccessToken(),
+  refreshSession: ({ epoch }) => session.refreshAndSave(epoch),
+  shouldRefresh: error =>
+    error.status === 401 && error.apiCode === 'ACCESS_TOKEN_EXPIRED',
+  onUnauthorized: (error, { epoch }) => session.handleExpired(error, epoch),
+});
+
+const apiClient = httpClient.withBaseURL(apiBaseURL).withAuth(auth);
+const slowApiClient = apiClient.withTimeout(60_000);
+const otherApiClient = httpClient.withBaseURL(apiBaseURL).withAuth(auth);
 ```
 
-`apiBaseURL` 和 `session` 由项目注入。`refreshSession` 返回新 access token 或 `null`，刷新接口本身使用无该刷新逻辑的独立客户端。回调抛出异常时保留 cause 并报告鉴权错误。
+`apiBaseURL` 和 `session` 由项目注入。三个客户端显式共享同一认证会话，配置仍各自独立。即使传入同一个配置对象，两次 `createAuthSession(options)` 也会创建两个独立会话。`withAuth` 只接受工厂返回的 `AuthSession`，不再接受旧回调配置对象。
 
-SDK 默认只向 baseURL 的 origin 注入 Token；无 baseURL 时，浏览器使用当前页面 origin。可用 `trustedOrigins` 显式替换可信 origin 集合。跨 origin 请求、协议相对的外部地址或 `auth: false` 不注入 Token，也不触发刷新。无浏览器环境需绝对 baseURL 或可解析的绝对请求地址及显式可信 origin。
+`getSessionEpoch()` 为同步读取函数，返回字符串或数字。登录、退出、切换账号或替换登录会话时必须更换且不可复用 epoch；同一会话正常刷新 Token 不更换 epoch。SDK 在异步读取 Token 前记录快照，并在读取后、发送或重放前、刷新结果返回后及成功响应交付前复核。不属于当前 epoch 的请求抛出 `kind: 'session-changed'`，不跨账号重放，也不触发旧会话的退出通知。SDK 不主动中断已经发出的服务端操作。
 
-这些限制只约束 SDK 自动注入的 Token。调用方手动设置的 Authorization、Cookie、请求地址和服务器重定向仍由调用方与服务器负责；可信 origin 应是项目实际控制的 API 源。初版不提供浏览器跨站 Cookie 鉴权配置。
+**项目必须在实际保存或清理凭证时执行 epoch 条件检查。** 刷新和退出回调均收到 `{ epoch }`；异步存储需使用条件写入或锁，不能仅在异步保存开始前检查一次。SDK 的返回后检查无法撤销项目已经写入的旧凭证。刷新接口应使用无该恢复逻辑的独立客户端。
 
-同一实例并发 401 共享一次刷新，已经完成刷新后才到达的旧请求 401 复用该结果。每个逻辑请求最多刷新后重放一次；再次 401 不循环。最终未授权通知在同一刷新代次内只执行一次，回调应将应用切换到未登录状态。新请求可以开始下一次刷新尝试。
+| 刷新结果或请求条件 | SDK 行为 |
+| --- | --- |
+| 返回非空 Token | 项目已完成条件保存，SDK 复核 epoch 后使用返回的 Token 恢复重放 |
+| 返回 `null` | 项目确认会话无法恢复，调用 `onUnauthorized` 后抛出认证失败响应 |
+| 抛出异常 | 直接传播错误，不通知退出，不作为业务传输失败重试 |
+| 返回空字符串 | 抛出鉴权契约错误，不解释为会话失效 |
+| 恢复重放后再次出现匹配的认证失败 | 不再次恢复，通知退出并抛出响应错误 |
+| 谓词返回 `false`、未配置刷新或 `authRecovery: false` | 不恢复也不通知退出，交给调用方处理 |
 
-取消某个请求会停止其刷新等待和重放，不取消其他请求共享的刷新任务。刷新服务、Token 持久化、登录跳转及通知展示均归项目负责。
+已有 `HttpClientError` 原样保留，Axios 错误保留规范化后的类别、字段和 cause；普通回调异常以 `kind: 'auth'` 包装并保留 cause。网络、超时、服务暂时不可用及凭证保存失败不等于会话失效。项目负责把明确表示刷新凭证失效的响应转换为 `null`。
+
+`shouldRefresh` 默认只匹配 HTTP 401；自定义谓词接收 HTTP 或信封业务错误，可识别 HTTP 200 信封中的认证失败。网络、超时、取消和响应格式错误不进入谓词；谓词抛出异常也不会触发退出。普通业务错误不重试。
+
+同一 epoch 内，并发及迟到的旧请求共用它们所属刷新代次的 Promise 和结果，包括失败。刷新完成后新请求可进入新代次，暂时失败不会永久禁用恢复。退出通知在对应代次内去重；取消一个请求只停止它的等待和后续重放，不取消其他请求共享的刷新。
+
+可信 origin 属于客户端装配配置，可通过 `.withAuth(auth, { trustedOrigins })` 指定。未指定时仅信任该客户端 baseURL 的 origin；无 baseURL 时浏览器使用当前 origin。不同客户端不会合并或扩大可信集合，普通派生保留原显式集合。跨 origin 请求和 `auth: false` 不注入 Token，也不参与会话快照、刷新或退出通知。无浏览器环境需绝对 baseURL，或绝对请求地址及显式可信 origin。
+
+这些限制只约束 SDK 自动注入的 Token。调用方手动设置的 Authorization、Cookie、请求地址和服务器重定向仍由调用方与服务器负责；初版不提供浏览器跨站 Cookie 鉴权配置。会话对象不应作为 SSR 进程级单例。
 
 ## 超时、重试和取消
 
@@ -109,7 +127,11 @@ await client.get('/items', { signal: controller.signal });
 
 POST/PATCH/PUT/DELETE 默认不自动重试。调用方确认服务端幂等语义、签名有效和请求体可重放后，在单次请求设置 `retryable: true`。`retryable: false` 可关闭 GET 重试；`maxRetries` 可覆盖实例额度。
 
-取消、信封业务失败、格式错误和通常的其他 4xx 不重试。普通重试额度在逻辑请求内共享，401 仅额外允许一次刷新重放，不重置额度。超时不能证明写入失败，SDK 不生成幂等键或代替服务端去重。
+每个逻辑请求最多进行一次认证恢复重放；普通传输重试另行计数，整个逻辑请求共享原额度，认证恢复不重置该额度。例如配置一次普通重试后，允许业务发送经历 `401 → 认证恢复重放 503 → 普通重试 200`，共发送三次。SDK 使用原执行循环重放，不重新调用公开请求方法。
+
+`retryable: false` 只关闭普通重试；`authRecovery: false` 只关闭认证恢复及退出通知，仍正常附带凭证。不可重放的请求体或特殊签名请求应关闭认证恢复。允许恢复的写接口必须保证认证失败发生在业务副作用之前；关键写操作应配合服务端幂等机制。需要业务请求最多两次发送时，将普通重试设为 `0`。
+
+取消、会话变化、格式错误和通常的其他 4xx 不触发普通重试；信封业务错误只有显式命中认证谓词才恢复。谓词不匹配或关闭认证恢复不影响适用的普通传输重试。超时不能证明写入失败，SDK 不生成幂等键或代替服务端去重。
 
 ## 对象存储传输
 
@@ -152,7 +174,13 @@ try {
 }
 ```
 
-`HttpClientError` 提供 `kind`、`status`、`apiCode`、`data`、`headers` 和 `cause`。类别包括 `http`、`business`、`network`、`timeout`、`canceled`、`response-format`、`auth`、`unknown`。原始响应和 cause 可能含有业务数据或 Axios 请求配置，不能未经清洗直接记录；SDK 不自动记录 URL、请求体或凭据。
+`HttpClientError` 提供 `kind`、`status`、`apiCode`、`data`、`headers` 和 `cause`。类别包括 `http`、`business`、`network`、`timeout`、`canceled`、`response-format`、`auth`、`session-changed`、`unknown`。原始响应和 cause 可能含有业务数据或 Axios 请求配置，不能未经清洗直接记录；SDK 不自动记录 URL、请求体或凭据。
+
+## 未发布初版的认证接口迁移
+
+旧 `AuthOptions` 替换为 `AuthSessionOptions` 和 `AuthBindingOptions`，装配从 `withAuth(options)` 改为 `withAuth(createAuthSession(options), bindingOptions)`。新增必需的 `getSessionEpoch`，将 `trustedOrigins` 移至第二个装配参数。多个客户端需要共享时，复用同一个工厂返回值。
+
+项目需实现刷新和退出回调的 epoch 条件提交，不能把临时刷新失败转换为 `null`。旧的“派生实例刷新状态独立”约定已替换；认证恢复重放也不再只限传输层 HTTP 401。
 
 ## 从 XieHe 接入
 

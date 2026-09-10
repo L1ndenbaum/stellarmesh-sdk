@@ -84,10 +84,16 @@ try {
   const page = await browser.newPage();
   await page.goto(appOrigin);
   const result = await page.evaluate(async (storage) => {
-    const { httpClient, flattenEnvelopeResponse } = globalThis.SDK;
+    const { httpClient, createAuthSession, flattenEnvelopeResponse } =
+      globalThis.SDK;
     const api = httpClient
       .withBaseURL('/api')
-      .withAuth({ getAccessToken: () => 'browser-token' })
+      .withAuth(
+        createAuthSession({
+          getSessionEpoch: () => 1,
+          getAccessToken: () => 'browser-token',
+        }),
+      )
       .withResponseTransform(flattenEnvelopeResponse());
     const echo = await api.post('/echo', { id: 7 });
     const storageClient = httpClient.withTimeout(5000);

@@ -6,6 +6,7 @@ export type HttpErrorKind =
   | 'canceled'
   | 'response-format'
   | 'auth'
+  | 'session-changed'
   | 'unknown';
 
 export interface HttpClientErrorOptions {

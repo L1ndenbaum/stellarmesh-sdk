@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
+  createAuthSession,
   flattenEnvelopeResponse,
   httpClient,
   HttpClientError,
@@ -312,10 +313,13 @@ describe('公开 HTTP 契约', () => {
     expect(calls).toBe(2);
     expect(
       await client
-        .withAuth({
-          getAccessToken: () => 'old',
-          refreshSession: async () => 'fresh',
-        })
+        .withAuth(
+          createAuthSession({
+            getSessionEpoch: () => 1,
+            getAccessToken: () => 'old',
+            refreshSession: async () => 'fresh',
+          }),
+        )
         .get('/auth'),
     ).toBe(true);
     await expect(client.get('/invalid')).rejects.toMatchObject({
@@ -336,6 +340,11 @@ describe('公开 HTTP 契约', () => {
   it('编译期响应类型与请求体契约', () => {
     // 函数不执行；tsc 检查真实调用，避免通过断言掩盖泛型顺序错误。
     const compile = (client: HttpClient) => {
+      // @ts-expect-error 旧配置对象不再是 withAuth 的装配入口。
+      httpClient.withAuth({ getAccessToken: () => null });
+      // @ts-expect-error 显式会话必须提供 epoch 读取接口。
+      createAuthSession({ getAccessToken: () => null });
+
       expectTypeOf(
         client.post<{ name: string }, { id: number }>('/', { name: 'a' }),
       ).toEqualTypeOf<Promise<{ id: number }>>();
@@ -434,9 +443,13 @@ describe('鉴权与刷新', () => {
     );
     const getAccessToken = vi.fn(() => 'secret');
     const refreshSession = vi.fn(async () => 'fresh');
-    const client = httpClient
-      .withBaseURL(origin)
-      .withAuth({ getAccessToken, refreshSession });
+    const client = httpClient.withBaseURL(origin).withAuth(
+      createAuthSession({
+        getSessionEpoch: () => 1,
+        getAccessToken,
+        refreshSession,
+      }),
+    );
     expect(await client.get('/')).toEqual({ token: 'Bearer secret' });
     expect(await client.get('/', { auth: false })).toEqual({ token: null });
     expect(await client.get(foreign)).toEqual({ token: null });
@@ -446,10 +459,10 @@ describe('鉴权与刷新', () => {
     ).rejects.toBeInstanceOf(HttpClientError);
     expect(getAccessToken).toHaveBeenCalledTimes(1);
     expect(refreshSession).not.toHaveBeenCalled();
-    const trusted = client.withAuth({
-      getAccessToken,
-      trustedOrigins: [foreign],
-    });
+    const trusted = client.withAuth(
+      createAuthSession({ getSessionEpoch: () => 1, getAccessToken }),
+      { trustedOrigins: [foreign] },
+    );
     expect(await trusted.get(foreign)).toEqual({ token: 'Bearer secret' });
     expect(await trusted.get(origin)).toEqual({ token: null });
   });
@@ -468,9 +481,13 @@ describe('鉴权与刷新', () => {
       } else json(res, req.headers.authorization);
     });
     const refreshSession = vi.fn(async () => 'fresh');
-    const client = httpClient
-      .withBaseURL(origin)
-      .withAuth({ getAccessToken: () => 'expired', refreshSession });
+    const client = httpClient.withBaseURL(origin).withAuth(
+      createAuthSession({
+        getSessionEpoch: () => 1,
+        getAccessToken: () => 'expired',
+        refreshSession,
+      }),
+    );
     const first = client.get('/first');
     const late = client.get('/late');
     expect(await first).toBe('Bearer fresh');
@@ -490,11 +507,14 @@ describe('鉴权与刷新', () => {
     });
     const refreshSession = vi.fn(() => release.promise);
     const onUnauthorized = vi.fn();
-    const client = httpClient.withBaseURL(origin).withAuth({
-      getAccessToken: () => 'old',
-      refreshSession,
-      onUnauthorized,
-    });
+    const client = httpClient.withBaseURL(origin).withAuth(
+      createAuthSession({
+        getSessionEpoch: () => 1,
+        getAccessToken: () => 'old',
+        refreshSession,
+        onUnauthorized,
+      }),
+    );
     const all = Promise.allSettled([client.get('/a'), client.get('/b')]);
     await received.promise;
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -507,12 +527,15 @@ describe('鉴权与刷新', () => {
     const cause = new Error('刷新连接失败');
     await expect(
       client
-        .withAuth({
-          getAccessToken: () => 'old',
-          refreshSession: async () => {
-            throw cause;
-          },
-        })
+        .withAuth(
+          createAuthSession({
+            getSessionEpoch: () => 1,
+            getAccessToken: () => 'old',
+            refreshSession: async () => {
+              throw cause;
+            },
+          }),
+        )
         .get('/'),
     ).rejects.toMatchObject({ kind: 'auth', cause });
   });
@@ -527,9 +550,13 @@ describe('鉴权与刷新', () => {
       started.resolve();
       return refresh.promise;
     });
-    const client = httpClient
-      .withBaseURL(origin)
-      .withAuth({ getAccessToken: () => 'old', refreshSession });
+    const client = httpClient.withBaseURL(origin).withAuth(
+      createAuthSession({
+        getSessionEpoch: () => 1,
+        getAccessToken: () => 'old',
+        refreshSession,
+      }),
+    );
     const controller = new AbortController();
     const canceled = expect(
       client.get('/a', { signal: controller.signal }),
@@ -553,7 +580,13 @@ describe('鉴权与刷新', () => {
     const client = httpClient
       .withBaseURL(origin)
       .withRetry({ maxRetries: 1, baseDelayMs: 0 })
-      .withAuth({ getAccessToken: () => 'old', refreshSession });
+      .withAuth(
+        createAuthSession({
+          getSessionEpoch: () => 1,
+          getAccessToken: () => 'old',
+          refreshSession,
+        }),
+      );
     await expect(client.get('/')).rejects.toMatchObject({ status: 503 });
     expect(calls).toBe(3);
     expect(refreshSession).toHaveBeenCalledTimes(1);
@@ -562,12 +595,16 @@ describe('鉴权与刷新', () => {
     expect(refreshSession).toHaveBeenCalledTimes(1);
   });
 
-  it('再次 401 不循环刷新，派生实例的刷新任务独立', async () => {
+  it('再次 401 不循环恢复，后续新请求可以再次刷新', async () => {
     const origin = await serve((_req, res) => json(res, {}, 401));
     const refreshSession = vi.fn(async () => 'fresh');
-    const client = httpClient
-      .withBaseURL(origin)
-      .withAuth({ getAccessToken: () => 'old', refreshSession });
+    const client = httpClient.withBaseURL(origin).withAuth(
+      createAuthSession({
+        getSessionEpoch: () => 1,
+        getAccessToken: () => 'old',
+        refreshSession,
+      }),
+    );
     await expect(client.get('/')).rejects.toMatchObject({ status: 401 });
     expect(refreshSession).toHaveBeenCalledTimes(1);
     await expect(client.withTimeout(1000).get('/')).rejects.toMatchObject({

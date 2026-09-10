@@ -19,6 +19,8 @@ const patient = await apiClient.post<{ name: string }, { id: number }>(
 
 `withXxx()` 返回新实例，必须接住返回值。默认无鉴权、无响应转换、不重试、不设置超时。带请求体的方法采用请求泛型在前、响应泛型在后；返回类型表示转换后的数据。泛型不校验服务端 DTO 字段。
 
+`createAuthSession` 创建显式共享会话，`withAuth(auth)` 装配后，普通派生继续共享刷新状态；必需的 `getSessionEpoch` 配合项目条件保存与清理，防止旧请求跨账号恢复。刷新异常直接传播，只有明确失效或恢复重放仍失败才通知退出。`authRecovery: false` 可保留凭证注入并关闭认证恢复。
+
 详细行为、鉴权与对象传输示例见仓库[前端 SDK 接入教程](../../docs/sdk/frontend/README.md)。打包制品不包含该仓库文档，可通过源码仓库查看。
 
 ## 代码排版

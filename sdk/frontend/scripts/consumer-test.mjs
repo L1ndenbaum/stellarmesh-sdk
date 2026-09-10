@@ -40,11 +40,17 @@ try {
   await writeFile(
     join(directory, 'consumer.ts'),
     `
-import { httpClient, flattenEnvelopeResponse } from 'stellarmesh-sdk';
-import type { HttpClient, HttpResponse } from 'stellarmesh-sdk';
-const client: HttpClient = httpClient.withResponseTransform(flattenEnvelopeResponse());
+import { httpClient, createAuthSession, flattenEnvelopeResponse } from 'stellarmesh-sdk';
+import type { AuthSession, AuthSessionContext, HttpClient, HttpResponse } from 'stellarmesh-sdk';
+const auth: AuthSession = createAuthSession({
+  getSessionEpoch: () => 'request-session',
+  getAccessToken: () => null,
+  refreshSession: async (context: AuthSessionContext) => { void context.epoch; return null; },
+  shouldRefresh: error => error.status === 401,
+});
+const client: HttpClient = httpClient.withAuth(auth).withResponseTransform(flattenEnvelopeResponse());
 export function check(): Promise<{ id: number }> {
-  return client.post<{ name: string }, { id: number }>('/items', { name: 'a' });
+  return client.post<{ name: string }, { id: number }>('/items', { name: 'a' }, {authRecovery: false});
 }
 export function metadata(): Promise<HttpResponse<string>> {
   return client.requestWithMetadata<Blob, string>({method: 'PUT', url: '/', data: new Blob()});
@@ -75,7 +81,9 @@ export function metadata(): Promise<HttpResponse<string>> {
       '-e',
       `
     import assert from 'node:assert/strict';
-    import { httpClient, flattenEnvelopeResponse, HttpClientError } from 'stellarmesh-sdk';
+    import { httpClient, createAuthSession, flattenEnvelopeResponse, HttpClientError } from 'stellarmesh-sdk';
+    const auth = createAuthSession({getSessionEpoch: () => 1, getAccessToken: () => null});
+    assert.equal(typeof httpClient.withAuth(auth).withTimeout(10).post, 'function');
     assert.equal(typeof httpClient.post, 'function');
     assert.notEqual(httpClient.withTimeout(10), httpClient);
     assert.equal(flattenEnvelopeResponse()({ code: 0, message: '', data: 7 }, { status: 200, headers: {} }), 7);

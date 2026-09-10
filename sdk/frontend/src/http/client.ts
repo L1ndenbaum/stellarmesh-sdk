@@ -4,7 +4,8 @@ import {
   normalizeError,
   send,
 } from './axios-transport.js';
-import { createAuthCoordinator, isTrustedTarget } from './auth.js';
+import { getAuthCoordinator, isTrustedTarget } from './auth.js';
+import type { AuthSession } from './auth.js';
 import { abortable, HttpClientError, throwIfCanceled } from './errors.js';
 import {
   defaultRetry,
@@ -14,7 +15,7 @@ import {
 } from './retry.js';
 import type { RetryPolicy } from './retry.js';
 import type {
-  AuthOptions,
+  AuthBindingOptions,
   ConfigurableHttpClient,
   HttpHeaders,
   HttpRequest,
@@ -28,13 +29,15 @@ interface ClientOptions {
   headers?: HttpHeaders;
   timeout: number;
   retry: RetryPolicy;
-  auth?: AuthOptions;
+  auth?: { session: AuthSession; binding: AuthBindingOptions };
   transform?: ResponseTransform;
 }
 
 function createClient(options: ClientOptions): ConfigurableHttpClient {
   const transport = createTransport(options.baseURL);
-  const session = createAuthCoordinator(options.auth);
+  const session = options.auth
+    ? getAuthCoordinator(options.auth.session)
+    : undefined;
   const derive = (changes: Partial<ClientOptions>) =>
     createClient({ ...options, ...changes });
 
@@ -51,77 +54,89 @@ function createClient(options: ClientOptions): ConfigurableHttpClient {
       true,
     );
     throwIfCanceled(request.signal);
-    const authenticated = Boolean(
+    const authenticated =
       options.auth &&
       request.auth !== false &&
-      isTrustedTarget(request.url, options.baseURL, options.auth),
-    );
-    const observedVersion = session.version;
-    let token = authenticated
-      ? await abortable(session.token(), request.signal)
+      isTrustedTarget(request.url, options.baseURL, options.auth.binding);
+    const snapshot = authenticated ? session!.capture() : undefined;
+    const checkActive = () => {
+      throwIfCanceled(request.signal);
+      if (snapshot) session!.assertCurrent(snapshot);
+    };
+    let token = snapshot
+      ? await abortable(session!.token(snapshot), request.signal)
       : null;
-    let refreshed = false;
+    let recovered = false;
     let retries = 0;
     while (true) {
-      throwIfCanceled(request.signal);
+      checkActive();
       const headers = mergeHeaders(request.headers);
       if (token) headers.authorization = `Bearer ${token}`;
-      let response: HttpResponse<unknown>;
+      let transportFailed = false;
       try {
-        response = await send(transport, request, headers);
-      } catch (rawError) {
-        const error = normalizeError(rawError);
-        throwIfCanceled(request.signal);
-        if (error.status === 401 && authenticated) {
-          let terminalError = error;
-          if (!refreshed && options.auth?.refreshSession) {
-            refreshed = true;
-            try {
-              token = await abortable(
-                session.refresh(observedVersion),
-                request.signal,
-              );
-              if (token) continue;
-            } catch (refreshError) {
-              terminalError = normalizeError(refreshError);
-              throwIfCanceled(request.signal);
-            }
-          }
-          await abortable(session.notify(terminalError), request.signal);
-          throw terminalError;
+        let response: HttpResponse<unknown>;
+        try {
+          response = await send(transport, request, headers);
+        } catch (error) {
+          transportFailed = true;
+          throw error;
         }
-        const delay = retryDelay(error, request, retries, options.retry);
+        checkActive();
+        if (response.status === 204 || request.method === 'HEAD') {
+          response.data = undefined;
+        } else if (
+          options.transform &&
+          request.responseMode !== 'raw' &&
+          (request.responseType === undefined ||
+            request.responseType === 'json')
+        ) {
+          try {
+            response.data = await abortable(
+              Promise.resolve(options.transform(response.data, response)),
+              request.signal,
+            );
+          } catch (cause) {
+            if (cause instanceof HttpClientError) throw cause;
+            throw new HttpClientError('响应转换失败', {
+              kind: 'response-format',
+              status: response.status,
+              data: response.data,
+              headers: response.headers,
+              cause,
+            });
+          }
+        }
+        checkActive();
+        return response;
+      } catch (rawError) {
+        checkActive();
+        const error = normalizeError(rawError);
+        if (
+          snapshot &&
+          request.authRecovery !== false &&
+          session!.shouldRefresh(error)
+        ) {
+          checkActive();
+          if (!session!.canRefresh) throw error;
+          if (!recovered) {
+            recovered = true;
+            // 回调异常直接离开循环，不通知退出，也不能当成业务请求的传输失败重试。
+            token = await abortable(session!.refresh(snapshot), request.signal);
+            checkActive();
+            if (token !== null) continue;
+          }
+          await abortable(session!.notify(snapshot, error), request.signal);
+          throw error;
+        }
+        checkActive();
+        // 只有真实传输失败消耗普通重试额度；信封恢复需显式命中认证谓词。
+        const delay = transportFailed
+          ? retryDelay(error, request, retries, options.retry)
+          : null;
         if (delay === null) throw error;
         retries += 1;
         await waitForRetry(delay, request.signal);
-        continue;
       }
-      throwIfCanceled(request.signal);
-      // 响应处理在传输重试之外：业务错误或转换异常不能触发重复写入。
-      if (response.status === 204 || request.method === 'HEAD') {
-        response.data = undefined;
-      } else if (
-        options.transform &&
-        request.responseMode !== 'raw' &&
-        (request.responseType === undefined || request.responseType === 'json')
-      ) {
-        try {
-          response.data = await abortable(
-            Promise.resolve(options.transform(response.data, response)),
-            request.signal,
-          );
-        } catch (cause) {
-          if (cause instanceof HttpClientError) throw cause;
-          throw new HttpClientError('响应转换失败', {
-            kind: 'response-format',
-            status: response.status,
-            data: response.data,
-            headers: response.headers,
-            cause,
-          });
-        }
-      }
-      return response;
     }
   }
   async function request<TRequest, TResponse>(
@@ -172,15 +187,19 @@ function createClient(options: ClientOptions): ConfigurableHttpClient {
       validateNumber(retry.maxDelayMs, 'maxDelayMs');
       return derive({ retry });
     },
-    withAuth: (auth) =>
-      derive({
+    withAuth: (auth, binding = {}) => {
+      getAuthCoordinator(auth);
+      return derive({
         auth: {
-          ...auth,
-          trustedOrigins: auth.trustedOrigins
-            ? [...auth.trustedOrigins]
-            : undefined,
+          session: auth,
+          binding: {
+            trustedOrigins: binding.trustedOrigins
+              ? [...binding.trustedOrigins]
+              : undefined,
+          },
         },
-      }),
+      });
+    },
     withResponseTransform: (transform) => derive({ transform }),
   };
 }
