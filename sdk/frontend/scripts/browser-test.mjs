@@ -84,8 +84,12 @@ try {
   const page = await browser.newPage();
   await page.goto(appOrigin);
   const result = await page.evaluate(async (storage) => {
-    const { httpClient, createAuthSession, flattenEnvelopeResponse } =
-      globalThis.SDK;
+    const {
+      httpClient,
+      createHttpApi,
+      createAuthSession,
+      flattenEnvelopeResponse,
+    } = globalThis.SDK;
     const api = httpClient
       .withBaseURL('/api')
       .withAuth(
@@ -95,7 +99,11 @@ try {
         }),
       )
       .withResponseTransform(flattenEnvelopeResponse());
-    const echo = await api.post('/echo', { id: 7 });
+    const requestEcho = createHttpApi(api).post('/echo');
+    const echo = await requestEcho({ id: 7 });
+    const anonymousEcho = await createHttpApi(api).post('/echo', {
+      auth: false,
+    })({ id: 8 });
     const storageClient = httpClient.withTimeout(5000);
     const uploaded = [];
     const downloaded = [];
@@ -122,9 +130,13 @@ try {
       { responseType: 'arraybuffer' },
     );
     // 带鉴权的业务实例面对 //foreign-host 时同样不得注入 Token。
-    const external = await api.get(storage.replace('http:', '') + '/public', {
-      responseType: 'text',
-    });
+    const requestExternal = createHttpApi(api).get(
+      storage.replace('http:', '') + '/public',
+      {
+        responseType: 'text',
+      },
+    );
+    const external = await requestExternal();
     const controller = new AbortController();
     const request = storageClient.get(`${storage}/slow`, {
       signal: controller.signal,
@@ -140,6 +152,7 @@ try {
     }
     return {
       echo,
+      anonymousEcho,
       etag: upload.headers.etag,
       status: upload.status,
       size: blob.size,
@@ -155,6 +168,7 @@ try {
     token: 'Bearer browser-token',
     payload: { id: 7 },
   });
+  assert.deepEqual(result.anonymousEcho, { payload: { id: 8 } });
   assert.equal(result.etag, '"browser-part"');
   assert.equal(result.status, 200);
   assert.equal(result.size, 256 * 1024);
@@ -167,7 +181,7 @@ try {
   assert(seenAuth.every((value) => value === undefined));
   assert(stored.has('/object?signature=unchanged'));
   console.log(
-    '浏览器验证通过：信封、鉴权、跨域隔离、上传下载、进度、ETag、超时与取消',
+    '浏览器验证通过：声明式调用、信封、鉴权、跨域隔离、上传下载、进度、ETag、超时与取消',
   );
 } finally {
   await browser?.close();

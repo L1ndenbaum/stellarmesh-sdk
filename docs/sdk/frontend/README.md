@@ -4,7 +4,108 @@
 
 维护 SDK 时，目录职责和内部依赖约定见[代码组织说明](../../../sdk/frontend/README.md#代码组织)；业务项目继续从包根入口导入。
 
-## 配置和调用
+## 声明式接口
+
+业务 API 可以先声明，再由 Application 调用。公共装配先配置传输客户端，再用 `createHttpApi(client)` 创建声明入口：
+
+```ts
+// shared/api/http.ts
+import {
+  createHttpApi,
+  httpClient,
+  flattenEnvelopeResponse,
+} from 'stellarmesh-sdk';
+
+const client = httpClient
+  .withBaseURL('/api')
+  .withTimeout(15_000)
+  .withResponseTransform(flattenEnvelopeResponse());
+
+export const http = createHttpApi(client);
+```
+
+需要认证时，在装配客户端阶段通过 `.withAuth(auth)` 注入项目会话。业务模块使用项目自己的 DTO 声明接口，SDK 不依赖生成代码：
+
+```ts
+import { http } from '@/shared/api/http';
+import type {
+  LoginRequest,
+  Token,
+  FaultTracingWorkspaceResponse,
+} from '@/shared/api/generated/backend';
+
+export const requestLogin =
+  http.post<LoginRequest, Token>('/auth/login', { auth: false });
+
+export const requestWorkspace =
+  http.get<void, FaultTracingWorkspaceResponse>('/fault-tracing/workspace');
+```
+
+调用时传入本次数据：
+
+```ts
+const session = await api.requestLogin({ username, password });
+const workspace = await api.requestWorkspace();
+```
+
+| 声明方法 | 泛型顺序 | 返回函数的第一个参数 |
+| --- | --- | --- |
+| `get`、`head`、`delete` | `<TQuery, TResponse>` | 查询对象或 `URLSearchParams`，映射到 `params`，不发送请求体 |
+| `post`、`put`、`patch` | `<TBody, TResponse>` | 请求体，映射到 `data` |
+| 输入为 `void` 的任一方法 | `<void, TResponse>` | 可以省略，直接 `requestXxx()` |
+
+声明方法统一采用输入泛型在前、响应泛型在后。普通查询 DTO 接口无需额外声明字符串索引签名：
+
+```ts
+interface ListUsersQuery {
+  page: number;
+  keyword?: string;
+}
+
+const requestUsers =
+  http.get<ListUsersQuery, { items: string[] }>('/users');
+
+const users = await requestUsers({ page: 1, keyword: '张' });
+```
+
+### 声明默认配置与调用配置
+
+声明方法的第二个参数是默认配置；返回函数的第二个参数始终是单次调用配置，不根据对象内容猜测数据或配置：
+
+```ts
+const requestLogin = http.post<LoginRequest, Token>('/auth/login', {
+  auth: false,
+  timeout: 10_000,
+});
+
+const session = await requestLogin(
+  { username, password },
+  { signal: controller.signal, timeout: 5_000 },
+);
+
+const workspace = await requestWorkspace(undefined, {
+  signal: controller.signal,
+});
+```
+
+- 优先级为调用配置、声明配置、客户端配置、SDK 默认值。调用配置中的 `undefined` 表示沿用默认值，`false`、`0` 等显式值正常覆盖。
+- headers 按大小写不敏感名称合并；同名值由更具体的配置覆盖。SDK 的自动 Bearer 注入规则继续生效。
+- `signal` 仅允许在调用阶段提供，不能绑定到可复用声明。一次取消不会影响同一声明的其他并发调用或后续调用。
+- GET／HEAD／DELETE 的查询参数只从输入提供，声明配置和调用配置均不接受 `params`。
+- POST／PUT／PATCH 可在配置中提供额外 `params`。调用值替换整个声明查询容器，不逐字段合并；传入空对象或空 `URLSearchParams` 可清空声明默认查询，URL 字符串本身的查询部分仍保留。
+- 声明保存配置快照，并复制 headers、params 的外层容器以及 `URLSearchParams` 内容；每次调用分别组装配置。嵌套查询值、请求体和回调不会深拷贝，调用方应在使用期间保持它们稳定。
+
+### 执行与生命周期
+
+声明只绑定客户端、方法、固定 URL 字符串及默认配置，不读取 Token、不捕获会话 epoch、不发送网络请求。每次调用才进入原客户端执行流程，读取当前会话，独立计算重试与认证恢复额度；不会缓存 Promise 或自动去重，错误也不会额外包装。信封转换、可信 origin、`auth: false` 和 `authRecovery: false` 均沿用下文规则。
+
+`createHttpApi` 只依赖所注入客户端的 `request` 方法，允许注入测试实现。客户端配置仍不可变；后续派生新的客户端不会改变已声明接口绑定的客户端。SSR 继续按用户请求装配认证会话及其客户端，不能跨用户共享绑定了会话的声明函数。
+
+当前声明层提供六种方法和转换后数据返回值；动态路径可以由项目函数在调用时构造 URL 再声明并调用。需要 `HttpResponse` 元信息或 DELETE 请求体时，继续使用下面的底层立即请求入口。
+
+## 底层客户端配置和立即调用
+
+`HttpClient` 的现有方法保持立即发送语义，与 `createHttpApi` 返回的 `HttpApi` 区分。以下示例使用底层客户端。
 
 ```ts
 import {

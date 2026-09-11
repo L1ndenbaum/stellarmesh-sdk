@@ -3,7 +3,7 @@
 `stellarmesh-sdk` 提供基于 Axios 的可复用 HTTP 客户端。当前源码版本为 `0.1.0`，尚未发布到 npm。业务 API、公共 API 和对象存储共用实现，通过独立实例配置。
 
 ```ts
-import { httpClient, flattenEnvelopeResponse } from 'stellarmesh-sdk';
+import { createHttpApi, httpClient, flattenEnvelopeResponse } from 'stellarmesh-sdk';
 
 const apiClient = httpClient
   .withBaseURL('/api/v1')
@@ -11,13 +11,16 @@ const apiClient = httpClient
   .withMaxRetries(2)
   .withResponseTransform(flattenEnvelopeResponse());
 
-const patient = await apiClient.post<{ name: string }, { id: number }>(
-  '/patients',
-  { name: '示例' },
-);
+const http = createHttpApi(apiClient);
+const requestCreatePatient =
+  http.post<{ name: string }, { id: number }>('/patients');
+
+const patient = await requestCreatePatient({ name: '示例' });
 ```
 
-`withXxx()` 返回新实例，必须接住返回值。默认无鉴权、无响应转换、不重试、不设置超时。带请求体的方法采用请求泛型在前、响应泛型在后；返回类型表示转换后的数据。泛型不校验服务端 DTO 字段。
+`withXxx()` 返回新实例，必须接住返回值。默认无鉴权、无响应转换、不重试、不设置超时。`createHttpApi(client)` 创建声明入口：`get/head/delete<TQuery, TResponse>` 的调用输入作为查询参数，`post/put/patch<TBody, TResponse>` 的调用输入作为请求体；输入为 `void` 时可无参调用。声明时不发送请求，每次调用独立执行；返回类型表示转换后的数据，泛型不校验服务端 DTO 字段。
+
+声明方法的第二个参数是默认配置，返回函数的第二个参数是本次调用配置，优先级为调用配置、声明配置、客户端配置、SDK 默认值。headers 按大小写不敏感名称合并；`signal` 只在调用阶段提供。无输入接口可写 `requestWorkspace()`，携带配置时写 `requestWorkspace(undefined, { signal })`。原 `HttpClient` 的立即请求方法及 metadata 入口仍保留。
 
 `HttpMethod` 和 `ResponseType` 同时提供运行时常量与同名类型，例如 `HttpMethod.GET`、`ResponseType.JSON`、`ResponseType.ARRAYBUFFER`。它们使用 `as const` 对象及派生联合类型，原有字符串字面量和 `import type` 用法继续兼容。
 
@@ -33,6 +36,9 @@ const patient = await apiClient.post<{ name: string }, { id: number }>(
 src/
 ├── index.ts
 └── http/
+    ├── api/
+    │   ├── contracts.ts
+    │   └── api.ts
     ├── auth/
     │   ├── contracts.ts
     │   └── session.ts
@@ -55,6 +61,7 @@ src/
 ```
 
 - `contracts.ts` 定义所属功能供其他模块依赖的接口；实现文件使用具体名称。只有契约的功能允许暂时只有一个文件，不预建空实现。
+- `api` 定义可复用的声明式请求函数，绑定方法、路径和默认配置；调用时通过注入客户端的 `request` 入口执行，不重复实现传输、认证或重试。
 - `request` 定义请求方法、请求头、进度和请求选项；`response` 定义响应读取方式、返回结构与转换接口。`HttpMethod`、`ResponseType` 的运行时常量与同名派生类型保持相邻。
 - `client` 负责客户端接口、配置派生和请求执行；`auth` 负责认证会话契约、工厂和刷新协调；`retry` 区分公开配置与内部策略；`transport` 承载 Axios 适配。
 - 信封适配器的专属类型与实现共同放在 `response/envelope.ts`；错误类、构造选项及类型守卫共同放在 `error/http-client-error.ts`，取消和等待辅助函数放在 `error/cancellation.ts`。不要求每个功能都创建契约文件。
