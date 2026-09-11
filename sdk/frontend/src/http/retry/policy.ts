@@ -36,12 +36,14 @@ export function retryDelay(
     request.retryable ??
     (request.method === 'GET' || request.method === 'HEAD');
   if (!allowed || used >= limit) return null;
-  if (!(
-    error.kind === 'network' ||
-    error.kind === 'timeout' ||
-    (error.kind === 'http' &&
-      [408, 429, 502, 503, 504].includes(error.status ?? 0))
-  ))
+  if (
+    !(
+      error.kind === 'network' ||
+      error.kind === 'timeout' ||
+      (error.kind === 'http' &&
+        [408, 429, 502, 503, 504].includes(error.status ?? 0))
+    )
+  )
     return null;
   const after = error.headers?.['retry-after'];
   let minimum = 0;

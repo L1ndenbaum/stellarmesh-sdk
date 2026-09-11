@@ -15,8 +15,8 @@
     }
   },
   "scripts": {
-    "format": "eslint . --fix && prettier --write .",
-    "check": "prettier --check . && eslint . && tsc --noEmit -p tsconfig.check.json",
+    "format": "eslint . --fix && biome format --write .",
+    "check": "biome format . && eslint . && tsc --noEmit -p tsconfig.check.json",
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:browser": "node scripts/browser-test.mjs",
@@ -27,12 +27,12 @@
     "axios": "1.20.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.13",
     "@playwright/test": "1.63.0",
     "@stylistic/eslint-plugin": "5.10.0",
     "@types/node": "24.7.0",
     "esbuild": "0.28.2",
     "eslint": "9.39.1",
-    "prettier": "3.9.6",
     "typescript": "5.9.3",
     "typescript-eslint": "8.70.0",
     "vitest": "4.0.18"

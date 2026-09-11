@@ -67,7 +67,11 @@ src/
 
 顶层 `interface`、`type`、函数、类、枚举及带声明的 `export` 前后保留一个空行；是否导出不改变这些声明的间距要求。连续 import、纯重导出、接口成员和函数内部语句不强制逐条插入空行，说明注释与对应声明保持相邻。
 
-ESLint 的 `@stylistic/padding-line-between-statements` 负责检查和自动补齐空行，Prettier 负责其余排版并将多个连续空行压为一个。`npm run format` 先运行 ESLint 自动修复，再运行 Prettier；`npm run check` 会拦截缺失空行的声明。
+ESLint 的 `@stylistic/padding-line-between-statements` 负责检查和自动补齐空行，Biome 负责其余代码排版。`npm run format` 先运行 ESLint 自动修复，再执行 `biome format --write .`；`npm run check` 执行只读格式检查、ESLint 和 TypeScript 类型检查，也会拦截缺失空行的声明。Biome 的 linter 和 assist 均关闭，静态规则继续由 ESLint 维护。
+
+格式配置集中在 `biome.json`：两空格缩进、80 字符目标行宽、LF 换行、单引号、保留分号，并在允许的多行结构末尾添加逗号。短函数调用可以保持单行，长调用由 Biome 自动决定换行；`expand: "auto"` 控制对象和数组布局，不保证最后一个对象参数展开时，整个调用的参数都逐行展开。
+
+格式化覆盖本包内 Biome 支持的代码和 JSON 文件，排除 `dist/`、`node_modules/` 和打包制品。Markdown 由人工维护，不参与自动格式化和格式检查；不再保留 Prettier。编辑器格式化应使用项目的 Biome 配置，避免保存时使用其他格式化器覆盖结果。
 
 ## 本地开发
 
