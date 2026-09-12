@@ -21,7 +21,7 @@
 
 ## 前端 HTTP SDK 首次 npm 发布
 
-前端包为 `@l1ndenbaum/stellarmesh-sdk`，源码版本 `0.1.0`，采用 MIT 许可证，许可证位于 `sdk/frontend/LICENSE` 并随 npm 包分发。该许可证针对前端包，不改变其他语言模块的许可声明。当前尚未发布 npm，因此不加入上方已发布制品矩阵。包名中的 `l1ndenbaum` 使用数字 `1`，与 npm 个人账号完全一致。
+前端包为 `@stellarmesh/sdk`，源码版本 `0.1.0`，采用 MIT 许可证，许可证位于 `sdk/frontend/LICENSE` 并随 npm 包分发。该许可证针对前端包，不改变其他语言模块的许可声明。当前尚未发布 npm，因此不加入上方已发布制品矩阵。包归属 npm 组织 `stellarmesh`，由具备组织发布权限的账号维护。
 
 包只提供 ESM JavaScript 和类型声明，唯一公开入口是包根；发布清单只包含 `dist/`、`package.json`、`README.md` 和 `LICENSE`。运行时依赖仍为锁定版本的 Axios。本轮不升级依赖、不创建或推送发布 tag。
 
@@ -40,7 +40,7 @@ npm run release:prepare
 
 `release:prepare` 校验包名、MIT、正式版本号、锁文件根元数据及公开 registry 配置；依次完成格式／静态／类型检查、行为测试、干净构建、Chromium 验证，再打包一次并验证这份 tarball。每次成功输出一个独立的 `.artifacts/0.1.0-随机后缀/` 目录，包含：
 
-- `l1ndenbaum-stellarmesh-sdk-0.1.0.tgz`：通过验证的 npm 制品；
+- `stellarmesh-sdk-0.1.0.tgz`：通过验证的 npm 制品；
 - `release.json`：包名、版本、文件名、SHA-512 integrity、SHA-256、registry、公开访问权限与 `latest` 标签。
 
 目录被 Git、Biome 和 ESLint 忽略，也不会进入 npm 包。失败时清理本次不完整制品，不覆盖以前的成功结果。可传入组件 tag 做版本一致性校验，例如 `npm run release:prepare -- sdk/frontend/v0.1.0`；这不会创建 tag。当前命令只接受正式版本号，不支持预发布版本与标签的自动选择。
@@ -48,7 +48,7 @@ npm run release:prepare
 `npm run build` 每次清除旧 `dist/`，避免已删除模块残留。`npm pack` 的 `prepack` 只执行干净构建；完整发布检查由 `release:prepare` 负责，避免消费验证触发打包后递归验证。消费验证安装时禁用生命周期脚本，并检查包清单、许可证、版本、ESM 与公开类型契约。验证已有制品时使用：
 
 ```sh
-npm run test:consumer -- /绝对路径/l1ndenbaum-stellarmesh-sdk-0.1.0.tgz
+npm run test:consumer -- /绝对路径/stellarmesh-sdk-0.1.0.tgz
 ```
 
 已有制品路径不会触发源码重建，验证前后检查其内容摘要一致。
@@ -57,7 +57,7 @@ npm run test:consumer -- /绝对路径/l1ndenbaum-stellarmesh-sdk-0.1.0.tgz
 
 ### 首次人工发布
 
-正式发布时再登录 npm 官方 registry，确认身份输出为 `l1ndenbaum`，并完成 npm 要求的账号验证与 2FA。个人 scope 下的公开包无需创建组织。`publishConfig` 固定为官方 registry 和 `public`，命令仍显式指定，避免本机镜像源影响发布。
+正式发布时再登录 npm 官方 registry，确认身份输出为 `l1ndenbaum`，并完成 npm 要求的账号验证与 2FA。发布账号需要拥有 `stellarmesh` 组织及包的发布权限。`publishConfig` 固定为官方 registry 和 `public`，命令仍显式指定，避免本机镜像源影响发布。
 
 以下步骤会向 npm 上传包，应在正式发布时执行。将 `release_dir` 替换为本次成功准备命令输出的目录，不重新运行打包生成替代文件：
 
@@ -65,18 +65,18 @@ npm run test:consumer -- /绝对路径/l1ndenbaum-stellarmesh-sdk-0.1.0.tgz
 npm login --registry=https://registry.npmjs.org/
 npm whoami --registry=https://registry.npmjs.org/
 release_dir='/绝对路径/sdk/frontend/.artifacts/0.1.0-随机后缀'
-npm publish "$release_dir/l1ndenbaum-stellarmesh-sdk-0.1.0.tgz" \
+npm publish "$release_dir/stellarmesh-sdk-0.1.0.tgz" \
   --ignore-scripts --registry=https://registry.npmjs.org/ --access public --tag latest
 ```
 
 上传前核对 tarball 的 SHA-256 与 `release.json` 一致；发布失败先确认 registry 是否已经存在该版本，不能直接修改内容后复用相同版本。发布后查询真实元数据：
 
 ```sh
-npm view @l1ndenbaum/stellarmesh-sdk@0.1.0 \
+npm view @stellarmesh/sdk@0.1.0 \
   name version license dist.integrity --json --registry=https://registry.npmjs.org/
 ```
 
-将 `dist.integrity` 与准备时保存的 SHA-512 比较，再从官方 registry 下载该版本到新临时目录，使用 `test:consumer` 验证下载的 tarball，并在全新业务消费目录安装 `@l1ndenbaum/stellarmesh-sdk@0.1.0` 验证公开安装。全部通过后，记录源码 commit、创建指向该 commit 的不可变组件 tag `sdk/frontend/v0.1.0`，更新已发布矩阵。当前没有前端 tag 发布触发器，根 `vX.Y.Z` tag 仍只用于镜像。
+将 `dist.integrity` 与准备时保存的 SHA-512 比较，再从官方 registry 下载该版本到新临时目录，使用 `test:consumer` 验证下载的 tarball，并在全新业务消费目录安装 `@stellarmesh/sdk@0.1.0` 验证公开安装。全部通过后，记录源码 commit、创建指向该 commit 的不可变组件 tag `sdk/frontend/v0.1.0`，更新已发布矩阵。当前没有前端 tag 发布触发器，根 `vX.Y.Z` tag 仍只用于镜像。
 
 ### 后续自动发布
 

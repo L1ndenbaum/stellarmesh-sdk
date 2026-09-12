@@ -76,7 +76,7 @@ try {
   const installed = JSON.parse(
     await readFile(join(installedRoot, 'package.json'), 'utf8'),
   );
-  assert.equal(installed.name, '@l1ndenbaum/stellarmesh-sdk');
+  assert.equal(installed.name, '@stellarmesh/sdk');
   assert.equal(installed.version, expected.version);
   assert.equal(installed.license, 'MIT');
   assert.deepEqual(installed.publishConfig, {
@@ -93,9 +93,9 @@ try {
   await writeFile(
     join(directory, 'consumer.ts'),
     `
-import * as SDK from '@l1ndenbaum/stellarmesh-sdk';
-import { http, createAuthSession, AuthRefreshResult, flattenEnvelopeResponse, HttpMethod, ResponseType, HttpErrorKind } from '@l1ndenbaum/stellarmesh-sdk';
-import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, HttpMethod as MethodType, HttpErrorKind as ErrorKind } from '@l1ndenbaum/stellarmesh-sdk';
+import * as SDK from '@stellarmesh/sdk';
+import { http, createAuthSession, AuthRefreshResult, flattenEnvelopeResponse, HttpMethod, ResponseType, HttpErrorKind } from '@stellarmesh/sdk';
+import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, HttpMethod as MethodType, HttpErrorKind as ErrorKind } from '@stellarmesh/sdk';
 export const httpErrorKind: ErrorKind = HttpErrorKind.HTTP;
 export const literalErrorKind: ErrorKind = 'http';
 export const exactErrorKind: 'http' = HttpErrorKind.HTTP;
@@ -254,7 +254,7 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
       `
     import assert from 'node:assert/strict';
     import { createServer } from 'node:http';
-    import * as SDK from '@l1ndenbaum/stellarmesh-sdk';
+    import * as SDK from '@stellarmesh/sdk';
     const { http, createAuthSession, flattenEnvelopeResponse, HttpClientError, HttpMethod, ResponseType, HttpErrorKind } = SDK;
     assert.equal(SDK.AuthRefreshResult.REFRESHED, 'refreshed');
     assert.equal(SDK.AuthRefreshResult.EXPIRED, 'expired');

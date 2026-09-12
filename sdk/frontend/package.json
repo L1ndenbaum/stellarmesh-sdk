@@ -1,5 +1,5 @@
 {
-  "name": "@l1ndenbaum/stellarmesh-sdk",
+  "name": "@stellarmesh/sdk",
   "version": "0.1.0",
   "description": "可复用的 Axios HTTP 客户端",
   "license": "MIT",

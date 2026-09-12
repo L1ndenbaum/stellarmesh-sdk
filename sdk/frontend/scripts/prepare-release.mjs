@@ -21,7 +21,7 @@ assert(
   process.argv.length <= 3,
   '用法：prepare-release.mjs [sdk/frontend/vX.Y.Z]',
 );
-assert.equal(pkg.name, '@l1ndenbaum/stellarmesh-sdk');
+assert.equal(pkg.name, '@stellarmesh/sdk');
 assert.equal(pkg.license, 'MIT');
 assert.match(
   pkg.version,

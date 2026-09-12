@@ -1,15 +1,15 @@
 # 前端 HTTP SDK
 
-`@l1ndenbaum/stellarmesh-sdk` 提供基于 Axios 的可复用 HTTP 客户端。源码版本为 `0.1.0`，采用 MIT 许可证。业务 API、公共 API 和对象存储共用实现，通过独立实例配置。
+`@stellarmesh/sdk` 提供基于 Axios 的可复用 HTTP 客户端。源码版本为 `0.1.0`，采用 MIT 许可证。业务 API、公共 API 和对象存储共用实现，通过独立实例配置。
 
 安装：
 
 ```sh
-npm install @l1ndenbaum/stellarmesh-sdk --registry=https://registry.npmjs.org/
+npm install @stellarmesh/sdk --registry=https://registry.npmjs.org/
 ```
 
 ```ts
-import { http, flattenEnvelopeResponse } from '@l1ndenbaum/stellarmesh-sdk';
+import { http, flattenEnvelopeResponse } from '@stellarmesh/sdk';
 
 const api = http
   .withBaseURL('/api/v1')
@@ -106,7 +106,7 @@ npm run verify
 
 ## 发布准备与许可证
 
-本包采用 [MIT 许可证](LICENSE)，许可证随 tarball 分发。包名中的用户名是 `l1ndenbaum`，第二个字符为数字 `1`；npm scope 必须与发布账号或其拥有权限的组织一致。
+本包采用 [MIT 许可证](LICENSE)，许可证随 tarball 分发。包归属 npm 组织 `stellarmesh`，发布账号需要拥有该组织及包的发布权限。
 
 在本目录运行 `npm run release:prepare`，完成检查、行为测试、干净构建和 Chromium 验证后，生成一份 tarball，并在独立目录验证这份 tarball 的元数据、类型与运行时行为。成功时保留 `.artifacts/` 下的制品和 `release.json`，记录版本、目标 registry 与 SHA-512／SHA-256 校验信息；该命令不发布 npm 包。
 
