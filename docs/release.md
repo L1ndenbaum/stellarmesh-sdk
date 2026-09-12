@@ -26,6 +26,17 @@
 
 本次不升级运行时依赖，不修改三字段 `ApiEnvelope<T>`，不定义业务错误码，也不增加会话刷新或通知机制。使用方式及兼容细节见[错误码提取](sdk/frontend/README.md#可配置错误码提取)。发布目标为官方 registry 的 `@stellarmesh/sdk@0.2.0`、公开访问和 `latest`；此节是发布准备，实际发布验收后再更新制品矩阵和摘要。
 
+2026-09-13 已验证并推送源码 commit `65ff52dddabc59d8c704603417af09fdce2337da`。本地 `make verify`、129 个前端测试、Chromium 实际 HTTP 与隔离 tarball 消费全部通过；`release:prepare -- sdk/frontend/v0.2.0` 生成并验证唯一制品 `stellarmesh-sdk-0.2.0.tgz`，摘要如下：
+
+```text
+SHA-512 integrity: sha512-k1bs5J6fqVQ2ITuqZl0nuWIWRwsHBbnsqsM6WqQ6FURlzZb6U/PdA64OHFsUxChwadd1lO56FWTnmpxHq29UKA==
+SHA-256: a9528fdfadae60d30f85c16eb902d19759571cb2cf7943a6109ae9098e691059
+```
+
+对应源码的 [GitHub CI](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/34704294630) 中，前端 HTTP SDK、Go 模块、Python Logging、Python Storage 和 Shell 检查均通过。Storage 集成拉取 `minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e` 时返回 `pull access denied`，导致汇总检查失败。该失败位于既有 Storage 集成环境，不属于前端包的运行或构建依赖。
+
+当前发布因上述 CI 失败暂停，尚未上传 npm 或创建 `sdk/frontend/v0.2.0` tag；官方制品下载与空缓存公开安装验收尚未执行。发布须等待该检查恢复，或取得本次前端发布对该检查的明确豁免，不能将已准备制品视为正式发布。继续发布时使用上述已验证制品，不重新打包替换。
+
 ## 前端 HTTP SDK 首次 npm 发布
 
 前端包为 `@stellarmesh/sdk`，首次发布版本 `0.1.0`，采用 MIT 许可证，许可证位于 `sdk/frontend/LICENSE` 并随 npm 包分发。该许可证针对前端包，不改变其他语言模块的许可声明。已于 2026-09-12 发布到官方 npm registry，公开包为 [`@stellarmesh/sdk@0.1.0`](https://www.npmjs.com/package/@stellarmesh/sdk/v/0.1.0)。包归属 npm 组织 `stellarmesh`，由具备组织发布权限的账号维护。
@@ -44,7 +55,7 @@ SHA-256: 2233314a4a24cfa776ebf9cd0ea94ba5aee4960119722e6a65e44abea7a74c98
 
 ### 准备并验证唯一制品
 
-使用 Node 24 和 npm，在仓库根目录先执行全仓验证 `make verify`。准备前确认目标源码已经提交，工作区干净，推送后通过要求的 CI，再执行：
+使用 Node 24 和 npm，在仓库根目录先执行全仓验证 `make verify`。准备前确认目标源码已经提交，工作区干净，再执行以下步骤；正式上传前须推送已验证源码并通过要求的 CI：
 
 ```sh
 cd sdk/frontend
