@@ -6,6 +6,7 @@
 
 | 制品 | 当前已发布版本 | 说明 |
 | --- | --- | --- |
+| 前端 HTTP SDK | `sdk/frontend/v0.1.0` | `@stellarmesh/sdk@0.1.0`，ESM，MIT |
 | 父 Go SDK | `sdk/go/v0.5.0` | 标准库 HTTP 与环境配置基础能力 |
 | Go Object Storage | `sdk/go/objectstorage/v0.1.0` | namespace 绑定的对象存储能力 |
 | Go Gateway Core | `sdk/go/gateway/v0.3.1` | 通用 `slog` 访问日志，保留限流结果 |
@@ -21,11 +22,19 @@
 
 ## 前端 HTTP SDK 首次 npm 发布
 
-前端包为 `@stellarmesh/sdk`，源码版本 `0.1.0`，采用 MIT 许可证，许可证位于 `sdk/frontend/LICENSE` 并随 npm 包分发。该许可证针对前端包，不改变其他语言模块的许可声明。当前尚未发布 npm，因此不加入上方已发布制品矩阵。包归属 npm 组织 `stellarmesh`，由具备组织发布权限的账号维护。
+前端包为 `@stellarmesh/sdk`，源码版本 `0.1.0`，采用 MIT 许可证，许可证位于 `sdk/frontend/LICENSE` 并随 npm 包分发。该许可证针对前端包，不改变其他语言模块的许可声明。已于 2026-09-12 发布到官方 npm registry，公开包为 [`@stellarmesh/sdk@0.1.0`](https://www.npmjs.com/package/@stellarmesh/sdk/v/0.1.0)。包归属 npm 组织 `stellarmesh`，由具备组织发布权限的账号维护。
 
-包只提供 ESM JavaScript 和类型声明，唯一公开入口是包根；发布清单只包含 `dist/`、`package.json`、`README.md` 和 `LICENSE`。运行时依赖仍为锁定版本的 Axios。本轮不升级依赖、不创建或推送发布 tag。
+包只提供 ESM JavaScript 和类型声明，唯一公开入口是包根；发布清单只包含 `dist/`、`package.json`、`README.md` 和 `LICENSE`。运行时依赖仍为锁定版本的 Axios。首次发布不升级依赖，组件 tag 为 `sdk/frontend/v0.1.0`。
 
 认证装配已统一为 `createAuthSession` 与 `withAuth(auth, bindingOptions)`，支持显式恢复策略和 Cookie Session。使用前阅读[认证接口迁移](sdk/frontend/README.md#未发布初版的认证接口迁移)及项目凭证条件提交示例。
+
+首次发布源码 commit 为 `b89936671c17abd4a7eda30e79236e266025e0fa`，包含大写 `HttpErrorKind.HTTP` 等运行时常量及同名类型。发布上传的是一次构建并验证的 tarball，官方 registry 匿名下载的制品与本地 SHA-512／SHA-256 一致，公开 tarball 的 ESM 和 TypeScript 消费验证通过；随后在全新目录使用空 npm 缓存按包名安装 `@stellarmesh/sdk@0.1.0`，确认大写错误常量、声明式入口与安装摘要一致，`latest` 指向 `0.1.0`。
+
+```text
+SHA-256: 2233314a4a24cfa776ebf9cd0ea94ba5aee4960119722e6a65e44abea7a74c98
+```
+
+本地 `make verify`、104 个前端测试、Chromium 与隔离消费验证通过。对应源码的 [GitHub CI](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/34675639098) 中前端任务已通过；Storage 集成因拉取外部 MinIO 镜像被拒绝而失败，不能将本次记录视为整条 CI 成功。该集成不属于前端 npm 包的运行或构建依赖。
 
 ### 准备并验证唯一制品
 

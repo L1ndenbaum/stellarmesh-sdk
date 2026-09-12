@@ -1,8 +1,8 @@
 # 前端 HTTP SDK 接入
 
-前端包位于 `sdk/frontend/`，包名为 `@stellarmesh/sdk`，源码版本 `0.1.0`，尚未发布 npm。它封装 Axios 传输、响应处理、鉴权刷新、重试和对象字节传输，不包含项目 DTO、分页兼容、上传会话或页面状态。
+前端包位于 `sdk/frontend/`，包名为 `@stellarmesh/sdk`，npm 版本 `0.1.0` 已发布。它封装 Axios 传输、响应处理、鉴权刷新、重试和对象字节传输，不包含项目 DTO、分页兼容、上传会话或页面状态。
 
-包采用 MIT 许可证；发布准备、首次安装与制品验证步骤见[发布说明](../../release.md#前端-http-sdk-首次-npm-发布)。
+安装命令为 `npm install @stellarmesh/sdk@0.1.0`。包采用 MIT 许可证；发布准备、首次安装与制品验证步骤见[发布说明](../../release.md#前端-http-sdk-首次-npm-发布)。
 
 维护 SDK 时，目录职责和内部依赖约定见[代码组织说明](../../../sdk/frontend/README.md#代码组织)；业务项目继续从包根入口导入。
 

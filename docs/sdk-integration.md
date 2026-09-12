@@ -2,7 +2,7 @@
 
 ## 前端 HTTP 接入
 
-[前端 HTTP SDK](sdk/frontend/README.md)的包名为 `@stellarmesh/sdk`（MIT），源码初版 `0.1.0` 位于 `sdk/frontend/`，尚未发布 npm。项目分别装配鉴权 API、公共 API 和对象存储实例，注入配置与会话回调。对象存储实例只发送签发结果所要求的 URL、方法和 headers；业务 DTO、分片调度、会话确认和页面状态继续由项目负责。
+[前端 HTTP SDK](sdk/frontend/README.md)的包名为 `@stellarmesh/sdk`（MIT），源码位于 `sdk/frontend/`，npm 初版 `0.1.0` 已发布。项目分别装配鉴权 API、公共 API 和对象存储实例，注入配置与会话回调。对象存储实例只发送签发结果所要求的 URL、方法和 headers；业务 DTO、分片调度、会话确认和页面状态继续由项目负责。
 
 ## 日志接入
 

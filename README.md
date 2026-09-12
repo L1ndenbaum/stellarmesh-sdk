@@ -12,7 +12,7 @@
 - `sdk/go/gateway/`：独立发布的 fail-close 声明式 Gateway、JWT 认证与 Redis 限流 Module。
 - `sdk/go/logging/`：独立发布、仅依赖标准库的 `slog.Handler` 安全装饰器。
 - `sdk/go/mq/kafka/`：独立发布的轻量 Kafka Go Module，提供 PLAIN、SCRAM、TLS/mTLS、Publisher 和 Topic 检查。
-- `sdk/frontend/`：独立 TypeScript HTTP 包 `@stellarmesh/sdk`（MIT），封装 Axios、信封处理、鉴权刷新、重试及对象传输；源码 `0.1.0` 尚未发布 npm。
+- `sdk/frontend/`：独立 TypeScript HTTP 包 `@stellarmesh/sdk`（MIT），封装 Axios、信封处理、鉴权刷新、重试及对象传输；已发布 npm `0.1.0`。
 - `sdk/python/logging/`：独立发布、无运行时第三方依赖的标准库 JSON／Pretty Formatter；格式由应用选择。
 - `sdk/python/storage/`：独立发布的 `stellarmesh-storage` 同步与异步对象存储客户端。
 - `services/storage/`：签发 S3/MinIO 预签名请求的项目级控制面服务，不代理对象字节。
