@@ -1,13 +1,16 @@
-export type HttpErrorKind =
-  | 'http'
-  | 'business'
-  | 'network'
-  | 'timeout'
-  | 'canceled'
-  | 'response-format'
-  | 'auth'
-  | 'session-changed'
-  | 'unknown';
+export const HttpErrorKind = {
+  HTTP: 'http',
+  BUSINESS: 'business',
+  NETWORK: 'network',
+  TIMEOUT: 'timeout',
+  CANCELED: 'canceled',
+  RESPONSE_FORMAT: 'response-format',
+  AUTH: 'auth',
+  SESSION_CHANGED: 'session-changed',
+  UNKNOWN: 'unknown',
+} as const;
+
+export type HttpErrorKind = (typeof HttpErrorKind)[keyof typeof HttpErrorKind];
 
 export interface HttpClientErrorOptions {
   kind: HttpErrorKind;

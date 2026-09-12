@@ -433,16 +433,18 @@ const file = await requestDownload(downloadUrl, {
 ## 错误处理
 
 ```ts
-import { isHttpClientError } from '@l1ndenbaum/stellarmesh-sdk';
+import { HttpErrorKind, isHttpClientError } from '@l1ndenbaum/stellarmesh-sdk';
 
 try {
   const requestItems = apiClient.get<void, Item[]>('/items');
   await requestItems();
 } catch (error) {
-  if (isHttpClientError(error) && error.kind === 'canceled') return;
+  if (isHttpClientError(error) && error.kind === HttpErrorKind.CANCELED) return;
   throw error;
 }
 ```
+
+`HttpErrorKind` 同时导出 `as const` 常量和同名联合类型，可用 `HttpErrorKind.HTTP` 比较错误类别，原有字符串和 `import type` 继续有效。`RESPONSE_FORMAT`、`SESSION_CHANGED` 成员分别对应 `response-format`、`session-changed` 字符串值。
 
 `HttpClientError` 提供 `kind`、`status`、`apiCode`、`data`、`headers` 和 `cause`。类别包括 `http`、`business`、`network`、`timeout`、`canceled`、`response-format`、`auth`、`session-changed`、`unknown`。原始响应和 cause 可能含有业务数据或 Axios 请求配置，不能未经清洗直接记录；SDK 不自动记录 URL、请求体或凭据。
 

@@ -94,8 +94,15 @@ try {
     join(directory, 'consumer.ts'),
     `
 import * as SDK from '@l1ndenbaum/stellarmesh-sdk';
-import { http, createAuthSession, AuthRefreshResult, flattenEnvelopeResponse, HttpMethod, ResponseType } from '@l1ndenbaum/stellarmesh-sdk';
-import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, HttpMethod as MethodType } from '@l1ndenbaum/stellarmesh-sdk';
+import { http, createAuthSession, AuthRefreshResult, flattenEnvelopeResponse, HttpMethod, ResponseType, HttpErrorKind } from '@l1ndenbaum/stellarmesh-sdk';
+import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, HttpMethod as MethodType, HttpErrorKind as ErrorKind } from '@l1ndenbaum/stellarmesh-sdk';
+export const httpErrorKind: ErrorKind = HttpErrorKind.HTTP;
+export const literalErrorKind: ErrorKind = 'http';
+export const exactErrorKind: 'http' = HttpErrorKind.HTTP;
+// @ts-expect-error 不接受未定义的错误类别
+export const invalidErrorKind: ErrorKind = 'invalid';
+// @ts-expect-error 常量成员只读
+HttpErrorKind.HTTP = 'business';
 interface LoginRequest { username: string; password: string }
 interface Token { accessToken: string }
 interface Query { page: number; keyword?: string }
@@ -248,9 +255,15 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
     import assert from 'node:assert/strict';
     import { createServer } from 'node:http';
     import * as SDK from '@l1ndenbaum/stellarmesh-sdk';
-    const { http, createAuthSession, flattenEnvelopeResponse, HttpClientError, HttpMethod, ResponseType } = SDK;
+    const { http, createAuthSession, flattenEnvelopeResponse, HttpClientError, HttpMethod, ResponseType, HttpErrorKind } = SDK;
     assert.equal(SDK.AuthRefreshResult.REFRESHED, 'refreshed');
     assert.equal(SDK.AuthRefreshResult.EXPIRED, 'expired');
+    assert.deepEqual(HttpErrorKind, {
+      HTTP: 'http', BUSINESS: 'business', NETWORK: 'network', TIMEOUT: 'timeout',
+      CANCELED: 'canceled', RESPONSE_FORMAT: 'response-format', AUTH: 'auth',
+      SESSION_CHANGED: 'session-changed', UNKNOWN: 'unknown',
+    });
+    assert.equal(new HttpClientError('失败', { kind: HttpErrorKind.HTTP }).kind, 'http');
     assert.equal(HttpMethod.GET, 'GET');
     assert.equal(ResponseType.JSON, 'json');
     assert.equal('httpClient' in SDK, false);

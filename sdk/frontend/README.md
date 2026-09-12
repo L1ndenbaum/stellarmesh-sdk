@@ -2,7 +2,7 @@
 
 `@l1ndenbaum/stellarmesh-sdk` 提供基于 Axios 的可复用 HTTP 客户端。源码版本为 `0.1.0`，采用 MIT 许可证。业务 API、公共 API 和对象存储共用实现，通过独立实例配置。
 
-公开发布后安装：
+安装：
 
 ```sh
 npm install @l1ndenbaum/stellarmesh-sdk --registry=https://registry.npmjs.org/
@@ -27,7 +27,7 @@ const patient = await requestCreatePatient({ name: '示例' });
 
 声明方法的第二个参数是默认配置，返回函数的第二个参数是本次调用配置，优先级为调用配置、声明配置、客户端配置、SDK 默认值。headers 按大小写不敏感名称合并；`signal` 只在调用阶段提供。无输入接口可写 `requestWorkspace()`，携带配置时写 `requestWorkspace(undefined, { signal })`。`withMetadata()` 派生的声明返回 `HttpResponse<TResponse>`；通用 `request<TInput, TResponse>(resolve, defaults)` 在调用时同步组装方法、URL、查询和请求体，不提供立即发送入口。
 
-`HttpMethod`、`ResponseType` 和 `AuthRefreshResult` 同时提供运行时常量与同名类型，例如 `HttpMethod.GET`、`ResponseType.JSON`、`ResponseType.ARRAYBUFFER`。它们使用 `as const` 对象及派生联合类型，原有字符串字面量和 `import type` 用法继续兼容。
+`HttpMethod`、`ResponseType`、`AuthRefreshResult` 和 `HttpErrorKind` 同时提供运行时常量与同名类型，例如 `HttpMethod.GET`、`ResponseType.JSON`、`ResponseType.ARRAYBUFFER` 和 `HttpErrorKind.HTTP`。`HttpErrorKind.RESPONSE_FORMAT` 与 `HttpErrorKind.SESSION_CHANGED` 分别对应原有的 `response-format` 和 `session-changed` 错误值。它们使用 `as const` 对象及派生联合类型，原有字符串字面量和 `import type` 用法继续兼容。
 
 `createAuthSession` 创建显式共享会话，`withAuth(auth)` 装配后，普通派生继续共享刷新状态。业务方通过 `getAuthHeaders({ epoch })` 提供 Bearer、自定义认证头或 CSRF 头；Cookie Session 可省略该回调。`shouldRefresh` 和 `refreshSession` 必须成对配置，不提供默认 401 判断，不完整组合在类型检查和运行时均被拒绝；未启用刷新时不能配置 `onUnauthorized`。
 

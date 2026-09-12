@@ -38,9 +38,7 @@ export { flattenEnvelopeResponse } from './http/response/envelope.js';
 export type { ApiEnvelope, EnvelopeOptions } from './http/response/envelope.js';
 export {
   HttpClientError,
+  HttpErrorKind,
   isHttpClientError,
 } from './http/error/http-client-error.js';
-export type {
-  HttpErrorKind,
-  HttpClientErrorOptions,
-} from './http/error/http-client-error.js';
+export type { HttpClientErrorOptions } from './http/error/http-client-error.js';
