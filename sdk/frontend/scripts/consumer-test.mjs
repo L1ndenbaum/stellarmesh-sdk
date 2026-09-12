@@ -40,72 +40,93 @@ try {
   await writeFile(
     join(directory, 'consumer.ts'),
     `
-import { httpClient, createHttpApi, createAuthSession, flattenEnvelopeResponse, HttpMethod, ResponseType } from 'stellarmesh-sdk';
-import type { AuthSession, AuthSessionContext, HttpClient, HttpResponse, HttpMethod as HttpMethodType, ResponseType as ResponseTypeType } from 'stellarmesh-sdk';
-const method: HttpMethodType = HttpMethod.PUT;
-const responseType: ResponseTypeType = ResponseType.TEXT;
-export const literalMethod: HttpMethod = 'GET';
-export const literalResponseType: ResponseType = 'json';
-const auth: AuthSession = createAuthSession({
-  getSessionEpoch: () => 'request-session',
-  getAccessToken: () => null,
-  refreshSession: async (context: AuthSessionContext) => { void context.epoch; return null; },
-  shouldRefresh: error => error.status === 401,
-});
-const client: HttpClient = httpClient.withAuth(auth).withResponseTransform(flattenEnvelopeResponse());
-export function check(): Promise<{ id: number }> {
-  return client.post<{ name: string }, { id: number }>('/items', { name: 'a' }, {authRecovery: false});
-}
-export function metadata(): Promise<HttpResponse<string>> {
-  return client.requestWithMetadata<Blob, string>({method, responseType, url: '/', data: new Blob()});
-}
+import * as SDK from 'stellarmesh-sdk';
+import { http, createAuthSession, flattenEnvelopeResponse, HttpMethod, ResponseType } from 'stellarmesh-sdk';
+import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, HttpMethod as MethodType } from 'stellarmesh-sdk';
 interface LoginRequest { username: string; password: string }
 interface Token { accessToken: string }
-interface ListUsersQuery { page: number; keyword?: string }
-const api = createHttpApi(client);
-const requestLogin = api.post<LoginRequest, Token>('/auth/login', { auth: false });
-const requestWorkspace = api.get<void, { id: number }>('/workspace');
-const requestUsers = api.get<ListUsersQuery, { items: string[] }>('/users');
-export function declaredTypes(): void {
-  const session: Promise<Token> = requestLogin({ username: 'u', password: 'p' }, { signal: new AbortController().signal });
-  const workspace: Promise<{ id: number }> = requestWorkspace();
-  const users: Promise<{ items: string[] }> = requestUsers({ page: 1 });
-  void [session, workspace, users];
-  void requestWorkspace(undefined, { timeout: 1000 });
-  void api.post<void, void>('/logout')();
+interface Query { page: number; keyword?: string }
+const auth = createAuthSession({ getSessionEpoch: () => 1, getAccessToken: () => null });
+const api: HttpApi = http.withAuth(auth).withResponseTransform(flattenEnvelopeResponse());
+const login = api.post<LoginRequest, Token>('/login', { auth: false });
+const workspace = api.get<void, { id: number }>('/workspace');
+const users = api.get<Query, string[]>('/users');
+const metadata = api.withMetadata().withTimeout(1000).withHeaders({ X: 'value' }).withMetadata();
+const upload = metadata.request<{ url: string; file: Blob }, string>(input => ({
+  method: HttpMethod.PUT, url: input.url, data: input.file,
+}), { responseType: ResponseType.TEXT });
+export const literalMethod: MethodType = 'GET';
+export function checkTypes(): void {
+  const token: Promise<Token> = login({ username: 'u', password: 'p' });
+  const plain: Promise<{ id: number }> = workspace();
+  const info: Promise<HttpResponse<{ id: number }>> = metadata.get<void, { id: number }>('/workspace')();
+  const objectInfo: Promise<HttpResponse<string>> = upload({ url: '/object', file: new Blob() });
+  const list: Promise<string[]> = users({ page: 1 });
+  const envelope: Promise<ApiEnvelope<Token>> = http.post<LoginRequest, ApiEnvelope<Token>>('/login')({ username: 'u', password: 'p' });
+  void [token, plain, info, objectInfo, list, envelope];
+  void workspace(undefined, { signal: new AbortController().signal });
   void api.head<void, void>('/health')();
-  void api.delete<{ id: number }, void>('/items')({ id: 1 });
+  void api.delete<Query, void>('/users')({ page: 1 });
   void api.put<Blob, string>('/object', { params: { part: 1 } })(new Blob(), { params: { part: 2 } });
-  void api.patch<{ name: string }, void>('/items')({ name: 'a' });
-  // @ts-expect-error 有请求体时不能省略输入。
-  void requestLogin();
-  // @ts-expect-error 请求体必须符合声明 DTO。
-  void requestLogin({ username: 'u' });
-  // @ts-expect-error 响应类型由声明确定。
-  const wrong: Promise<number> = requestLogin({ username: 'u', password: 'p' });
+  void api.patch<{ name: string }, void>('/users')({ name: 'a' });
+  void api.post<void, void>('/logout')();
+  const remove = api.request<{ id: string; reason: string }, void>(input => ({ method: HttpMethod.DELETE, url: '/users/' + input.id, data: { reason: input.reason } }));
+  void remove({ id: 'a', reason: 'duplicate' });
+  // @ts-expect-error 原立即调用根对象已移除。
+  void SDK.httpClient;
+  // @ts-expect-error 原适配工厂已移除。
+  void SDK.createHttpApi;
+  // @ts-expect-error 原立即 metadata 方法已移除。
+  void http.requestWithMetadata;
+  // @ts-expect-error 方法声明返回函数而不是 Promise。
+  const immediate: Promise<Token> = api.post<LoginRequest, Token>('/login');
+  void immediate;
+  // @ts-expect-error 不支持旧请求对象立即发送语法。
+  api.request({ method: HttpMethod.GET, url: '/' });
+  // @ts-expect-error 有输入时必须提供参数。
+  void login();
+  // @ts-expect-error 请求体必须匹配 DTO。
+  void login({ username: 'u' });
+  // @ts-expect-error 响应类型由声明决定。
+  const wrong: Promise<number> = login({ username: 'u', password: 'p' });
   void wrong;
-  // @ts-expect-error 有查询输入时不能省略。
-  void requestUsers();
-  // @ts-expect-error 查询参数必须符合声明 DTO。
-  void requestUsers({ page: '1' });
-  // @ts-expect-error GET 配置不能重复提供 params。
-  void requestUsers({ page: 1 }, { params: { page: 2 } });
-  // @ts-expect-error GET 声明不能提供 params。
-  api.get<ListUsersQuery, unknown>('/users', { params: { page: 1 } });
-  // @ts-expect-error HEAD 和 DELETE 遵循相同的查询配置边界。
-  api.head<void, void>('/health', { params: {} });
-  // @ts-expect-error DELETE 调用不能从配置提供查询参数。
-  void api.delete<void, void>('/items')(undefined, { params: {} });
-  // @ts-expect-error signal 只能在调用阶段提供。
-  api.post<LoginRequest, Token>('/login', { signal: new AbortController().signal });
-  const boundSignal = { signal: new AbortController().signal };
-  // @ts-expect-error 已有变量也不能在声明时绑定 signal。
-  api.get<void, unknown>('/workspace', boundSignal);
-  // @ts-expect-error 无输入接口的配置仍位于第二个参数。
-  void requestWorkspace({ timeout: 1000 });
-  // @ts-expect-error GET 输入必须是查询对象、URLSearchParams 或 void。
-  api.get<string, unknown>('/users');
+  // @ts-expect-error metadata 返回 HTTP 信息，不是 DTO。
+  const wrongMetadata: Promise<{ id: number }> = metadata.get<void, { id: number }>('/')();
+  void wrongMetadata;
+  // @ts-expect-error 普通模式不自动包装 metadata。
+  const wrongPlain: Promise<HttpResponse<{ id: number }>> = workspace();
+  void wrongPlain;
+  // @ts-expect-error 查询输入不能省略。
+  void users();
+  // @ts-expect-error 查询必须匹配 DTO。
+  void users({ page: '1' });
+  // @ts-expect-error 查询配置不接受 params。
+  void users({ page: 1 }, { params: {} });
+  // @ts-expect-error 查询声明不接受 params。
+  api.get<Query, unknown>('/users', { params: {} });
+  // @ts-expect-error 通用声明配置不接受 params。
+  api.request<void, unknown>(() => ({ method: HttpMethod.GET, url: '/' }), { params: {} });
+  // @ts-expect-error 通用调用的查询只来自映射。
+  void upload({ url: '/', file: new Blob() }, { params: {} });
+  // @ts-expect-error 通用输入必须匹配映射。
+  void upload({ url: '/' });
+  // @ts-expect-error 映射必须同步返回描述。
+  api.request<void, unknown>(async () => ({ method: HttpMethod.GET, url: '/' }));
+  // @ts-expect-error 描述不能提供取消信号。
+  const bound: HttpApiRequestDescriptor = { method: HttpMethod.GET, url: '/', signal: new AbortController().signal };
+  void bound;
+  const signalOptions = { signal: new AbortController().signal };
+  // @ts-expect-error 声明不能绑定 signal，即使通过变量传入。
+  api.post<LoginRequest, Token>('/login', signalOptions);
+  // @ts-expect-error 单次配置必须放在第二个参数。
+  void workspace({ timeout: 1000 });
 }
+// @ts-expect-error 旧立即调用类型不再导出。
+export type RemovedClient = SDK.HttpClient;
+// @ts-expect-error 旧配置客户端类型不再导出。
+export type RemovedConfigurableClient = SDK.ConfigurableHttpClient;
+// @ts-expect-error 旧立即 body 方法类型不再导出。
+export type RemovedBodyMethod = SDK.HttpBodyMethod;
 `,
   );
   execFileSync(
@@ -132,23 +153,32 @@ export function declaredTypes(): void {
       '-e',
       `
     import assert from 'node:assert/strict';
-    import { httpClient, createHttpApi, createAuthSession, flattenEnvelopeResponse, HttpClientError, HttpMethod, ResponseType } from 'stellarmesh-sdk';
+    import { createServer } from 'node:http';
+    import * as SDK from 'stellarmesh-sdk';
+    const { http, createAuthSession, flattenEnvelopeResponse, HttpClientError, HttpMethod, ResponseType } = SDK;
     assert.equal(HttpMethod.GET, 'GET');
     assert.equal(ResponseType.JSON, 'json');
-    const auth = createAuthSession({getSessionEpoch: () => 1, getAccessToken: () => null});
-    assert.equal(typeof httpClient.withAuth(auth).withTimeout(10).post, 'function');
-    assert.equal(typeof httpClient.post, 'function');
-    assert.notEqual(httpClient.withTimeout(10), httpClient);
+    assert.equal('httpClient' in SDK, false);
+    assert.equal('createHttpApi' in SDK, false);
+    assert.equal('requestWithMetadata' in http, false);
+    const auth = createAuthSession({ getSessionEpoch: () => 1, getAccessToken: () => null });
+    assert.notEqual(http.withAuth(auth), http);
     assert.equal(flattenEnvelopeResponse()({ code: 0, message: '', data: 7 }, { status: 200, headers: {} }), 7);
-    assert.equal(new HttpClientError('失败', {kind: 'timeout'}).kind, 'timeout');
-    const calls = [];
-    const api = createHttpApi({ request: async request => { calls.push(request); return 7; } });
-    const declared = api.post('/items', { auth: false });
-    assert.equal(calls.length, 0);
-    assert.equal(await declared({ id: 1 }), 7);
-    assert.equal(calls[0].method, 'POST');
-    assert.deepEqual(calls[0].data, { id: 1 });
-    assert.equal(calls[0].auth, false);
+    assert.equal(new HttpClientError('失败', { kind: 'timeout' }).kind, 'timeout');
+    let calls = 0;
+    const server = createServer((_req, res) => { calls++; res.end('{"id":7}'); });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    try {
+      const api = http.withBaseURL('http://127.0.0.1:' + server.address().port);
+      const declared = api.get('/items');
+      assert.equal(calls, 0);
+      assert.deepEqual(await declared(), { id: 7 });
+      assert.deepEqual((await api.withMetadata().request(() => ({ method: HttpMethod.GET, url: '/items' }))()).data, { id: 7 });
+      assert.equal(calls, 2);
+    } finally {
+      server.closeAllConnections();
+      await new Promise(resolve => server.close(resolve));
+    }
   `,
     ],
     { cwd: directory, stdio: 'pipe' },

@@ -6,22 +6,19 @@
 
 ## 声明式接口
 
-业务 API 可以先声明，再由 Application 调用。公共装配先配置传输客户端，再用 `createHttpApi(client)` 创建声明入口：
+业务 API 先声明，再由 Application 调用。统一从 `http` 根对象派生配置，声明和配置过程都不发送网络请求：
 
 ```ts
 // shared/api/http.ts
 import {
-  createHttpApi,
-  httpClient,
+  http as rootHttp,
   flattenEnvelopeResponse,
 } from 'stellarmesh-sdk';
 
-const client = httpClient
+export const http = rootHttp
   .withBaseURL('/api')
   .withTimeout(15_000)
   .withResponseTransform(flattenEnvelopeResponse());
-
-export const http = createHttpApi(client);
 ```
 
 需要认证时，在装配客户端阶段通过 `.withAuth(auth)` 注入项目会话。业务模块使用项目自己的 DTO 声明接口，SDK 不依赖生成代码：
@@ -99,73 +96,71 @@ const workspace = await requestWorkspace(undefined, {
 
 声明只绑定客户端、方法、固定 URL 字符串及默认配置，不读取 Token、不捕获会话 epoch、不发送网络请求。每次调用才进入原客户端执行流程，读取当前会话，独立计算重试与认证恢复额度；不会缓存 Promise 或自动去重，错误也不会额外包装。信封转换、可信 origin、`auth: false` 和 `authRecovery: false` 均沿用下文规则。
 
-`createHttpApi` 只依赖所注入客户端的 `request` 方法，允许注入测试实现。客户端配置仍不可变；后续派生新的客户端不会改变已声明接口绑定的客户端。SSR 继续按用户请求装配认证会话及其客户端，不能跨用户共享绑定了会话的声明函数。
+`HttpApi` 是唯一公开声明接口；配置仍不可变，后续派生不会改变已声明函数绑定的配置。SSR 必须按用户请求装配会话及声明入口，不能跨用户共享绑定了会话的声明函数。需要替换业务 API 的测试可注入对应的请求函数，SDK 不再导出立即发送客户端。
 
-当前声明层提供六种方法和转换后数据返回值；动态路径可以由项目函数在调用时构造 URL 再声明并调用。需要 `HttpResponse` 元信息或 DELETE 请求体时，继续使用下面的底层立即请求入口。
+## metadata 返回
 
-## 底层客户端配置和立即调用
-
-`HttpClient` 的现有方法保持立即发送语义，与 `createHttpApi` 返回的 `HttpApi` 区分。以下示例使用底层客户端。
+`withMetadata()` 只选择 HTTP 信息返回形态，不负责解开业务信封。派生后继续配置其他选项会保留 metadata 模式；重复调用不会嵌套包装，也不改变原入口。
 
 ```ts
-import {
-  httpClient,
-  flattenEnvelopeResponse,
-  type HttpClient,
-} from 'stellarmesh-sdk';
+const requestWorkspaceInfo = http
+  .withMetadata()
+  .get<void, FaultTracingWorkspaceResponse>('/fault-tracing/workspace');
 
-const apiClient = httpClient
-  .withBaseURL('/api/v1')
-  .withHeaders({ 'X-Client': 'web' })
-  .withTimeout(15_000)
-  .withMaxRetries(2)
-  .withResponseTransform(flattenEnvelopeResponse());
+const response = await requestWorkspaceInfo();
+const workspace = response.data;
+const status = response.status;
+const etag = response.headers.etag;
+```
 
-const patient = await apiClient.post<{ name: string }, { id: number }>(
-  '/patients',
-  { name: '示例' },
-  { signal: controller.signal },
+`TResponse` 始终表示转换后的数据。普通模式返回 `Promise<TResponse>`，metadata 模式返回 `Promise<HttpResponse<TResponse>>`，其中 headers 名称统一小写。两种模式使用相同执行和响应转换流程，错误照常抛出。
+
+假设服务端返回 `ApiEnvelope<DTO>`：启用 `flattenEnvelopeResponse()` 时，普通模式取得 DTO，metadata 模式取得 `HttpResponse<DTO>`；未启用响应转换时，两者分别取得信封与 `HttpResponse<ApiEnvelope<DTO>>`。SDK 不因未配置转换而自动添加信封。
+
+## 动态路径和通用请求声明
+
+`request<TInput, TResponse>(resolve, defaults?)` 接收同步映射函数并返回可复用请求函数。映射结果为 `HttpApiRequestDescriptor`，必需 `method`、`url`，可选 `params`、`data`、`headers`。不采用额外的路径绑定或柯里化阶段：
+
+```ts
+import { HttpMethod } from 'stellarmesh-sdk';
+
+type UpdateUserInput = {
+  userId: string;
+  body: UpdateUserRequest;
+};
+
+const requestUpdateUser = http.request<UpdateUserInput, User>(
+  ({ userId, body }) => ({
+    method: HttpMethod.PATCH,
+    url: `/users/${encodeURIComponent(userId)}`,
+    data: body,
+  }),
 );
 
-const page = await apiClient.get<{ items: unknown[] }>('/patients', {
-  params: { page: 1 },
-});
-
-await apiClient.post<void>('/session/logout');
+const user = await requestUpdateUser(
+  { userId, body: { displayName: '张三' } },
+  { signal: controller.signal },
+);
 ```
 
-示例中的 `controller` 由调用方创建。接口是普通 TypeScript API，不读取环境变量、浏览器存储，不依赖 React、路由器或项目上下文。业务层可依赖结构化 `HttpClient` 接口并注入测试实现。
+- 映射只在每次逻辑调用时执行一次；声明时不执行，认证恢复与普通重试复用已经组装的请求。已取消调用不运行映射；映射异常或缺少有效方法与 URL 的描述产生拒绝的 Promise 且不发送网络请求，普通异常按 `kind: 'unknown'` 保留 cause。
+- 方法、URL、查询与请求体仅来自映射，不自动转发整个输入；通用声明和调用配置均不接受 `params`。DELETE 请求体通过映射的 `data` 表达，GET／HEAD 便捷方法仍不发送请求体。
+- 普通配置保持调用、声明、入口配置、SDK 默认值的优先级。通用请求的 headers 依次按调用配置、映射结果、声明配置、入口配置覆盖，名称大小写不敏感。
+- 路径片段由项目显式编码，完整 URL 原样交给传输层。签名获取、续签和路径模板不由 SDK 自动处理；动态目标同样受可信 origin 判断约束。
+- `HttpMethod` 和 `ResponseType` 同时提供运行时常量与同名类型，例如 `HttpMethod.GET`、`ResponseType.JSON`；字符串字面量及 `import type` 仍可使用。
 
-- `withBaseURL`、`withHeaders`、`withTimeout`、`withMaxRetries`、`withRetry`、`withAuth`、`withResponseTransform` 均返回新实例，不改变原对象；应复用配置完成后的实例。普通配置派生保留相同认证会话引用；只有显式装配另一 `AuthSession` 才更换刷新状态。SSR 必须按用户请求创建认证会话。
-- `post<TRequest, TResponse>`、`put<TRequest, TResponse>`、`patch<TRequest, TResponse>` 接受请求体；无请求体时使用 `post<TResponse>(url)` 等重载。双泛型不支持省略其中一个。
-- `get<TResponse>`、`head<TResponse>`、`delete<TResponse>` 不接受请求体。需要 DELETE 请求体时使用 `request<TRequest, TResponse>`。
-- `request<TRequest, TResponse>` 接受 `{ method, url, data, ...options }`；无请求体可写 `request<TResponse>`。
-- 请求选项支持 `params`、`headers`、`timeout`、`maxRetries`、`retryable`、`signal`、`auth`、`authRecovery`、`responseMode`、`responseType`、`onUploadProgress`、`onDownloadProgress`。
-- 优先级为请求选项、实例配置、SDK 默认值。headers 按大小写不敏感名称合并；SDK 注入的 Bearer Token 覆盖同名请求头。
-- `withResponseTransform` 替换当前响应转换器，不追加无限拦截器链。转换器可返回同步值或 Promise，两种响应入口均等待转换完成；取消请求停止等待，但不会强行终止转换器自身的任务。公共接口不暴露 Axios 实例。
+## 配置派生
 
-请求方法和响应类型可使用运行时常量；同名类型由 `as const` 对象派生，保留原字符串字面量的兼容性：
+`withBaseURL`、`withHeaders`、`withTimeout`、`withMaxRetries`、`withRetry`、`withAuth`、`withResponseTransform` 和 `withMetadata` 均返回新声明入口，必须接住返回值。认证会话引用在普通派生中共享，显式更换会话时才改变；不同入口不会合并可信 origin。
 
-```ts
-import { HttpMethod, ResponseType } from 'stellarmesh-sdk';
-
-const method: HttpMethod = HttpMethod.GET;
-const responseType: ResponseType = ResponseType.JSON;
-const data = await apiClient.request<Patient>({
-  method,
-  url: '/patients/1',
-  responseType,
-});
-```
-
-响应类型常量为 `JSON`、`TEXT`、`BLOB`、`ARRAYBUFFER`，对应值仍为 `json`、`text`、`blob`、`arraybuffer`。只引用类型时仍可使用 `import type`。
+`withResponseTransform` 替换当前转换器，支持同步或异步结果。取消只停止当前调用的等待，不强行终止转换器自身任务。接口不读取业务环境变量或浏览器存储，不依赖 React、路由器或项目上下文，不暴露 Axios 实例。
 
 ## 信封和响应类型
 
 普通请求返回 `Promise<TResponse>`，其中 `TResponse` 指最终数据。未启用转换时返回 HTTP 响应体，不返回 AxiosResponse；启用信封处理后返回信封内的 `data`。
 
 ```ts
-const client = httpClient.withResponseTransform(
+const client = http.withResponseTransform(
   flattenEnvelopeResponse({
     isSuccess: code => code === 'OK',
     allowNonEnvelope: false,
@@ -182,12 +177,12 @@ const client = httpClient.withResponseTransform(
 - 单次 `responseMode: 'raw'` 跳过转换，返回完整响应体；`text`、`blob`、`arraybuffer` 同样跳过 JSON 响应转换。无响应类型配置时按 JSON 解析，非法 JSON 抛出格式错误。
 - TypeScript 泛型不会验证 DTO 内容；信封检查只验证外壳，不证明业务字段存在或类型正确。
 
-需要 HTTP 信息时使用 `requestWithMetadata`，泛型顺序与 `request` 一致，返回 `Promise<HttpResponse<TResponse>>`。其形态为 `{ data, status, headers }`，headers 名称统一小写，响应转换仅作用于 `data`。
+需要 HTTP 信息时，在声明前派生 `withMetadata()`；响应转换仅作用于 `data`，不会重复执行。
 
 ## 鉴权和并发刷新
 
 ```ts
-import { createAuthSession, httpClient } from 'stellarmesh-sdk';
+import { createAuthSession, http } from 'stellarmesh-sdk';
 
 const auth = createAuthSession({
   getSessionEpoch: () => session.getEpoch(),
@@ -198,9 +193,9 @@ const auth = createAuthSession({
   onUnauthorized: (error, { epoch }) => session.handleExpired(error, epoch),
 });
 
-const apiClient = httpClient.withBaseURL(apiBaseURL).withAuth(auth);
+const apiClient = http.withBaseURL(apiBaseURL).withAuth(auth);
 const slowApiClient = apiClient.withTimeout(60_000);
-const otherApiClient = httpClient.withBaseURL(apiBaseURL).withAuth(auth);
+const otherApiClient = http.withBaseURL(apiBaseURL).withAuth(auth);
 ```
 
 `apiBaseURL` 和 `session` 由项目注入。三个客户端显式共享同一认证会话，配置仍各自独立。即使传入同一个配置对象，两次 `createAuthSession(options)` 也会创建两个独立会话。`withAuth` 只接受工厂返回的 `AuthSession`，不再接受旧回调配置对象。
@@ -291,13 +286,14 @@ SDK 只能在异步阶段结束或下一次发送前检测变化，不会订阅�
 默认 `timeout: 0`、`maxRetries: 0`。`withTimeout(ms)` 是每次 Axios 传输尝试的超时，不是独立 TCP/TLS 建连超时，也不包含刷新和退避等待。调用方可通过 `signal` 限制整个操作的生命周期。
 
 ```ts
-const client = httpClient.withRetry({
+const client = http.withRetry({
   maxRetries: 2,
   baseDelayMs: 300,
   maxDelayMs: 10_000,
 });
 
-await client.get('/items', { signal: controller.signal });
+const requestItems = client.get<void, Item[]>('/items');
+await requestItems(undefined, { signal: controller.signal });
 ```
 
 开启后，默认仅 GET/HEAD 对网络错误、超时、HTTP 408、429、502、503、504 重试。`maxRetries: 2` 表示首次尝试外最多重试两次。使用指数退避与随机抖动，默认基础 300 ms、等待上限 10 s。合法 `Retry-After` 是最小等待时长；超过上限直接返回原错误，非法值忽略。
@@ -315,21 +311,31 @@ POST/PATCH/PUT/DELETE 默认不自动重试。调用方确认服务端幂等语�
 对象存储从无鉴权的根对象创建独立实例，不继承业务实例的 headers 或信封处理。项目先获得预签名请求，再原样提供 URL、方法和必要 headers；对象字节不经过业务 API 客户端。
 
 ```ts
-const storageClient = httpClient.withTimeout(60_000);
+const storage = http.withTimeout(60_000);
+type UploadInput = {
+  url: string;
+  file: Blob;
+  headers: Record<string, string>;
+};
 
-const response = await storageClient.requestWithMetadata<Blob, string>({
-  method: 'PUT',
-  url: signedUrl,
-  data: chunk,
-  headers: signedHeaders,
-  responseType: 'text',
-  signal: controller.signal,
-  onUploadProgress: ({ loaded, total }) => updateProgress(loaded, total),
-});
+const requestUpload = storage.withMetadata().request<UploadInput, string>(
+  ({ url, file, headers }) => ({ method: 'PUT', url, data: file, headers }),
+  { responseType: 'text', auth: false, authRecovery: false },
+);
+const requestDownload = storage.request<string, Blob>(
+  url => ({ method: 'GET', url }),
+  { responseType: 'blob' },
+);
 
+const response = await requestUpload(
+  { url: signedUrl, file: chunk, headers: signedHeaders },
+  {
+    signal: controller.signal,
+    onUploadProgress: ({ loaded, total }) => updateProgress(loaded, total),
+  },
+);
 const etag = response.headers.etag;
-const file = await storageClient.get<Blob>(downloadUrl, {
-  responseType: 'blob',
+const file = await requestDownload(downloadUrl, {
   signal: controller.signal,
 });
 ```
@@ -344,7 +350,8 @@ const file = await storageClient.get<Blob>(downloadUrl, {
 import { isHttpClientError } from 'stellarmesh-sdk';
 
 try {
-  await apiClient.get('/items');
+  const requestItems = apiClient.get<void, Item[]>('/items');
+  await requestItems();
 } catch (error) {
   if (isHttpClientError(error) && error.kind === 'canceled') return;
   throw error;
@@ -352,6 +359,12 @@ try {
 ```
 
 `HttpClientError` 提供 `kind`、`status`、`apiCode`、`data`、`headers` 和 `cause`。类别包括 `http`、`business`、`network`、`timeout`、`canceled`、`response-format`、`auth`、`session-changed`、`unknown`。原始响应和 cause 可能含有业务数据或 Axios 请求配置，不能未经清洗直接记录；SDK 不自动记录 URL、请求体或凭据。
+
+## 全声明式入口迁移
+
+旧的 `httpClient`、`createHttpApi(client)`、`HttpClient`、`ConfigurableHttpClient` 和 `HttpBodyMethod` 不再导出，不提供兼容别名。直接导入 `http` 并链式派生配置；六种方法统一返回请求函数，不能再将方法声明当成 Promise 使用。
+
+旧 `get<TResponse>(url, options)` 改为声明 `get<void, TResponse>(url)` 后调用 `request(undefined, options)`；有查询参数时改为 `get<TQuery, TResponse>(url)` 后传入查询。旧 `post<TBody, TResponse>(url, body, options)` 改为声明后调用 `request(body, options)`。旧 `requestWithMetadata` 改为 `withMetadata()` 加普通或通用请求声明；旧请求对象改为同步映射结果，`signal` 移到返回函数的第二个参数。
 
 ## 未发布初版的认证接口迁移
 
@@ -361,7 +374,7 @@ try {
 
 ## 从 XieHe 接入
 
-- 把 `post<TResponse, TBody>` 调整为 `post<TBody, TResponse>`；有请求体但此前只写一个泛型的调用也需补齐。
+- 从 SDK 导入 `http` 并在公共模块派生配置；将业务接口改为 `post<TBody, TResponse>(url, defaults)` 声明，再通过返回函数传入 body 和单次配置。
 - 使用严格信封处理前确认接口响应；确有混合响应时显式选择透传或单次 `responseMode: 'raw'`。
 - 鉴权开关改为布尔值；旧 `auth: 'none'` 改为 `auth: false`。
 - 保留项目公共 API、鉴权 API 和对象存储的独立装配，注入已有会话桥接。

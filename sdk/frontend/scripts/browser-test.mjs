@@ -84,13 +84,9 @@ try {
   const page = await browser.newPage();
   await page.goto(appOrigin);
   const result = await page.evaluate(async (storage) => {
-    const {
-      httpClient,
-      createHttpApi,
-      createAuthSession,
-      flattenEnvelopeResponse,
-    } = globalThis.SDK;
-    const api = httpClient
+    const { http, HttpMethod, createAuthSession, flattenEnvelopeResponse } =
+      globalThis.SDK;
+    const api = http
       .withBaseURL('/api')
       .withAuth(
         createAuthSession({
@@ -99,54 +95,58 @@ try {
         }),
       )
       .withResponseTransform(flattenEnvelopeResponse());
-    const requestEcho = createHttpApi(api).post('/echo');
+    const requestEcho = api.post('/echo');
     const echo = await requestEcho({ id: 7 });
-    const anonymousEcho = await createHttpApi(api).post('/echo', {
-      auth: false,
-    })({ id: 8 });
-    const storageClient = httpClient.withTimeout(5000);
+    const anonymousEcho = await api.post('/echo', { auth: false })({ id: 8 });
+    const storageApi = http.withTimeout(5000);
     const uploaded = [];
     const downloaded = [];
     const data = new Blob([new Uint8Array(256 * 1024).fill(65)], {
       type: 'application/octet-stream',
     });
-    const upload = await storageClient.requestWithMetadata({
-      method: 'PUT',
-      url: `${storage}/object?signature=unchanged`,
-      data,
-      responseType: 'text',
-      headers: { 'Content-Type': data.type },
-      onUploadProgress: (event) => uploaded.push(event.loaded),
-    });
-    const blob = await storageClient.get(
-      `${storage}/object?signature=unchanged`,
-      {
-        responseType: 'blob',
-        onDownloadProgress: (event) => downloaded.push(event.loaded),
-      },
+    const url = `${storage}/object?signature=a%2Fb%2Bc&part=1`;
+    const requestUpload = storageApi.withMetadata().request(
+      ({ url, file }) => ({
+        method: HttpMethod.PUT,
+        url,
+        data: file,
+        headers: { 'Content-Type': file.type },
+      }),
+      { responseType: 'text' },
     );
-    const bytes = await storageClient.get(
-      `${storage}/object?signature=unchanged`,
+    const upload = await requestUpload(
+      { url, file: data },
+      { onUploadProgress: (event) => uploaded.push(event.loaded) },
+    );
+    const requestBlob = storageApi.request(
+      (url) => ({ method: HttpMethod.GET, url }),
+      { responseType: 'blob' },
+    );
+    const blob = await requestBlob(url, {
+      onDownloadProgress: (event) => downloaded.push(event.loaded),
+    });
+    const bytes = await storageApi.request(
+      (url) => ({ method: HttpMethod.GET, url }),
       { responseType: 'arraybuffer' },
+    )(url);
+    // 动态 //foreign-host 同样受可信来源限制，不能继承业务 Token。
+    const requestExternal = api.request(
+      (url) => ({ method: HttpMethod.GET, url }),
+      { responseType: 'text' },
     );
-    // 带鉴权的业务实例面对 //foreign-host 时同样不得注入 Token。
-    const requestExternal = createHttpApi(api).get(
+    const external = await requestExternal(
       storage.replace('http:', '') + '/public',
-      {
-        responseType: 'text',
-      },
     );
-    const external = await requestExternal();
+    const requestSlow = storageApi.get(`${storage}/slow`);
     const controller = new AbortController();
-    const request = storageClient.get(`${storage}/slow`, {
-      signal: controller.signal,
-    });
-    const cancel = request.catch((error) => error.kind);
+    const cancel = requestSlow(undefined, { signal: controller.signal }).catch(
+      (error) => error.kind,
+    );
     await new Promise((resolve) => setTimeout(resolve, 30));
     controller.abort();
     let timeout;
     try {
-      await storageClient.get(`${storage}/slow`, { timeout: 20 });
+      await requestSlow(undefined, { timeout: 20 });
     } catch (error) {
       timeout = error.kind;
     }
@@ -179,7 +179,7 @@ try {
   assert.equal(result.canceled, 'canceled');
   assert.equal(result.timeout, 'timeout');
   assert(seenAuth.every((value) => value === undefined));
-  assert(stored.has('/object?signature=unchanged'));
+  assert(stored.has('/object?signature=a%2Fb%2Bc&part=1'));
   console.log(
     '浏览器验证通过：声明式调用、信封、鉴权、跨域隔离、上传下载、进度、ETag、超时与取消',
   );

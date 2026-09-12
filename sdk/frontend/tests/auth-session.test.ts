@@ -5,10 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createAuthSession,
   flattenEnvelopeResponse,
-  httpClient,
+  http,
   HttpClientError,
 } from '../src/index.js';
-
 const servers: Server[] = [];
 
 async function serve(
@@ -49,7 +48,6 @@ afterEach(async () => {
     ),
   );
 });
-
 describe('认证失败与操作失败分流', () => {
   it.each([
     [
@@ -99,11 +97,8 @@ describe('认证失败与操作失败分流', () => {
         refreshSession,
         onUnauthorized,
       });
-      const client = httpClient
-        .withBaseURL(origin)
-        .withAuth(auth)
-        .withMaxRetries(2);
-      const result = client.get('/');
+      const client = http.withBaseURL(origin).withAuth(auth).withMaxRetries(2);
+      const result = client.get<void, unknown>('/')();
       await expect(result).rejects.toMatchObject({ kind });
       if (failure instanceof HttpClientError)
         await expect(result).rejects.toBe(failure);
@@ -113,14 +108,13 @@ describe('认证失败与操作失败分流', () => {
       expect(requests).toBe(1);
     },
   );
-
   it('null 才表示不可恢复，并向退出回调传递所属 epoch', async () => {
     const origin = await serve((_req, res) =>
       json(res, { code: 'EXPIRED' }, 401),
     );
     const onUnauthorized = vi.fn();
     const refreshSession = vi.fn(async () => null);
-    const client = httpClient.withBaseURL(origin).withAuth(
+    const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => 'login-a',
         getAccessToken: () => 'old',
@@ -128,7 +122,7 @@ describe('认证失败与操作失败分流', () => {
         onUnauthorized,
       }),
     );
-    await expect(client.get('/')).rejects.toMatchObject({
+    await expect(client.get<void, unknown>('/')()).rejects.toMatchObject({
       kind: 'http',
       status: 401,
       apiCode: 'EXPIRED',
@@ -139,13 +133,12 @@ describe('认证失败与操作失败分流', () => {
       { epoch: 'login-a' },
     );
   });
-
   it.each(['', '   '])(
     '空 Token %j 是契约错误，不解释为失效',
     async (token) => {
       const origin = await serve((_req, res) => json(res, {}, 401));
       const onUnauthorized = vi.fn();
-      const client = httpClient.withBaseURL(origin).withAuth(
+      const client = http.withBaseURL(origin).withAuth(
         createAuthSession({
           getSessionEpoch: () => 1,
           getAccessToken: () => 'old',
@@ -153,11 +146,12 @@ describe('认证失败与操作失败分流', () => {
           onUnauthorized,
         }),
       );
-      await expect(client.get('/')).rejects.toMatchObject({ kind: 'auth' });
+      await expect(client.get<void, unknown>('/')()).rejects.toMatchObject({
+        kind: 'auth',
+      });
       expect(onUnauthorized).not.toHaveBeenCalled();
     },
   );
-
   it('自定义谓词只恢复匹配的 HTTP 错误，不匹配时不通知退出', async () => {
     const origin = await serve((req, res) => {
       if (req.headers.authorization === 'Bearer fresh') json(res, true);
@@ -166,7 +160,7 @@ describe('认证失败与操作失败分流', () => {
     });
     const onUnauthorized = vi.fn();
     const refreshSession = vi.fn(async () => 'fresh');
-    const client = httpClient.withBaseURL(origin).withAuth(
+    const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => 1,
         getAccessToken: () => 'old',
@@ -176,15 +170,14 @@ describe('认证失败与操作失败分流', () => {
           error.status === 401 && error.apiCode === 'EXPIRED',
       }),
     );
-    await expect(client.get('/denied')).rejects.toMatchObject({
+    await expect(client.get<void, unknown>('/denied')()).rejects.toMatchObject({
       apiCode: 'DENIED',
     });
     expect(refreshSession).not.toHaveBeenCalled();
-    expect(await client.get('/recover')).toBe(true);
+    expect(await client.get<void, unknown>('/recover')()).toBe(true);
     expect(refreshSession).toHaveBeenCalledTimes(1);
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
-
   it('HTTP 200 信封认证错误仅在显式匹配时恢复，重放失败只通知一次', async () => {
     let calls = 0;
     const origin = await serve((_req, res) => {
@@ -193,7 +186,7 @@ describe('认证失败与操作失败分流', () => {
     });
     const onUnauthorized = vi.fn();
     const refreshSession = vi.fn(async () => 'fresh');
-    const base = httpClient
+    const base = http
       .withBaseURL(origin)
       .withMaxRetries(2)
       .withResponseTransform(flattenEnvelopeResponse());
@@ -204,7 +197,7 @@ describe('认证失败与操作失败分流', () => {
       onUnauthorized,
     };
     await expect(
-      base.withAuth(createAuthSession(options)).get('/'),
+      base.withAuth(createAuthSession(options)).get<void, unknown>('/')(),
     ).rejects.toMatchObject({ kind: 'business' });
     expect(refreshSession).not.toHaveBeenCalled();
     const custom = base.withAuth(
@@ -214,7 +207,7 @@ describe('认证失败与操作失败分流', () => {
           error.kind === 'business' && error.apiCode === 'EXPIRED',
       }),
     );
-    await expect(custom.get('/')).rejects.toMatchObject({
+    await expect(custom.get<void, unknown>('/')()).rejects.toMatchObject({
       kind: 'business',
       status: 200,
     });
@@ -222,7 +215,6 @@ describe('认证失败与操作失败分流', () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
     expect(calls).toBe(3);
   });
-
   it('谓词异常保留 cause，网络错误不调用认证谓词', async () => {
     const origin = await serve((req, res) => {
       if (req.url === '/network') req.socket.destroy();
@@ -233,7 +225,7 @@ describe('认证失败与操作失败分流', () => {
       throw failure;
     });
     const onUnauthorized = vi.fn();
-    const client = httpClient.withBaseURL(origin).withAuth(
+    const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => 1,
         getAccessToken: () => 'old',
@@ -242,17 +234,18 @@ describe('认证失败与操作失败分流', () => {
         onUnauthorized,
       }),
     );
-    await expect(client.get('/network')).rejects.toMatchObject({
-      kind: 'network',
-    });
+    await expect(client.get<void, unknown>('/network')()).rejects.toMatchObject(
+      {
+        kind: 'network',
+      },
+    );
     expect(shouldRefresh).not.toHaveBeenCalled();
-    await expect(client.get('/')).rejects.toMatchObject({
+    await expect(client.get<void, unknown>('/')()).rejects.toMatchObject({
       kind: 'auth',
       cause: failure,
     });
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
-
   it('authRecovery false 保留凭证，retryable false 单独关闭传输重试', async () => {
     const seen: (string | undefined)[] = [];
     const origin = await serve((req, res) => {
@@ -261,7 +254,7 @@ describe('认证失败与操作失败分流', () => {
     });
     const onUnauthorized = vi.fn();
     const refreshSession = vi.fn(async () => 'fresh');
-    const client = httpClient
+    const client = http
       .withBaseURL(origin)
       .withMaxRetries(2)
       .withAuth(
@@ -273,40 +266,42 @@ describe('认证失败与操作失败分流', () => {
         }),
       );
     await expect(
-      client.post<object, void>('/', {}, { authRecovery: false }),
+      client.post<object, void>('/')({}, { authRecovery: false }),
     ).rejects.toMatchObject({ status: 401 });
     expect(seen).toEqual(['Bearer old']);
     expect(refreshSession).not.toHaveBeenCalled();
     expect(onUnauthorized).not.toHaveBeenCalled();
     await expect(
-      client.post<object, void>('/', {}, { retryable: false }),
+      client.post<object, void>('/')({}, { retryable: false }),
     ).rejects.toMatchObject({ status: 503 });
     expect(seen).toEqual(['Bearer old', 'Bearer old', 'Bearer fresh']);
     expect(refreshSession).toHaveBeenCalledTimes(1);
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
-
   it('未配置刷新时不推断会话失效，auth false 也不参与会话操作', async () => {
     const origin = await serve((_req, res) => json(res, {}, 401));
     const onUnauthorized = vi.fn();
     const getAccessToken = vi.fn(() => 'old');
     const getSessionEpoch = vi.fn(() => 1);
-    const client = httpClient
+    const client = http
       .withBaseURL(origin)
       .withAuth(
         createAuthSession({ getSessionEpoch, getAccessToken, onUnauthorized }),
       );
-    await expect(client.get('/')).rejects.toMatchObject({ status: 401 });
+    await expect(client.get<void, unknown>('/')()).rejects.toMatchObject({
+      status: 401,
+    });
     expect(onUnauthorized).not.toHaveBeenCalled();
     getAccessToken.mockClear();
     getSessionEpoch.mockClear();
-    await expect(client.get('/', { auth: false })).rejects.toMatchObject({
+    await expect(
+      client.get<void, unknown>('/')(undefined, { auth: false }),
+    ).rejects.toMatchObject({
       status: 401,
     });
     expect(getAccessToken).not.toHaveBeenCalled();
     expect(getSessionEpoch).not.toHaveBeenCalled();
   });
-
   it('401 恢复、503 普通重试和 200 成功共发送三次', async () => {
     let calls = 0;
     const origin = await serve((_req, res) => {
@@ -314,7 +309,7 @@ describe('认证失败与操作失败分流', () => {
       json(res, true, [401, 503, 200][calls - 1]);
     });
     const refreshSession = vi.fn(async () => 'fresh');
-    const client = httpClient
+    const client = http
       .withBaseURL(origin)
       .withRetry({ maxRetries: 1, baseDelayMs: 0 })
       .withAuth(
@@ -324,12 +319,11 @@ describe('认证失败与操作失败分流', () => {
           refreshSession,
         }),
       );
-    expect(await client.get('/')).toBe(true);
+    expect(await client.get<void, unknown>('/')()).toBe(true);
     expect(calls).toBe(3);
     expect(refreshSession).toHaveBeenCalledTimes(1);
   });
 });
-
 describe('显式共享认证会话', () => {
   it('派生和独立装配客户端共享同一刷新，配置与可信范围保持独立', async () => {
     const started = deferred();
@@ -361,16 +355,16 @@ describe('显式共享认证会话', () => {
       getAccessToken: () => token,
       refreshSession,
     });
-    const api = httpClient
+    const api = http
       .withBaseURL(origin)
       .withAuth(auth, { trustedOrigins: [origin] })
       .withHeaders({ 'X-Client': 'api' });
-    const slow = api.withTimeout(60_000).withHeaders({ 'x-client': 'slow' });
-    const another = httpClient.withBaseURL(origin).withAuth(auth);
+    const slow = api.withTimeout(60000).withHeaders({ 'x-client': 'slow' });
+    const another = http.withBaseURL(origin).withAuth(auth);
     const results = Promise.all([
-      api.get('/'),
-      slow.get('/'),
-      another.get('/'),
+      api.get<void, unknown>('/')(),
+      slow.get<void, unknown>('/')(),
+      another.get<void, unknown>('/')(),
     ]);
     await allOld.promise;
     await started.promise;
@@ -381,10 +375,13 @@ describe('显式共享认证会话', () => {
       { token: 'Bearer fresh' },
     ]);
     expect(refreshSession).toHaveBeenCalledTimes(1);
-    expect(await api.withBaseURL(foreign).get('/')).toEqual({ token: null });
-    expect(await another.get(foreign)).toEqual({ token: null });
+    expect(await api.withBaseURL(foreign).get<void, unknown>('/')()).toEqual({
+      token: null,
+    });
+    expect(await another.get<void, unknown>(foreign)()).toEqual({
+      token: null,
+    });
   });
-
   it('同一配置创建的两个会话不共享刷新', async () => {
     const both = deferred();
     let calls = 0;
@@ -402,17 +399,16 @@ describe('显式共享认证会话', () => {
       getAccessToken: () => 'old',
       refreshSession,
     };
-    const first = httpClient
-      .withBaseURL(origin)
-      .withAuth(createAuthSession(options));
+    const first = http.withBaseURL(origin).withAuth(createAuthSession(options));
     const second = first.withAuth(createAuthSession(options));
-    expect(await Promise.all([first.get('/'), second.get('/')])).toEqual([
-      true,
-      true,
-    ]);
+    expect(
+      await Promise.all([
+        first.get<void, unknown>('/')(),
+        second.get<void, unknown>('/')(),
+      ]),
+    ).toEqual([true, true]);
     expect(refreshSession).toHaveBeenCalledTimes(2);
   });
-
   it('迟到的失败请求共享原错误，新请求可开始新代次恢复', async () => {
     const both = deferred();
     const late = deferred();
@@ -440,20 +436,21 @@ describe('显式共享认证会话', () => {
       refreshSession,
       onUnauthorized,
     });
-    const client = httpClient.withBaseURL(origin).withAuth(auth);
-    const first = expect(client.get('/first')).rejects.toBe(failure);
-    const delayed = expect(client.withTimeout(1000).get('/late')).rejects.toBe(
+    const client = http.withBaseURL(origin).withAuth(auth);
+    const first = expect(client.get<void, unknown>('/first')()).rejects.toBe(
       failure,
     );
+    const delayed = expect(
+      client.withTimeout(1000).get<void, unknown>('/late')(),
+    ).rejects.toBe(failure);
     await first;
-    expect(await client.get('/new')).toBe(true);
+    expect(await client.get<void, unknown>('/new')()).toBe(true);
     late.resolve();
     await delayed;
     expect(refreshSession).toHaveBeenCalledTimes(2);
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 });
-
 describe('登录会话生命周期', () => {
   it('读取 Token 期间切换账号时不发送旧请求', async () => {
     let epoch = 1;
@@ -465,7 +462,7 @@ describe('登录会话生命周期', () => {
       json(res, true);
     });
     const onUnauthorized = vi.fn();
-    const client = httpClient.withBaseURL(origin).withAuth(
+    const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => epoch,
         getAccessToken: () => {
@@ -476,7 +473,7 @@ describe('登录会话生命周期', () => {
       }),
     );
     const result = expect(
-      client.post<object, void>('/', {}),
+      client.post<object, void>('/')({}),
     ).rejects.toMatchObject({ kind: 'session-changed' });
     await started.promise;
     epoch = 2;
@@ -485,7 +482,6 @@ describe('登录会话生命周期', () => {
     expect(requests).toBe(0);
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
-
   it.each([200, 401])(
     '会话变化后到达的 HTTP %i 不交付旧结果也不恢复',
     async (status) => {
@@ -499,7 +495,7 @@ describe('登录会话生命周期', () => {
       });
       const refreshSession = vi.fn(async () => 'b');
       const onUnauthorized = vi.fn();
-      const client = httpClient.withBaseURL(origin).withAuth(
+      const client = http.withBaseURL(origin).withAuth(
         createAuthSession({
           getSessionEpoch: () => epoch,
           getAccessToken: () => 'a',
@@ -507,7 +503,9 @@ describe('登录会话生命周期', () => {
           onUnauthorized,
         }),
       );
-      const result = expect(client.get('/')).rejects.toMatchObject({
+      const result = expect(
+        client.get<void, unknown>('/')(),
+      ).rejects.toMatchObject({
         kind: 'session-changed',
       });
       await received.promise;
@@ -518,13 +516,12 @@ describe('登录会话生命周期', () => {
       expect(onUnauthorized).not.toHaveBeenCalled();
     },
   );
-
   it('异步响应转换期间切换会话，不向 metadata 交付旧数据', async () => {
     let epoch = 'a';
     const started = deferred();
     const transformed = deferred<unknown>();
     const origin = await serve((_req, res) => json(res, true));
-    const client = httpClient
+    const client = http
       .withBaseURL(origin)
       .withAuth(
         createAuthSession({
@@ -537,14 +534,16 @@ describe('登录会话生命周期', () => {
         return transformed.promise;
       });
     const result = expect(
-      client.requestWithMetadata({ method: 'GET', url: '/' }),
+      client.withMetadata().request<void, unknown>(() => ({
+        method: 'GET',
+        url: '/',
+      }))(),
     ).rejects.toMatchObject({ kind: 'session-changed' });
     await started.promise;
     epoch = 'b';
     transformed.resolve({ owner: 'a' });
     await result;
   });
-
   it('普通退避期间退出，后续发送前终止旧请求', async () => {
     let epoch = 1;
     let requests = 0;
@@ -554,7 +553,7 @@ describe('登录会话生命周期', () => {
       res.setHeader('Retry-After', '1');
       json(res, {}, 503);
     });
-    const client = httpClient
+    const client = http
       .withBaseURL(origin)
       .withMaxRetries(1)
       .withAuth(
@@ -569,7 +568,9 @@ describe('登录会话生命周期', () => {
       );
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      const result = expect(client.get('/')).rejects.toMatchObject({
+      const result = expect(
+        client.get<void, unknown>('/')(),
+      ).rejects.toMatchObject({
         kind: 'session-changed',
       });
       await deciding.promise;
@@ -581,7 +582,6 @@ describe('登录会话生命周期', () => {
       vi.useRealTimers();
     }
   });
-
   it('旧账号刷新完成不能重放写请求或清理新账号正在共享的刷新', async () => {
     let epoch = 'a';
     let token = 'a-old';
@@ -590,7 +590,10 @@ describe('登录会话生命周期', () => {
     const finishA = deferred<string>();
     const finishB = deferred<string>();
     const secondB = deferred();
-    const seen: { url: string; token?: string }[] = [];
+    const seen: {
+      url: string;
+      token?: string;
+    }[] = [];
     const origin = await serve((req, res) => {
       seen.push({ url: req.url!, token: req.headers.authorization });
       if (req.url === '/b2' && req.headers.authorization === 'Bearer b-old')
@@ -617,18 +620,18 @@ describe('登录会话生命周期', () => {
       refreshSession,
       onUnauthorized,
     });
-    const client = httpClient.withBaseURL(origin).withAuth(auth);
+    const client = http.withBaseURL(origin).withAuth(auth);
     const old = expect(
-      client.post<object, void>('/a', { owner: 'a' }),
+      client.post<object, void>('/a')({ owner: 'a' }),
     ).rejects.toMatchObject({ kind: 'session-changed' });
     await startedA.promise;
     epoch = 'b';
     token = 'b-old';
-    const first = client.get('/b1');
+    const first = client.get<void, unknown>('/b1')();
     await startedB.promise;
     finishA.resolve('a-fresh');
     await old;
-    const second = client.withTimeout(1000).get('/b2');
+    const second = client.withTimeout(1000).get<void, unknown>('/b2')();
     await secondB.promise;
     finishB.resolve('b-fresh');
     expect(await Promise.all([first, second])).toEqual([true, true]);
@@ -638,7 +641,6 @@ describe('登录会话生命周期', () => {
     ]);
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
-
   it.each(['null', 'network'] as const)(
     '旧刷新返回 %s 时不失效新会话',
     async (outcome) => {
@@ -647,7 +649,7 @@ describe('登录会话生命周期', () => {
       const finish = deferred();
       const origin = await serve((_req, res) => json(res, {}, 401));
       const onUnauthorized = vi.fn();
-      const client = httpClient.withBaseURL(origin).withAuth(
+      const client = http.withBaseURL(origin).withAuth(
         createAuthSession({
           getSessionEpoch: () => epoch,
           getAccessToken: () => 'a',
@@ -661,7 +663,9 @@ describe('登录会话生命周期', () => {
           },
         }),
       );
-      const result = expect(client.get('/')).rejects.toMatchObject({
+      const result = expect(
+        client.get<void, unknown>('/')(),
+      ).rejects.toMatchObject({
         kind: 'session-changed',
       });
       await started.promise;
@@ -671,7 +675,6 @@ describe('登录会话生命周期', () => {
       expect(onUnauthorized).not.toHaveBeenCalled();
     },
   );
-
   it('项目在实际保存时检查 epoch，旧刷新不能覆盖新账号凭证', async () => {
     let credentials = { epoch: 'a', token: 'a-old' };
     const waitingForStorage = deferred();
@@ -696,7 +699,7 @@ describe('登录会话生命周期', () => {
       onUnauthorized,
     });
     const result = expect(
-      httpClient.withBaseURL(origin).withAuth(auth).get('/'),
+      http.withBaseURL(origin).withAuth(auth).get<void, unknown>('/')(),
     ).rejects.toMatchObject({ kind: 'session-changed' });
     await waitingForStorage.promise;
     credentials = { epoch: 'b', token: 'b-token' };
@@ -705,7 +708,6 @@ describe('登录会话生命周期', () => {
     expect(credentials).toEqual({ epoch: 'b', token: 'b-token' });
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
-
   it('项目异步退出的条件清理不能删除新账号凭证', async () => {
     let credentials = { epoch: 'a', token: 'a-old' };
     const clearing = deferred();
@@ -726,7 +728,7 @@ describe('登录会话生命周期', () => {
       },
     });
     const result = expect(
-      httpClient.withBaseURL(origin).withAuth(auth).get('/'),
+      http.withBaseURL(origin).withAuth(auth).get<void, unknown>('/')(),
     ).rejects.toMatchObject({ kind: 'session-changed' });
     await clearing.promise;
     credentials = { epoch: 'b', token: 'b-token' };
@@ -734,7 +736,6 @@ describe('登录会话生命周期', () => {
     await result;
     expect(credentials).toEqual({ epoch: 'b', token: 'b-token' });
   });
-
   it('退出回调可以推进 epoch，新登录不会复用旧通知状态', async () => {
     let epoch = 1;
     const origin = await serve((_req, res) => json(res, {}, 401));
@@ -742,7 +743,7 @@ describe('登录会话生命周期', () => {
       expect(context.epoch).toBe(epoch);
       epoch++;
     });
-    const client = httpClient.withBaseURL(origin).withAuth(
+    const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => epoch,
         getAccessToken: () => 'token',
@@ -750,15 +751,18 @@ describe('登录会话生命周期', () => {
         onUnauthorized,
       }),
     );
-    await expect(client.get('/a')).rejects.toMatchObject({ status: 401 });
+    await expect(client.get<void, unknown>('/a')()).rejects.toMatchObject({
+      status: 401,
+    });
     epoch = 3;
-    await expect(client.get('/b')).rejects.toMatchObject({ status: 401 });
+    await expect(client.get<void, unknown>('/b')()).rejects.toMatchObject({
+      status: 401,
+    });
     expect(onUnauthorized).toHaveBeenCalledTimes(2);
     expect(
       onUnauthorized.mock.calls.map(([, context]) => context.epoch),
     ).toEqual([1, 3]);
   });
-
   it('一个派生客户端取消等待，不取消另一客户端共享的刷新', async () => {
     const allOld = deferred();
     let requests = 0;
@@ -771,7 +775,7 @@ describe('登录会话生命周期', () => {
       } else json(res, true);
     });
     const refreshSession = vi.fn(() => finish.promise);
-    const client = httpClient.withBaseURL(origin).withAuth(
+    const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => 1,
         getAccessToken: () => 'old',
@@ -780,9 +784,11 @@ describe('登录会话生命周期', () => {
     );
     const controller = new AbortController();
     const canceled = expect(
-      client.withTimeout(1000).get('/a', { signal: controller.signal }),
+      client.withTimeout(1000).get<void, unknown>('/a')(undefined, {
+        signal: controller.signal,
+      }),
     ).rejects.toMatchObject({ kind: 'canceled' });
-    const other = client.get('/b');
+    const other = client.get<void, unknown>('/b')();
     await allOld.promise;
     controller.abort();
     await canceled;

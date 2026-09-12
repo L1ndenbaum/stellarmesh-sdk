@@ -1,4 +1,4 @@
-export { createHttpApi } from './http/api/api.js';
+export { http } from './http/api/api.js';
 export type {
   HttpApi,
   HttpApiBodyMethod,
@@ -7,13 +7,10 @@ export type {
   HttpApiQueryMethod,
   HttpApiQueryOptions,
   HttpApiRequest,
+  HttpApiRequestDescriptor,
+  HttpApiRequestMethod,
+  HttpApiResult,
 } from './http/api/contracts.js';
-export { httpClient } from './http/client/client.js';
-export type {
-  ConfigurableHttpClient,
-  HttpClient,
-  HttpBodyMethod,
-} from './http/client/contracts.js';
 export { HttpMethod } from './http/request/contracts.js';
 export type {
   HttpHeaders,

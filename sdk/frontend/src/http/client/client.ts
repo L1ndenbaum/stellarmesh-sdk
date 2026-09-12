@@ -5,41 +5,19 @@ import {
   send,
 } from '../transport/axios-transport.js';
 import { getAuthCoordinator, isTrustedTarget } from '../auth/session.js';
-import type { AuthBindingOptions, AuthSession } from '../auth/contracts.js';
 import { abortable, throwIfCanceled } from '../error/cancellation.js';
 import { HttpClientError } from '../error/http-client-error.js';
-import {
-  defaultRetry,
-  retryDelay,
-  validateNumber,
-  waitForRetry,
-} from '../retry/policy.js';
-import type { RetryPolicy } from '../retry/policy.js';
-import type {
-  HttpHeaders,
-  HttpRequest,
-  HttpRequestOptions,
-} from '../request/contracts.js';
-import type { HttpResponse, ResponseTransform } from '../response/contracts.js';
-import type { ConfigurableHttpClient } from './contracts.js';
+import { retryDelay, validateNumber, waitForRetry } from '../retry/policy.js';
+import type { HttpRequest } from '../request/contracts.js';
+import type { HttpResponse } from '../response/contracts.js';
+import type { ClientOptions } from './contracts.js';
 
-interface ClientOptions {
-  baseURL?: string;
-  headers?: HttpHeaders;
-  timeout: number;
-  retry: RetryPolicy;
-  auth?: { session: AuthSession; binding: AuthBindingOptions };
-  transform?: ResponseTransform;
-}
-
-function createClient(options: ClientOptions): ConfigurableHttpClient {
+/** 内部执行器始终返回元信息，公开声明入口决定最终交付形态。 */
+export function createExecutor(options: ClientOptions) {
   const transport = createTransport(options.baseURL);
   const session = options.auth
     ? getAuthCoordinator(options.auth.session)
     : undefined;
-  const derive = (changes: Partial<ClientOptions>) =>
-    createClient({ ...options, ...changes });
-
   async function execute(input: HttpRequest): Promise<HttpResponse<unknown>> {
     const request = {
       ...input,
@@ -138,72 +116,5 @@ function createClient(options: ClientOptions): ConfigurableHttpClient {
       }
     }
   }
-  async function request<TRequest, TResponse>(
-    config: HttpRequest<TRequest>,
-  ): Promise<TResponse> {
-    return (await execute(config)).data as TResponse;
-  }
-  async function requestWithMetadata<TRequest, TResponse>(
-    config: HttpRequest<TRequest>,
-  ): Promise<HttpResponse<TResponse>> {
-    return (await execute(config)) as HttpResponse<TResponse>;
-  }
-  const bodyMethod =
-    (method: 'POST' | 'PUT' | 'PATCH') =>
-    <TRequest, TResponse>(
-      url: string,
-      data?: TRequest,
-      config?: HttpRequestOptions,
-    ): Promise<TResponse> =>
-      request<TRequest, TResponse>({ ...config, method, url, data });
-  return {
-    request,
-    requestWithMetadata,
-    get: <T>(url: string, config?: HttpRequestOptions) =>
-      request<never, T>({ ...config, method: 'GET', url }),
-    head: <T>(url: string, config?: HttpRequestOptions) =>
-      request<never, T>({ ...config, method: 'HEAD', url }),
-    delete: <T>(url: string, config?: HttpRequestOptions) =>
-      request<never, T>({ ...config, method: 'DELETE', url }),
-    post: bodyMethod('POST'),
-    put: bodyMethod('PUT'),
-    patch: bodyMethod('PATCH'),
-    withBaseURL: (baseURL) => derive({ baseURL }),
-    withHeaders: (headers) =>
-      derive({ headers: mergeHeaders(options.headers, headers) }),
-    withTimeout: (timeout) => {
-      validateNumber(timeout, 'timeout');
-      return derive({ timeout });
-    },
-    withMaxRetries: (maxRetries) => {
-      validateNumber(maxRetries, 'maxRetries', true);
-      return derive({ retry: { ...options.retry, maxRetries } });
-    },
-    withRetry: (config) => {
-      const retry = { ...options.retry, ...config };
-      validateNumber(retry.maxRetries, 'maxRetries', true);
-      validateNumber(retry.baseDelayMs, 'baseDelayMs');
-      validateNumber(retry.maxDelayMs, 'maxDelayMs');
-      return derive({ retry });
-    },
-    withAuth: (auth, binding = {}) => {
-      getAuthCoordinator(auth);
-      return derive({
-        auth: {
-          session: auth,
-          binding: {
-            trustedOrigins: binding.trustedOrigins
-              ? [...binding.trustedOrigins]
-              : undefined,
-          },
-        },
-      });
-    },
-    withResponseTransform: (transform) => derive({ transform }),
-  };
+  return execute;
 }
-
-export const httpClient: ConfigurableHttpClient = createClient({
-  timeout: 0,
-  retry: defaultRetry,
-});
