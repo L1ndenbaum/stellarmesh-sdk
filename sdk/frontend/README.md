@@ -1,6 +1,6 @@
 # 前端 HTTP SDK
 
-`@stellarmesh/sdk` 提供基于 Axios 的可复用 HTTP 客户端。源码版本为 `0.1.0`，采用 MIT 许可证。业务 API、公共 API 和对象存储共用实现，通过独立实例配置。
+`@stellarmesh/sdk` 提供基于 Axios 的可复用 HTTP 客户端。源码版本为 `0.2.0`，采用 MIT 许可证。业务 API、公共 API 和对象存储共用实现，通过独立实例配置。
 
 安装：
 
