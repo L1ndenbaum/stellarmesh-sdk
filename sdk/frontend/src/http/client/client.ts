@@ -8,6 +8,7 @@ import { AuthRefreshResult } from '../auth/contracts.js';
 import { getAuthCoordinator, isTrustedTarget } from '../auth/session.js';
 import { abortable, throwIfCanceled } from '../error/cancellation.js';
 import { HttpClientError } from '../error/http-client-error.js';
+import { extractErrorCode } from '../error/extract-error-code.js';
 import { retryDelay, validateNumber, waitForRetry } from '../retry/policy.js';
 import type { HttpRequest } from '../request/contracts.js';
 import type { HttpResponse } from '../response/contracts.js';
@@ -98,7 +99,16 @@ export function createExecutor(options: ClientOptions) {
         return response;
       } catch (rawError) {
         checkActive();
-        const error = normalizeError(rawError);
+        let error: HttpClientError;
+        try {
+          error = extractErrorCode(
+            normalizeError(rawError),
+            options.errorCodeExtractor,
+          );
+        } finally {
+          // 项目回调可能同步取消请求或切换会话，仍遵循原来的会话边界。
+          checkActive();
+        }
         if (
           snapshot &&
           session!.canRefresh &&

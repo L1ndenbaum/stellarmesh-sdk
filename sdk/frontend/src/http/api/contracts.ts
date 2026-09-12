@@ -1,4 +1,5 @@
 import type { AuthBindingOptions, AuthSession } from '../auth/contracts.js';
+import type { ErrorCodeExtractor } from '../error/contracts.js';
 import type { HttpResponse, ResponseTransform } from '../response/contracts.js';
 import type { RetryOptions } from '../retry/contracts.js';
 import type {
@@ -93,4 +94,5 @@ export interface HttpApi<TMetadata extends boolean = false> {
     options?: AuthBindingOptions,
   ): HttpApi<TMetadata>;
   withResponseTransform(transform: ResponseTransform): HttpApi<TMetadata>;
+  withErrorCodeExtractor(extractor: ErrorCodeExtractor): HttpApi<TMetadata>;
 }

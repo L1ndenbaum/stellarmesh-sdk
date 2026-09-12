@@ -168,6 +168,12 @@ function createApi<TMetadata extends boolean>(
       });
     },
     withResponseTransform: (transform) => derive({ transform }),
+    withErrorCodeExtractor: (extractor) => {
+      if (typeof extractor !== 'function') {
+        throw new TypeError('withErrorCodeExtractor 需要同步提取函数');
+      }
+      return derive({ errorCodeExtractor: extractor });
+    },
   };
 }
 

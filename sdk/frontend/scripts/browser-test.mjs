@@ -76,6 +76,24 @@ try {
       );
       return;
     }
+    if (
+      req.url === '/api/http-failure' ||
+      req.url === '/api/business-failure'
+    ) {
+      res.writeHead(req.url === '/api/http-failure' ? 401 : 200, {
+        'Content-Type': 'application/json',
+        'X-Reason': 'browser',
+      });
+      res.end(
+        JSON.stringify({
+          code: 401,
+          error_code: 'EXPIRED',
+          message: '会话失效',
+          data: null,
+        }),
+      );
+      return;
+    }
     res.setHeader('Content-Type', 'text/html');
     res.end(
       '<!doctype html><meta charset="utf-8"><script src="/sdk.js"></script>',
@@ -85,8 +103,13 @@ try {
   const page = await browser.newPage();
   await page.goto(appOrigin);
   const result = await page.evaluate(async (storage) => {
-    const { http, HttpMethod, createAuthSession, flattenEnvelopeResponse } =
-      globalThis.SDK;
+    const {
+      http,
+      HttpMethod,
+      HttpErrorKind,
+      createAuthSession,
+      flattenEnvelopeResponse,
+    } = globalThis.SDK;
     const api = http
       .withBaseURL('/api')
       .withAuth(
@@ -99,6 +122,33 @@ try {
     const requestEcho = api.post('/echo');
     const echo = await requestEcho({ id: 7 });
     const anonymousEcho = await api.post('/echo', { auth: false })({ id: 8 });
+    let extractions = 0;
+    const errorApi = api.withErrorCodeExtractor((data, context) => {
+      extractions++;
+      if (context.headers['x-reason'] !== 'browser')
+        throw new Error('缺少诊断头');
+      return data.error_code;
+    });
+    const errors = [];
+    for (const path of ['/http-failure', '/business-failure']) {
+      try {
+        await errorApi.get(path)();
+        throw new Error('请求应当失败');
+      } catch (error) {
+        if (
+          error.kind !== HttpErrorKind.HTTP &&
+          error.kind !== HttpErrorKind.BUSINESS
+        )
+          throw error;
+        errors.push({
+          kind: error.kind,
+          status: error.status,
+          apiCode: error.apiCode,
+          message: error.message,
+          data: error.data,
+        });
+      }
+    }
     const storageApi = http.withTimeout(5000);
     const uploaded = [];
     const downloaded = [];
@@ -154,6 +204,8 @@ try {
     return {
       echo,
       anonymousEcho,
+      errors,
+      extractions,
       etag: upload.headers.etag,
       status: upload.status,
       size: blob.size,
@@ -170,6 +222,22 @@ try {
     payload: { id: 7 },
   });
   assert.deepEqual(result.anonymousEcho, { payload: { id: 8 } });
+  assert.equal(result.extractions, 2);
+  assert.deepEqual(
+    result.errors,
+    ['http', 'business'].map((kind) => ({
+      kind,
+      status: kind === 'http' ? 401 : 200,
+      apiCode: 'EXPIRED',
+      message: '会话失效',
+      data: {
+        code: 401,
+        error_code: 'EXPIRED',
+        message: '会话失效',
+        data: null,
+      },
+    })),
+  );
   assert.equal(result.etag, '"browser-part"');
   assert.equal(result.status, 200);
   assert.equal(result.size, 256 * 1024);
@@ -183,7 +251,7 @@ try {
   assert(stored.has('/object?signature=a%2Fb%2Bc&part=1'));
   await testBrowserAuth(browser, bundle);
   console.log(
-    '浏览器验证通过：声明式调用、信封、鉴权、跨域隔离、上传下载、进度、ETag、超时与取消',
+    '浏览器验证通过：声明式调用、信封、错误码提取、鉴权、跨域隔离、上传下载、进度、ETag、超时与取消',
   );
 } finally {
   await browser?.close();

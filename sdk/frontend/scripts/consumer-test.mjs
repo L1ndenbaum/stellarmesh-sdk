@@ -95,7 +95,7 @@ try {
     `
 import * as SDK from '@stellarmesh/sdk';
 import { http, createAuthSession, AuthRefreshResult, flattenEnvelopeResponse, HttpMethod, ResponseType, HttpErrorKind } from '@stellarmesh/sdk';
-import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, HttpMethod as MethodType, HttpErrorKind as ErrorKind } from '@stellarmesh/sdk';
+import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, ErrorCodeExtractor, HttpMethod as MethodType, HttpErrorKind as ErrorKind } from '@stellarmesh/sdk';
 export const httpErrorKind: ErrorKind = HttpErrorKind.HTTP;
 export const literalErrorKind: ErrorKind = 'http';
 export const exactErrorKind: 'http' = HttpErrorKind.HTTP;
@@ -108,6 +108,16 @@ interface Token { accessToken: string }
 interface Query { page: number; keyword?: string }
 const auth = createAuthSession({ getSessionEpoch: () => 1 });
 const api: HttpApi = http.withAuth(auth).withResponseTransform(flattenEnvelopeResponse());
+const extractErrorCode: ErrorCodeExtractor = (data, context) => {
+  const status: number = context.status;
+  // @ts-expect-error 提取上下文只读。
+  context.status = 200;
+  if (!data || typeof data !== 'object') return null;
+  const value = (data as Record<string, unknown>).error_code;
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined;
+};
+const custom: HttpApi = api.withErrorCodeExtractor(extractErrorCode);
+const customMetadata: HttpApi<true> = custom.withMetadata().withErrorCodeExtractor(extractErrorCode);
 const login = api.post<LoginRequest, Token>('/login', { auth: false });
 const workspace = api.get<void, { id: number }>('/workspace');
 const users = api.get<Query, string[]>('/users');
@@ -117,6 +127,16 @@ const upload = metadata.request<{ url: string; file: Blob }, string>(input => ({
 }), { responseType: ResponseType.TEXT });
 export const literalMethod: MethodType = 'GET';
 export function checkTypes(): void {
+  // @ts-expect-error 提取器必须同步，不能返回 Promise。
+  http.withErrorCodeExtractor(async () => 'EXPIRED');
+  // @ts-expect-error 不接受布尔错误码。
+  http.withErrorCodeExtractor(() => false);
+  // @ts-expect-error 不接受对象错误码。
+  http.withErrorCodeExtractor(() => ({ code: 'EXPIRED' }));
+  // @ts-expect-error 不提供单次请求提取覆盖。
+  void custom.get<void, unknown>('/') (undefined, { errorCodeExtractor: extractErrorCode });
+  const extractedMetadata: Promise<HttpResponse<string>> = customMetadata.get<void, string>('/')();
+  void extractedMetadata;
   let accessToken: string | null = null;
   createAuthSession({
     getSessionEpoch: () => 1,
@@ -274,7 +294,15 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
     assert.equal(flattenEnvelopeResponse()({ code: 0, message: '', data: 7 }, { status: 200, headers: {} }), 7);
     assert.equal(new HttpClientError('失败', { kind: 'timeout' }).kind, 'timeout');
     let calls = 0;
-    const server = createServer((_req, res) => { calls++; res.end('{"id":7}'); });
+    const server = createServer((req, res) => {
+      calls++;
+      if (req.url === '/failure') {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ code: 401, error_code: 'EXPIRED', message: '会话失效', data: null }));
+        return;
+      }
+      res.end('{"id":7}');
+    });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     try {
       const api = http.withBaseURL('http://127.0.0.1:' + server.address().port);
@@ -283,6 +311,16 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
       assert.deepEqual(await declared(), { id: 7 });
       assert.deepEqual((await api.withMetadata().request(() => ({ method: HttpMethod.GET, url: '/items' }))()).data, { id: 7 });
       assert.equal(calls, 2);
+      const custom = api.withErrorCodeExtractor(data => data.error_code).withResponseTransform(flattenEnvelopeResponse());
+      assert.notEqual(custom, api);
+      await assert.rejects(custom.get('/failure')(), error => {
+        assert.equal(error.kind, HttpErrorKind.HTTP);
+        assert.equal(error.status, 401);
+        assert.equal(error.apiCode, 'EXPIRED');
+        assert.equal(error.message, '会话失效');
+        return true;
+      });
+      await assert.rejects(api.get('/failure')(), error => error.apiCode === 401);
     } finally {
       server.closeAllConnections();
       await new Promise(resolve => server.close(resolve));
