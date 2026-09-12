@@ -1,12 +1,27 @@
 {
-  "name": "stellarmesh-sdk",
+  "name": "@l1ndenbaum/stellarmesh-sdk",
   "version": "0.1.0",
   "description": "可复用的 Axios HTTP 客户端",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/L1ndenbaum/stellarmesh-sdk.git",
+    "directory": "sdk/frontend"
+  },
+  "homepage": "https://github.com/L1ndenbaum/stellarmesh-sdk/tree/dev/docs/sdk/frontend",
+  "bugs": {
+    "url": "https://github.com/L1ndenbaum/stellarmesh-sdk/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "type": "module",
   "sideEffects": false,
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "exports": {
     ".": {
@@ -17,11 +32,13 @@
   "scripts": {
     "format": "eslint . --fix && biome format --write .",
     "check": "biome format . && eslint . && tsc --noEmit -p tsconfig.check.json",
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
     "test": "vitest run",
     "test:browser": "node scripts/browser-test.mjs",
     "test:consumer": "node scripts/consumer-test.mjs",
-    "verify": "npm run check && npm test && npm run build && npm run test:browser && npm run test:consumer"
+    "verify": "npm run check && npm test && npm run build && npm run test:browser && npm run test:consumer",
+    "prepack": "npm run build",
+    "release:prepare": "node scripts/prepare-release.mjs"
   },
   "dependencies": {
     "axios": "1.20.0"

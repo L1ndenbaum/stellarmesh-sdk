@@ -1,0 +1,44 @@
+name: 准备前端 npm 制品
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: sdk/frontend
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: 安装 Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org/
+          package-manager-cache: false
+
+      - name: 安装锁定依赖
+        run: npm ci --registry=https://registry.npmjs.org/
+
+      - name: 安装浏览器与系统依赖
+        run: npx playwright install --with-deps chromium
+
+      - name: 验证并准备发布制品
+        id: prepare
+        run: npm run release:prepare
+
+      - name: 上传已验证制品与校验信息
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: frontend-npm
+          path: ${{ steps.prepare.outputs.directory }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7

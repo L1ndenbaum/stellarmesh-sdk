@@ -25,3 +25,7 @@ dist/
 .idea/
 .vscode/
 .DS_Store
+
+# 前端 npm 发布准备制品
+/sdk/frontend/.artifacts/
+/sdk/frontend/*.tgz

@@ -1,26 +1,60 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { createHash } from 'node:crypto';
 
+const root = fileURLToPath(new URL('../', import.meta.url));
+const expected = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+assert(process.argv.length <= 3, '用法：consumer-test.mjs [本地 tarball 路径]');
+const supplied = process.argv[2] ? resolve(process.argv[2]) : undefined;
+if (supplied) {
+  assert(
+    supplied.endsWith('.tgz') && (await stat(supplied)).isFile(),
+    '需要本地 .tgz 文件',
+  );
+}
 const directory = await mkdtemp(join(tmpdir(), 'stellarmesh-consumer-'));
 try {
-  const result = JSON.parse(
-    execFileSync('npm', ['pack', '--json', '--pack-destination', directory], {
-      encoding: 'utf8',
-    }),
+  // 外部制品只读取，不触发源码构建或重新打包；默认模式仍验证当前源码打包结果。
+  const [packed] = JSON.parse(
+    execFileSync(
+      'npm',
+      supplied
+        ? ['pack', supplied, '--dry-run', '--ignore-scripts', '--json']
+        : ['pack', '--json', '--pack-destination', directory],
+      { cwd: root, encoding: 'utf8' },
+    ),
   );
-  const files = result[0].files.map((file) => file.path);
-  assert(files.includes('dist/index.js'));
-  assert(files.includes('dist/index.d.ts'));
+  const tarball = supplied ?? join(directory, packed.filename);
+  const digest = () =>
+    readFile(tarball).then(
+      (bytes) =>
+        `sha512-${createHash('sha512').update(bytes).digest('base64')}`,
+    );
+  const integrity = await digest();
+  assert.equal(integrity, packed.integrity);
+  assert.equal(packed.name, expected.name);
+  assert.equal(packed.version, expected.version);
+  const files = packed.files.map((file) => file.path);
+  for (const file of [
+    'dist/index.js',
+    'dist/index.d.ts',
+    'package.json',
+    'README.md',
+    'LICENSE',
+  ]) {
+    assert(files.includes(file), `发布制品缺少 ${file}`);
+  }
   assert(
     files.every(
       (file) =>
-        file === 'package.json' ||
-        file === 'README.md' ||
-        file.startsWith('dist/'),
+        ['package.json', 'README.md', 'LICENSE'].includes(file) ||
+        (file.startsWith('dist/') && /\.(js|d\.ts)$/.test(file)),
     ),
+    '制品包含非发布文件',
   );
   await writeFile(
     join(directory, 'package.json'),
@@ -33,16 +67,35 @@ try {
       '--ignore-scripts',
       '--no-audit',
       '--no-fund',
-      join(directory, result[0].filename),
+      '--registry=https://registry.npmjs.org/',
+      tarball,
     ],
-    { cwd: directory, stdio: 'pipe' },
+    { cwd: directory, stdio: 'inherit' },
+  );
+  const installedRoot = join(directory, 'node_modules', expected.name);
+  const installed = JSON.parse(
+    await readFile(join(installedRoot, 'package.json'), 'utf8'),
+  );
+  assert.equal(installed.name, '@l1ndenbaum/stellarmesh-sdk');
+  assert.equal(installed.version, expected.version);
+  assert.equal(installed.license, 'MIT');
+  assert.deepEqual(installed.publishConfig, {
+    registry: 'https://registry.npmjs.org/',
+    access: 'public',
+  });
+  assert.deepEqual(installed.repository, expected.repository);
+  assert.deepEqual(installed.exports, expected.exports);
+  assert.deepEqual(installed.dependencies, expected.dependencies);
+  assert.equal(
+    await readFile(join(installedRoot, 'LICENSE'), 'utf8'),
+    await readFile(join(root, 'LICENSE'), 'utf8'),
   );
   await writeFile(
     join(directory, 'consumer.ts'),
     `
-import * as SDK from 'stellarmesh-sdk';
-import { http, createAuthSession, AuthRefreshResult, flattenEnvelopeResponse, HttpMethod, ResponseType } from 'stellarmesh-sdk';
-import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, HttpMethod as MethodType } from 'stellarmesh-sdk';
+import * as SDK from '@l1ndenbaum/stellarmesh-sdk';
+import { http, createAuthSession, AuthRefreshResult, flattenEnvelopeResponse, HttpMethod, ResponseType } from '@l1ndenbaum/stellarmesh-sdk';
+import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, HttpMethod as MethodType } from '@l1ndenbaum/stellarmesh-sdk';
 interface LoginRequest { username: string; password: string }
 interface Token { accessToken: string }
 interface Query { page: number; keyword?: string }
@@ -172,7 +225,7 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
   execFileSync(
     process.execPath,
     [
-      resolve('node_modules/typescript/bin/tsc'),
+      join(root, 'node_modules/typescript/bin/tsc'),
       '--strict',
       '--noEmit',
       '--skipLibCheck',
@@ -184,7 +237,7 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
       'NodeNext',
       'consumer.ts',
     ],
-    { cwd: directory, stdio: 'pipe' },
+    { cwd: directory, stdio: 'inherit' },
   );
   execFileSync(
     process.execPath,
@@ -194,7 +247,7 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
       `
     import assert from 'node:assert/strict';
     import { createServer } from 'node:http';
-    import * as SDK from 'stellarmesh-sdk';
+    import * as SDK from '@l1ndenbaum/stellarmesh-sdk';
     const { http, createAuthSession, flattenEnvelopeResponse, HttpClientError, HttpMethod, ResponseType } = SDK;
     assert.equal(SDK.AuthRefreshResult.REFRESHED, 'refreshed');
     assert.equal(SDK.AuthRefreshResult.EXPIRED, 'expired');
@@ -223,8 +276,9 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
     }
   `,
     ],
-    { cwd: directory, stdio: 'pipe' },
+    { cwd: directory, stdio: 'inherit' },
   );
+  assert.equal(await digest(), integrity, '验证过程中 tarball 不应变化');
   console.log(
     '隔离 tarball 消费验证通过：发布文件、ESM 导入与 TypeScript 公开类型',
   );

@@ -1,6 +1,8 @@
 # 前端 HTTP SDK 接入
 
-前端包位于 `sdk/frontend/`，包名暂定为 `stellarmesh-sdk`，源码版本 `0.1.0`，尚未发布 npm。它封装 Axios 传输、响应处理、鉴权刷新、重试和对象字节传输，不包含项目 DTO、分页兼容、上传会话或页面状态。
+前端包位于 `sdk/frontend/`，包名为 `@l1ndenbaum/stellarmesh-sdk`，源码版本 `0.1.0`，尚未发布 npm。它封装 Axios 传输、响应处理、鉴权刷新、重试和对象字节传输，不包含项目 DTO、分页兼容、上传会话或页面状态。
+
+包采用 MIT 许可证；发布准备、首次安装与制品验证步骤见[发布说明](../../release.md#前端-http-sdk-首次-npm-发布)。
 
 维护 SDK 时，目录职责和内部依赖约定见[代码组织说明](../../../sdk/frontend/README.md#代码组织)；业务项目继续从包根入口导入。
 
@@ -13,7 +15,7 @@
 import {
   http as rootHttp,
   flattenEnvelopeResponse,
-} from 'stellarmesh-sdk';
+} from '@l1ndenbaum/stellarmesh-sdk';
 
 export const http = rootHttp
   .withBaseURL('/api')
@@ -122,7 +124,7 @@ const etag = response.headers.etag;
 `request<TInput, TResponse>(resolve, defaults?)` 接收同步映射函数并返回可复用请求函数。映射结果为 `HttpApiRequestDescriptor`，必需 `method`、`url`，可选 `params`、`data`、`headers`。不采用额外的路径绑定或柯里化阶段：
 
 ```ts
-import { HttpMethod } from 'stellarmesh-sdk';
+import { HttpMethod } from '@l1ndenbaum/stellarmesh-sdk';
 
 type UpdateUserInput = {
   userId: string;
@@ -184,7 +186,7 @@ const client = http.withResponseTransform(
 `AuthSession` 只协调会话生命周期和恢复，不解析 JWT，也不固定使用 Bearer。业务方负责提供认证请求头、判断响应错误、调用刷新接口和保存凭证。
 
 ```ts
-import { createAuthSession, http } from 'stellarmesh-sdk';
+import { createAuthSession, http } from '@l1ndenbaum/stellarmesh-sdk';
 
 const auth = createAuthSession({
   getSessionEpoch: () => session.getEpoch(),
@@ -242,7 +244,7 @@ import {
   HttpClientError,
   type AuthSessionEpoch,
   type HttpHeaders,
-} from 'stellarmesh-sdk';
+} from '@l1ndenbaum/stellarmesh-sdk';
 
 function createProjectSession(
   refreshAndValidate: (epoch: AuthSessionEpoch) => Promise<string | null>,
@@ -309,7 +311,7 @@ import {
   AuthRefreshResult,
   HttpClientError,
   isHttpClientError,
-} from 'stellarmesh-sdk';
+} from '@l1ndenbaum/stellarmesh-sdk';
 
 function createCookieApi(baseURL: string) {
   let epoch = 0;
@@ -431,7 +433,7 @@ const file = await requestDownload(downloadUrl, {
 ## 错误处理
 
 ```ts
-import { isHttpClientError } from 'stellarmesh-sdk';
+import { isHttpClientError } from '@l1ndenbaum/stellarmesh-sdk';
 
 try {
   const requestItems = apiClient.get<void, Item[]>('/items');

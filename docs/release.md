@@ -19,13 +19,70 @@
 
 旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。历史拆分和兼容记录见[历史发布记录](releases/history.md)。
 
-## 前端 HTTP 源码初版
+## 前端 HTTP SDK 首次 npm 发布
 
-`sdk/frontend/` 新增 `stellarmesh-sdk` 源码版本 `0.1.0`，尚未发布 npm，因此不加入上方已发布制品矩阵。本次提供 ESM JavaScript、类型声明与隔离 tarball 消费验证；没有 npm 发布工作流，不创建或推送前端发布 tag。
+前端包为 `@l1ndenbaum/stellarmesh-sdk`，源码版本 `0.1.0`，采用 MIT 许可证，许可证位于 `sdk/frontend/LICENSE` 并随 npm 包分发。该许可证针对前端包，不改变其他语言模块的许可声明。当前尚未发布 npm，因此不加入上方已发布制品矩阵。包名中的 `l1ndenbaum` 使用数字 `1`，与 npm 个人账号完全一致。
 
-未发布初版的认证装配现已统一为 `createAuthSession` 与 `withAuth(auth, bindingOptions)`，新增必需的会话 epoch、显式共享及恢复开关，旧 `withAuth(options)` 不再兼容。使用前阅读[认证接口迁移](sdk/frontend/README.md#未发布初版的认证接口迁移)及项目凭证条件提交示例。
+包只提供 ESM JavaScript 和类型声明，唯一公开入口是包根；发布清单只包含 `dist/`、`package.json`、`README.md` 和 `LICENSE`。运行时依赖仍为锁定版本的 Axios。本轮不升级依赖、不创建或推送发布 tag。
 
-本地制品验证使用 `make frontend-verify`。正式发布前需另行确认 npm 包名归属、发布身份和组件 tag 触发规则；发布时复用已验证的不可变制品，并从实际 registry 安装验收。详细使用和兼容边界见[前端 HTTP SDK](sdk/frontend/README.md)。
+认证装配已统一为 `createAuthSession` 与 `withAuth(auth, bindingOptions)`，支持显式恢复策略和 Cookie Session。使用前阅读[认证接口迁移](sdk/frontend/README.md#未发布初版的认证接口迁移)及项目凭证条件提交示例。
+
+### 准备并验证唯一制品
+
+使用 Node 24 和 npm，在仓库根目录先执行全仓验证 `make verify`。准备前确认目标源码已经提交，工作区干净，再执行：
+
+```sh
+cd sdk/frontend
+npm ci --registry=https://registry.npmjs.org/
+npx playwright install --with-deps chromium
+npm run release:prepare
+```
+
+`release:prepare` 校验包名、MIT、正式版本号、锁文件根元数据及公开 registry 配置；依次完成格式／静态／类型检查、行为测试、干净构建、Chromium 验证，再打包一次并验证这份 tarball。每次成功输出一个独立的 `.artifacts/0.1.0-随机后缀/` 目录，包含：
+
+- `l1ndenbaum-stellarmesh-sdk-0.1.0.tgz`：通过验证的 npm 制品；
+- `release.json`：包名、版本、文件名、SHA-512 integrity、SHA-256、registry、公开访问权限与 `latest` 标签。
+
+目录被 Git、Biome 和 ESLint 忽略，也不会进入 npm 包。失败时清理本次不完整制品，不覆盖以前的成功结果。可传入组件 tag 做版本一致性校验，例如 `npm run release:prepare -- sdk/frontend/v0.1.0`；这不会创建 tag。当前命令只接受正式版本号，不支持预发布版本与标签的自动选择。
+
+`npm run build` 每次清除旧 `dist/`，避免已删除模块残留。`npm pack` 的 `prepack` 只执行干净构建；完整发布检查由 `release:prepare` 负责，避免消费验证触发打包后递归验证。消费验证安装时禁用生命周期脚本，并检查包清单、许可证、版本、ESM 与公开类型契约。验证已有制品时使用：
+
+```sh
+npm run test:consumer -- /绝对路径/l1ndenbaum-stellarmesh-sdk-0.1.0.tgz
+```
+
+已有制品路径不会触发源码重建，验证前后检查其内容摘要一致。
+
+[手动准备工作流](../.github/workflows/prepare-frontend.yml)使用相同命令，只允许 `workflow_dispatch` 手动触发，上传 `frontend-npm` 制品并保留 7 天。它只有仓库只读权限，不包含发布步骤。工作流需要先推送到默认分支才能在 Actions 页面手动运行；本地通过验证不代表 GitHub Actions 已运行成功。
+
+### 首次人工发布
+
+正式发布时再登录 npm 官方 registry，确认身份输出为 `l1ndenbaum`，并完成 npm 要求的账号验证与 2FA。个人 scope 下的公开包无需创建组织。`publishConfig` 固定为官方 registry 和 `public`，命令仍显式指定，避免本机镜像源影响发布。
+
+以下步骤会向 npm 上传包，应在正式发布时执行。将 `release_dir` 替换为本次成功准备命令输出的目录，不重新运行打包生成替代文件：
+
+```sh
+npm login --registry=https://registry.npmjs.org/
+npm whoami --registry=https://registry.npmjs.org/
+release_dir='/绝对路径/sdk/frontend/.artifacts/0.1.0-随机后缀'
+npm publish "$release_dir/l1ndenbaum-stellarmesh-sdk-0.1.0.tgz" \
+  --ignore-scripts --registry=https://registry.npmjs.org/ --access public --tag latest
+```
+
+上传前核对 tarball 的 SHA-256 与 `release.json` 一致；发布失败先确认 registry 是否已经存在该版本，不能直接修改内容后复用相同版本。发布后查询真实元数据：
+
+```sh
+npm view @l1ndenbaum/stellarmesh-sdk@0.1.0 \
+  name version license dist.integrity --json --registry=https://registry.npmjs.org/
+```
+
+将 `dist.integrity` 与准备时保存的 SHA-512 比较，再从官方 registry 下载该版本到新临时目录，使用 `test:consumer` 验证下载的 tarball，并在全新业务消费目录安装 `@l1ndenbaum/stellarmesh-sdk@0.1.0` 验证公开安装。全部通过后，记录源码 commit、创建指向该 commit 的不可变组件 tag `sdk/frontend/v0.1.0`，更新已发布矩阵。当前没有前端 tag 发布触发器，根 `vX.Y.Z` tag 仍只用于镜像。
+
+### 后续自动发布
+
+首次发布成功后，再在 npm 包设置中配置 GitHub Actions Trusted Publishing，绑定本仓库及将来独立的发布工作流。随后增加组件 tag 校验、制品下载与摘要复核、OIDC 发布和真实 registry 消费验证。当前准备工作流没有 OIDC 写权限，也不存储 npm token；不应把它当成已经接通的自动发布流程。
+
+接入与兼容边界见[前端 HTTP SDK](sdk/frontend/README.md)。
 
 ## 当前日志方向
 

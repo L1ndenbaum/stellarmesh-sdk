@@ -2,7 +2,13 @@
   "$schema": "https://biomejs.dev/schemas/2.5.13/schema.json",
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!!**/dist", "!!**/node_modules", "!**/*.tgz"]
+    "includes": [
+      "**",
+      "!!**/dist",
+      "!!**/node_modules",
+      "!**/*.tgz",
+      "!!**/.artifacts"
+    ]
   },
   "formatter": {
     "enabled": true,

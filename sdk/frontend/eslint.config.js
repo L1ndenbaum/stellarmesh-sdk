@@ -15,7 +15,7 @@ const topLevelDeclaration = {
 };
 
 export default tseslint.config(
-  { ignores: ['dist/**', 'node_modules/**'] },
+  { ignores: ['dist/**', 'node_modules/**', '.artifacts/**'] },
   ...tseslint.configs.recommended,
   {
     plugins: { '@stylistic': stylistic },

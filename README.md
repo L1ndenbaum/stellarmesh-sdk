@@ -12,7 +12,7 @@
 - `sdk/go/gateway/`：独立发布的 fail-close 声明式 Gateway、JWT 认证与 Redis 限流 Module。
 - `sdk/go/logging/`：独立发布、仅依赖标准库的 `slog.Handler` 安全装饰器。
 - `sdk/go/mq/kafka/`：独立发布的轻量 Kafka Go Module，提供 PLAIN、SCRAM、TLS/mTLS、Publisher 和 Topic 检查。
-- `sdk/frontend/`：独立 TypeScript HTTP 包，封装 Axios、信封处理、鉴权刷新、重试及对象传输；源码 `0.1.0` 尚未发布 npm。
+- `sdk/frontend/`：独立 TypeScript HTTP 包 `@l1ndenbaum/stellarmesh-sdk`（MIT），封装 Axios、信封处理、鉴权刷新、重试及对象传输；源码 `0.1.0` 尚未发布 npm。
 - `sdk/python/logging/`：独立发布、无运行时第三方依赖的标准库 JSON／Pretty Formatter；格式由应用选择。
 - `sdk/python/storage/`：独立发布的 `stellarmesh-storage` 同步与异步对象存储客户端。
 - `services/storage/`：签发 S3/MinIO 预签名请求的项目级控制面服务，不代理对象字节。
@@ -32,7 +32,7 @@ make integration
 
 `make bootstrap` 按两个独立 `uv.lock` 创建 Python 3.11 环境，并使用 Node 24、npm 安装前端锁定依赖和 Chromium。Linux 首次安装浏览器系统依赖可在 `sdk/frontend/` 执行 `npx playwright install --with-deps chromium`。`make verify` 会执行 Go 格式检查、`go vet`、Go 测试、两个 Python 项目的 Ruff、mypy、pytest、依赖兼容检查、前端格式／静态／类型检查、行为测试、构建、Chromium 传输和隔离 tarball 消费验证、Shell 语法检查与 `git diff --check`。`make race` 运行全部 Go 竞态检查。`make images` 构建 storage-service，`make integration` 验证 MinIO 最小权限、预签名直传、Multipart、版本删除、readiness 故障恢复和优雅关闭。测试结束后清理临时容器、网络和 Secret，不要求仓库提供 Compose。
 
-前端单独开发使用 `make frontend-format` 与 `make frontend-verify`，接入方式见[前端 HTTP SDK](docs/sdk/frontend/README.md)。浏览器验证使用临时本地服务，消费验证需要 npm 依赖访问；运行验证前先完成 `make bootstrap`。
+前端单独开发使用 `make frontend-format` 与 `make frontend-verify`，接入方式见[前端 HTTP SDK](docs/sdk/frontend/README.md)，npm 制品准备见[发布说明](docs/release.md#前端-http-sdk-首次-npm-发布)。浏览器验证使用临时本地服务，消费验证需要 npm 依赖访问；运行验证前先完成 `make bootstrap`。
 
 本地与 Python 发布流程的 mypy 只检查各包的 `src/`、`tests/`，构建后可以直接重新验证，无需删除 `build/` 或已有制品。
 

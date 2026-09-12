@@ -1,9 +1,15 @@
 # 前端 HTTP SDK
 
-`stellarmesh-sdk` 提供基于 Axios 的可复用 HTTP 客户端。当前源码版本为 `0.1.0`，尚未发布到 npm。业务 API、公共 API 和对象存储共用实现，通过独立实例配置。
+`@l1ndenbaum/stellarmesh-sdk` 提供基于 Axios 的可复用 HTTP 客户端。源码版本为 `0.1.0`，采用 MIT 许可证。业务 API、公共 API 和对象存储共用实现，通过独立实例配置。
+
+公开发布后安装：
+
+```sh
+npm install @l1ndenbaum/stellarmesh-sdk --registry=https://registry.npmjs.org/
+```
 
 ```ts
-import { http, flattenEnvelopeResponse } from 'stellarmesh-sdk';
+import { http, flattenEnvelopeResponse } from '@l1ndenbaum/stellarmesh-sdk';
 
 const api = http
   .withBaseURL('/api/v1')
@@ -29,7 +35,7 @@ const patient = await requestCreatePatient({ name: '示例' });
 
 浏览器跨源 Cookie 在绑定中显式配置 `.withAuth(auth, { withCredentials: true })`，仅对可信来源生效；Node 不提供 Cookie 容器。`authRecovery: false` 保留凭证携带并关闭认证恢复，适用于登录和刷新接口；`auth: false` 关闭 SDK 认证行为，但不禁止浏览器默认同源 Cookie。SDK 不自动生成 XSRF 头，业务方需显式提供。旧 `getAccessToken` 和刷新返回 Token／`null` 的契约已移除。
 
-详细行为、鉴权与对象传输示例见仓库[前端 SDK 接入教程](../../docs/sdk/frontend/README.md)。打包制品不包含该仓库文档，可通过源码仓库查看。
+详细行为、鉴权与对象传输示例见仓库[前端 SDK 接入教程](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/sdk/frontend/README.md)。打包制品不包含该仓库文档，可通过源码仓库查看。
 
 ## 代码组织
 
@@ -97,3 +103,13 @@ npm run verify
 `verify` 包含格式、静态和类型检查、行为测试、构建、Chromium 实际 HTTP 验证，以及隔离目录内的 tarball 消费测试。浏览器测试使用临时本地 HTTP 服务，不访问生产服务。消费测试需访问 npm 安装 tarball 的运行时依赖。
 
 提供 ESM JavaScript 和类型声明，不提供 CommonJS 入口。初版验证浏览器与 Node ESM 消费，不声称已验证 Expo 或所有 Axios 适配器。
+
+## 发布准备与许可证
+
+本包采用 [MIT 许可证](LICENSE)，许可证随 tarball 分发。包名中的用户名是 `l1ndenbaum`，第二个字符为数字 `1`；npm scope 必须与发布账号或其拥有权限的组织一致。
+
+在本目录运行 `npm run release:prepare`，完成检查、行为测试、干净构建和 Chromium 验证后，生成一份 tarball，并在独立目录验证这份 tarball 的元数据、类型与运行时行为。成功时保留 `.artifacts/` 下的制品和 `release.json`，记录版本、目标 registry 与 SHA-512／SHA-256 校验信息；该命令不发布 npm 包。
+
+`npm run build` 会先删除旧 `dist/`。普通 `npm pack` 通过 `prepack` 自动干净构建，但不会替代完整发布验证；消费测试与 `prepack` 不互相调用。`npm run test:consumer -- /绝对路径/包文件.tgz` 可验证指定的已有制品，不重新构建或替换它。发布时应上传已经验证的 tarball。
+
+首次发布、手动制品工作流和后续自动发布安排见[发布说明](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#前端-http-sdk-首次-npm-发布)。
