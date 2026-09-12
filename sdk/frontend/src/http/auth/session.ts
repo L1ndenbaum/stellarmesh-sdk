@@ -1,6 +1,8 @@
 import axios from 'axios';
-import { normalizeError } from '../transport/axios-transport.js';
+import { mergeHeaders, normalizeError } from '../transport/axios-transport.js';
 import { HttpClientError } from '../error/http-client-error.js';
+import { AuthRefreshResult } from './contracts.js';
+import type { HttpHeaders } from '../request/contracts.js';
 import type {
   AuthBindingOptions,
   AuthSession,
@@ -10,7 +12,7 @@ import type {
 } from './contracts.js';
 
 interface RefreshRound {
-  refresh?: Promise<string | null>;
+  refresh?: Promise<AuthRefreshResult>;
   notification?: Promise<void>;
 }
 
@@ -65,28 +67,54 @@ function createAuthCoordinator(options: AuthSessionOptions) {
       };
     },
     assertCurrent,
-    async token(snapshot: AuthSnapshot): Promise<string | null> {
+    async headers(snapshot: AuthSnapshot): Promise<HttpHeaders> {
       assertCurrent(snapshot);
       try {
-        const token = await options.getAccessToken();
+        const headers = options.getAuthHeaders
+          ? await options.getAuthHeaders(snapshot.context)
+          : {};
         assertCurrent(snapshot);
-        return token;
+        if (
+          !headers ||
+          typeof headers !== 'object' ||
+          (Object.getPrototypeOf(headers) !== Object.prototype &&
+            Object.getPrototypeOf(headers) !== null) ||
+          Object.entries(headers).some(
+            ([name, value]) =>
+              !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) ||
+              typeof value !== 'string' ||
+              /[\r\n]/.test(value),
+          )
+        ) {
+          throw new TypeError(
+            'getAuthHeaders 必须返回名称有效且值为字符串的请求头对象',
+          );
+        }
+        return mergeHeaders(headers);
       } catch (cause) {
         assertCurrent(snapshot);
-        throw normalizeAuthError(cause, '读取会话失败');
+        throw normalizeAuthError(cause, '读取认证请求头失败');
       }
     },
     shouldRefresh(error: HttpClientError): boolean {
-      if (error.kind !== 'http' && error.kind !== 'business') return false;
+      if (
+        !options.shouldRefresh ||
+        (error.kind !== 'http' && error.kind !== 'business')
+      )
+        return false;
       try {
-        return options.shouldRefresh
-          ? options.shouldRefresh(error)
-          : error.kind === 'http' && error.status === 401;
+        const result = options.shouldRefresh(error);
+        if (typeof result !== 'boolean') {
+          // JS 误传异步谓词时观察其拒绝，仍按同步契约错误终止本次请求。
+          void Promise.resolve(result).catch(() => {});
+          throw new TypeError('shouldRefresh 必须返回布尔值');
+        }
+        return result;
       } catch (cause) {
         throw normalizeAuthError(cause, '判断认证恢复条件失败');
       }
     },
-    refresh(snapshot: AuthSnapshot): Promise<string | null> {
+    refresh(snapshot: AuthSnapshot): Promise<AuthRefreshResult> {
       assertCurrent(snapshot);
       const { state, round, context } = snapshot;
       if (!round.refresh) {
@@ -94,17 +122,17 @@ function createAuthCoordinator(options: AuthSessionOptions) {
           .then(async () => {
             assertCurrent(snapshot);
             try {
-              const token = await options.refreshSession!(context);
+              const result = await options.refreshSession!(context);
               assertCurrent(snapshot);
               if (
-                token !== null &&
-                (typeof token !== 'string' || token.trim().length === 0)
+                result !== AuthRefreshResult.REFRESHED &&
+                result !== AuthRefreshResult.EXPIRED
               ) {
-                throw new HttpClientError('刷新必须返回非空 Token 或 null', {
-                  kind: 'auth',
-                });
+                throw new TypeError(
+                  'refreshSession 必须返回 AuthRefreshResult 中的结果',
+                );
               }
-              return token;
+              return result;
             } catch (cause) {
               assertCurrent(snapshot);
               throw normalizeAuthError(cause, '刷新会话失败');
@@ -142,8 +170,40 @@ const sessions = new WeakMap<
 >();
 
 export function createAuthSession(options: AuthSessionOptions): AuthSession {
+  if (!options || typeof options !== 'object') {
+    throw new TypeError('createAuthSession 需要会话配置');
+  }
+  const config = { ...options };
+  if ('getAccessToken' in config) {
+    throw new TypeError('getAccessToken 已移除，请使用 getAuthHeaders');
+  }
+  if (typeof config.getSessionEpoch !== 'function') {
+    throw new TypeError('getSessionEpoch 必须为函数');
+  }
+  for (const name of [
+    'getAuthHeaders',
+    'shouldRefresh',
+    'refreshSession',
+    'onUnauthorized',
+  ] as const) {
+    if (config[name] !== undefined && typeof config[name] !== 'function') {
+      throw new TypeError(`${name} 必须为函数`);
+    }
+  }
+  if (
+    (config.shouldRefresh !== undefined) !==
+    (config.refreshSession !== undefined)
+  ) {
+    throw new TypeError('shouldRefresh 和 refreshSession 必须同时提供');
+  }
+  if (
+    config.onUnauthorized !== undefined &&
+    config.refreshSession === undefined
+  ) {
+    throw new TypeError('onUnauthorized 需要启用认证恢复');
+  }
   const session = Object.freeze({}) as AuthSession;
-  sessions.set(session, createAuthCoordinator({ ...options }));
+  sessions.set(session, createAuthCoordinator(config));
   return session;
 }
 

@@ -4,6 +4,7 @@ import {
   normalizeError,
   send,
 } from '../transport/axios-transport.js';
+import { AuthRefreshResult } from '../auth/contracts.js';
 import { getAuthCoordinator, isTrustedTarget } from '../auth/session.js';
 import { abortable, throwIfCanceled } from '../error/cancellation.js';
 import { HttpClientError } from '../error/http-client-error.js';
@@ -35,25 +36,35 @@ export function createExecutor(options: ClientOptions) {
       options.auth &&
       request.auth !== false &&
       isTrustedTarget(request.url, options.baseURL, options.auth.binding);
+    const withCredentials = Boolean(
+      authenticated && options.auth!.binding.withCredentials,
+    );
+    if (
+      withCredentials &&
+      (typeof XMLHttpRequest === 'undefined' || typeof location === 'undefined')
+    ) {
+      throw new HttpClientError('跨源 Cookie 会话仅支持浏览器环境', {
+        kind: 'auth',
+      });
+    }
     const snapshot = authenticated ? session!.capture() : undefined;
     const checkActive = () => {
       throwIfCanceled(request.signal);
       if (snapshot) session!.assertCurrent(snapshot);
     };
-    let token = snapshot
-      ? await abortable(session!.token(snapshot), request.signal)
-      : null;
+    let authHeaders = snapshot
+      ? await abortable(session!.headers(snapshot), request.signal)
+      : {};
     let recovered = false;
     let retries = 0;
     while (true) {
       checkActive();
-      const headers = mergeHeaders(request.headers);
-      if (token) headers.authorization = `Bearer ${token}`;
+      const headers = mergeHeaders(request.headers, authHeaders);
       let transportFailed = false;
       try {
         let response: HttpResponse<unknown>;
         try {
-          response = await send(transport, request, headers);
+          response = await send(transport, request, headers, withCredentials);
         } catch (error) {
           transportFailed = true;
           throw error;
@@ -90,17 +101,28 @@ export function createExecutor(options: ClientOptions) {
         const error = normalizeError(rawError);
         if (
           snapshot &&
+          session!.canRefresh &&
           request.authRecovery !== false &&
           session!.shouldRefresh(error)
         ) {
           checkActive();
-          if (!session!.canRefresh) throw error;
           if (!recovered) {
             recovered = true;
             // 回调异常直接离开循环，不通知退出，也不能当成业务请求的传输失败重试。
-            token = await abortable(session!.refresh(snapshot), request.signal);
+            const result = await abortable(
+              session!.refresh(snapshot),
+              request.signal,
+            );
             checkActive();
-            if (token !== null) continue;
+            if (result === AuthRefreshResult.REFRESHED) {
+              // 刷新只报告恢复结果；认证头重新读取，Cookie 由浏览器管理。
+              authHeaders = await abortable(
+                session!.headers(snapshot),
+                request.signal,
+              );
+              checkActive();
+              continue;
+            }
           }
           await abortable(session!.notify(snapshot, error), request.signal);
           throw error;

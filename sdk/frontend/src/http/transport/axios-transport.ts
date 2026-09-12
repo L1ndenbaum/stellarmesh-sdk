@@ -66,13 +66,15 @@ export function normalizeError(error: unknown): HttpClientError {
 }
 
 export function createTransport(baseURL?: string): AxiosInstance {
-  return axios.create({ baseURL, timeout: 0 });
+  // CSRF 名称和取值由项目通过认证请求头提供，不继承 Axios 的 Cookie 推断。
+  return axios.create({ baseURL, timeout: 0, withXSRFToken: false });
 }
 
 export async function send(
   instance: AxiosInstance,
   request: HttpRequest,
   headers: Record<string, string>,
+  withCredentials: boolean,
 ): Promise<HttpResponse<unknown>> {
   const parseJson =
     request.responseType === undefined || request.responseType === 'json';
@@ -83,6 +85,7 @@ export async function send(
       data: request.data,
       params: request.params,
       headers,
+      withCredentials,
       timeout: request.timeout,
       signal: request.signal,
       responseType: parseJson ? 'text' : request.responseType,

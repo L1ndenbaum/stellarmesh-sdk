@@ -1,4 +1,5 @@
 import type { HttpClientError } from '../error/http-client-error.js';
+import type { HttpHeaders } from '../request/contracts.js';
 
 declare const authSessionBrand: unique symbol;
 
@@ -13,13 +14,27 @@ export interface AuthSessionContext {
   readonly epoch: AuthSessionEpoch;
 }
 
-export interface AuthSessionOptions {
-  /** 登录、退出、切换账号时更换且不可复用；正常 Token 刷新不更换。 */
+export const AuthRefreshResult = {
+  REFRESHED: 'refreshed',
+  EXPIRED: 'expired',
+} as const;
+
+export type AuthRefreshResult =
+  (typeof AuthRefreshResult)[keyof typeof AuthRefreshResult];
+
+interface AuthSessionBaseOptions {
+  /** 登录、退出、切换账号时更换且不可复用；同一会话正常刷新不更换。 */
   getSessionEpoch(): AuthSessionEpoch;
-  getAccessToken(): string | null | Promise<string | null>;
-  /** 按 epoch 条件保存后返回新 Token；null 确认失效，异常仅使本次操作失败。 */
-  refreshSession?(context: AuthSessionContext): Promise<string | null>;
-  shouldRefresh?(error: HttpClientError): boolean;
+  /** 返回当前认证或 CSRF 请求头；省略或返回空对象用于纯 Cookie 会话。 */
+  getAuthHeaders?(
+    context: AuthSessionContext,
+  ): HttpHeaders | Promise<HttpHeaders>;
+}
+
+interface AuthRecoveryOptions {
+  shouldRefresh(error: HttpClientError): boolean;
+  /** 完成凭证条件保存或 Cookie 刷新后报告结果；异常仅使本次操作失败。 */
+  refreshSession(context: AuthSessionContext): Promise<AuthRefreshResult>;
   /** 项目在实际清理凭证时也必须检查 epoch，避免异步清理影响新会话。 */
   onUnauthorized?(
     error: HttpClientError,
@@ -27,6 +42,18 @@ export interface AuthSessionOptions {
   ): void | Promise<void>;
 }
 
+interface AuthWithoutRecoveryOptions {
+  shouldRefresh?: never;
+  refreshSession?: never;
+  onUnauthorized?: never;
+}
+
+/** 刷新判断与执行必须成对提供，不隐式推断 HTTP 状态或业务错误码。 */
+export type AuthSessionOptions = AuthSessionBaseOptions &
+  (AuthRecoveryOptions | AuthWithoutRecoveryOptions);
+
 export interface AuthBindingOptions {
   trustedOrigins?: readonly string[];
+  /** 仅对可信目标启用浏览器跨源 Cookie；默认关闭，不控制同源 Cookie。 */
+  withCredentials?: boolean;
 }

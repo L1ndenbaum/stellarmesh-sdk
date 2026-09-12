@@ -24,6 +24,7 @@ export type {
   ResponseContext,
   ResponseTransform,
 } from './http/response/contracts.js';
+export { AuthRefreshResult } from './http/auth/contracts.js';
 export { createAuthSession } from './http/auth/session.js';
 export type {
   AuthSession,

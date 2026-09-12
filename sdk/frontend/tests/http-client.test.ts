@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import {
+  AuthRefreshResult,
   createAuthSession,
   flattenEnvelopeResponse,
   http,
@@ -311,6 +312,7 @@ describe('公开 HTTP 契约', () => {
     expect(isHttpClientError(new Error('失败'))).toBe(false);
   });
   it('非 JSON 的 HTTP 错误仍按状态重试和刷新，格式错误保留原响应', async () => {
+    let accessToken = 'old';
     let calls = 0;
     const origin = await serve((req, res) => {
       calls++;
@@ -338,8 +340,12 @@ describe('公开 HTTP 契约', () => {
         .withAuth(
           createAuthSession({
             getSessionEpoch: () => 1,
-            getAccessToken: () => 'old',
-            refreshSession: async () => 'fresh',
+            getAuthHeaders: () => ({ Authorization: `Bearer ${accessToken}` }),
+            shouldRefresh: (error: HttpClientError) => error.status === 401,
+            refreshSession: async () => {
+              accessToken = 'fresh';
+              return AuthRefreshResult.REFRESHED;
+            },
           }),
         )
         .get<void, unknown>('/auth')(),
@@ -361,9 +367,9 @@ describe('公开 HTTP 契约', () => {
     // 函数不执行；tsc 检查真实调用，避免通过断言掩盖泛型顺序错误。
     const compile = (client: HttpApi) => {
       // @ts-expect-error 旧配置对象不再是 withAuth 的装配入口。
-      http.withAuth({ getAccessToken: () => null });
+      http.withAuth({ getAuthHeaders: () => null });
       // @ts-expect-error 显式会话必须提供 epoch 读取接口。
-      createAuthSession({ getAccessToken: () => null });
+      createAuthSession({ getAuthHeaders: () => null });
       expectTypeOf(
         client.post<
           {
@@ -485,18 +491,25 @@ describe('重试与取消', () => {
 });
 describe('鉴权与刷新', () => {
   it('限定可信 origin、显式关闭鉴权、阻止协议相对地址注入', async () => {
+    let accessToken = 'secret';
     const foreign = await serve((req, res) =>
       json(res, { token: req.headers.authorization ?? null }),
     );
     const origin = await serve((req, res) =>
       json(res, { token: req.headers.authorization ?? null }),
     );
-    const getAccessToken = vi.fn(() => 'secret');
-    const refreshSession = vi.fn(async () => 'fresh');
+    const getAuthHeaders = vi.fn(() => ({
+      Authorization: `Bearer ${accessToken}`,
+    }));
+    const refreshSession = vi.fn(async () => {
+      accessToken = 'fresh';
+      return AuthRefreshResult.REFRESHED;
+    });
     const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => 1,
-        getAccessToken,
+        getAuthHeaders,
+        shouldRefresh: (error: HttpClientError) => error.status === 401,
         refreshSession,
       }),
     );
@@ -511,10 +524,10 @@ describe('鉴权与刷新', () => {
     await expect(
       client.get<void, unknown>(foreign.replace('http:', ''))(),
     ).rejects.toBeInstanceOf(HttpClientError);
-    expect(getAccessToken).toHaveBeenCalledTimes(1);
+    expect(getAuthHeaders).toHaveBeenCalledTimes(1);
     expect(refreshSession).not.toHaveBeenCalled();
     const trusted = client.withAuth(
-      createAuthSession({ getSessionEpoch: () => 1, getAccessToken }),
+      createAuthSession({ getSessionEpoch: () => 1, getAuthHeaders }),
       { trustedOrigins: [foreign] },
     );
     expect(await trusted.get<void, unknown>(foreign)()).toEqual({
@@ -523,6 +536,7 @@ describe('鉴权与刷新', () => {
     expect(await trusted.get<void, unknown>(origin)()).toEqual({ token: null });
   });
   it('并发和迟到的旧 Token 401 共用刷新结果', async () => {
+    let accessToken = 'expired';
     const both = deferred<void>();
     const releaseLate = deferred<void>();
     let expired = 0;
@@ -535,11 +549,15 @@ describe('鉴权与刷新', () => {
         json(res, {}, 401);
       } else json(res, req.headers.authorization);
     });
-    const refreshSession = vi.fn(async () => 'fresh');
+    const refreshSession = vi.fn(async () => {
+      accessToken = 'fresh';
+      return AuthRefreshResult.REFRESHED;
+    });
     const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => 1,
-        getAccessToken: () => 'expired',
+        getAuthHeaders: () => ({ Authorization: `Bearer ${accessToken}` }),
+        shouldRefresh: (error: HttpClientError) => error.status === 401,
         refreshSession,
       }),
     );
@@ -551,7 +569,8 @@ describe('鉴权与刷新', () => {
     expect(refreshSession).toHaveBeenCalledTimes(1);
   });
   it('并发刷新失败只通知一次，抛出的刷新错误保留 cause', async () => {
-    const release = deferred<string | null>();
+    const accessToken = 'old';
+    const release = deferred<AuthRefreshResult>();
     const received = deferred<void>();
     let calls = 0;
     const origin = await serve((_req, res) => {
@@ -564,7 +583,8 @@ describe('鉴权与刷新', () => {
     const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => 1,
-        getAccessToken: () => 'old',
+        getAuthHeaders: () => ({ Authorization: `Bearer ${accessToken}` }),
+        shouldRefresh: (error: HttpClientError) => error.status === 401,
         refreshSession,
         onUnauthorized,
       }),
@@ -575,7 +595,7 @@ describe('鉴权与刷新', () => {
     ]);
     await received.promise;
     await new Promise((resolve) => setTimeout(resolve, 10));
-    release.resolve(null);
+    release.resolve(AuthRefreshResult.EXPIRED);
     expect((await all).every((result) => result.status === 'rejected')).toBe(
       true,
     );
@@ -587,7 +607,8 @@ describe('鉴权与刷新', () => {
         .withAuth(
           createAuthSession({
             getSessionEpoch: () => 1,
-            getAccessToken: () => 'old',
+            getAuthHeaders: () => ({ Authorization: `Bearer ${accessToken}` }),
+            shouldRefresh: (error: HttpClientError) => error.status === 401,
             refreshSession: async () => {
               throw cause;
             },
@@ -597,19 +618,22 @@ describe('鉴权与刷新', () => {
     ).rejects.toMatchObject({ kind: 'auth', cause });
   });
   it('取消一个刷新等待者不会取消其他请求', async () => {
+    let accessToken = 'old';
     const refresh = deferred<string | null>();
     const started = deferred<void>();
     const origin = await serve((req, res) =>
       json(res, {}, req.headers.authorization === 'Bearer fresh' ? 200 : 401),
     );
-    const refreshSession = vi.fn(() => {
+    const refreshSession = vi.fn(async () => {
       started.resolve();
-      return refresh.promise;
+      accessToken = (await refresh.promise)!;
+      return AuthRefreshResult.REFRESHED;
     });
     const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => 1,
-        getAccessToken: () => 'old',
+        getAuthHeaders: () => ({ Authorization: `Bearer ${accessToken}` }),
+        shouldRefresh: (error: HttpClientError) => error.status === 401,
         refreshSession,
       }),
     );
@@ -626,19 +650,24 @@ describe('鉴权与刷新', () => {
     expect(refreshSession).toHaveBeenCalledTimes(1);
   });
   it('刷新重放和普通重试共享额度，不对外部 401 刷新', async () => {
+    let accessToken = 'old';
     let calls = 0;
     const origin = await serve((_req, res) => {
       calls++;
       json(res, {}, calls === 2 ? 401 : 503);
     });
-    const refreshSession = vi.fn(async () => 'fresh');
+    const refreshSession = vi.fn(async () => {
+      accessToken = 'fresh';
+      return AuthRefreshResult.REFRESHED;
+    });
     const client = http
       .withBaseURL(origin)
       .withRetry({ maxRetries: 1, baseDelayMs: 0 })
       .withAuth(
         createAuthSession({
           getSessionEpoch: () => 1,
-          getAccessToken: () => 'old',
+          getAuthHeaders: () => ({ Authorization: `Bearer ${accessToken}` }),
+          shouldRefresh: (error: HttpClientError) => error.status === 401,
           refreshSession,
         }),
       );
@@ -654,12 +683,17 @@ describe('鉴权与刷新', () => {
     expect(refreshSession).toHaveBeenCalledTimes(1);
   });
   it('再次 401 不循环恢复，后续新请求可以再次刷新', async () => {
+    let accessToken = 'old';
     const origin = await serve((_req, res) => json(res, {}, 401));
-    const refreshSession = vi.fn(async () => 'fresh');
+    const refreshSession = vi.fn(async () => {
+      accessToken = 'fresh';
+      return AuthRefreshResult.REFRESHED;
+    });
     const client = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch: () => 1,
-        getAccessToken: () => 'old',
+        getAuthHeaders: () => ({ Authorization: `Bearer ${accessToken}` }),
+        shouldRefresh: (error: HttpClientError) => error.status === 401,
         refreshSession,
       }),
     );

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { chromium } from '@playwright/test';
+import { testBrowserAuth } from './browser-auth-test.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'stellarmesh-browser-'));
 const servers = [];
@@ -91,7 +92,7 @@ try {
       .withAuth(
         createAuthSession({
           getSessionEpoch: () => 1,
-          getAccessToken: () => 'browser-token',
+          getAuthHeaders: () => ({ Authorization: 'Bearer browser-token' }),
         }),
       )
       .withResponseTransform(flattenEnvelopeResponse());
@@ -180,6 +181,7 @@ try {
   assert.equal(result.timeout, 'timeout');
   assert(seenAuth.every((value) => value === undefined));
   assert(stored.has('/object?signature=a%2Fb%2Bc&part=1'));
+  await testBrowserAuth(browser, bundle);
   console.log(
     '浏览器验证通过：声明式调用、信封、鉴权、跨域隔离、上传下载、进度、ETag、超时与取消',
   );

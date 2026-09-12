@@ -41,12 +41,12 @@ try {
     join(directory, 'consumer.ts'),
     `
 import * as SDK from 'stellarmesh-sdk';
-import { http, createAuthSession, flattenEnvelopeResponse, HttpMethod, ResponseType } from 'stellarmesh-sdk';
+import { http, createAuthSession, AuthRefreshResult, flattenEnvelopeResponse, HttpMethod, ResponseType } from 'stellarmesh-sdk';
 import type { HttpApi, HttpResponse, HttpApiRequestDescriptor, ApiEnvelope, HttpMethod as MethodType } from 'stellarmesh-sdk';
 interface LoginRequest { username: string; password: string }
 interface Token { accessToken: string }
 interface Query { page: number; keyword?: string }
-const auth = createAuthSession({ getSessionEpoch: () => 1, getAccessToken: () => null });
+const auth = createAuthSession({ getSessionEpoch: () => 1 });
 const api: HttpApi = http.withAuth(auth).withResponseTransform(flattenEnvelopeResponse());
 const login = api.post<LoginRequest, Token>('/login', { auth: false });
 const workspace = api.get<void, { id: number }>('/workspace');
@@ -57,6 +57,46 @@ const upload = metadata.request<{ url: string; file: Blob }, string>(input => ({
 }), { responseType: ResponseType.TEXT });
 export const literalMethod: MethodType = 'GET';
 export function checkTypes(): void {
+  let accessToken: string | null = null;
+  createAuthSession({
+    getSessionEpoch: () => 1,
+    getAuthHeaders: (): SDK.HttpHeaders => accessToken ? { Authorization: 'Bearer ' + accessToken } : {},
+  });
+  accessToken = 'fresh';
+  const recovery = {
+    shouldRefresh: (error: SDK.HttpClientError) => error.status === 401,
+    refreshSession: async () => AuthRefreshResult.REFRESHED,
+  };
+  createAuthSession({ getSessionEpoch: () => 1, ...recovery });
+  createAuthSession({
+    getSessionEpoch: () => 'login-a',
+    getAuthHeaders: async ({ epoch }) => ({ Authorization: 'Bearer ' + epoch }),
+    ...recovery,
+    onUnauthorized: (_error: SDK.HttpClientError, { epoch }: SDK.AuthSessionContext) => { void epoch; },
+  });
+  http.withAuth(auth, { withCredentials: true, trustedOrigins: ['https://api.example.test'] });
+  const outcome: SDK.AuthRefreshResult = AuthRefreshResult.EXPIRED;
+  void outcome;
+  const incomplete = { getSessionEpoch: () => 1, shouldRefresh: recovery.shouldRefresh };
+  // @ts-expect-error 刷新判断不能单独配置，通过变量传入也必须拒绝。
+  createAuthSession(incomplete);
+  // @ts-expect-error 刷新执行不能单独配置。
+  createAuthSession({ getSessionEpoch: () => 1, refreshSession: recovery.refreshSession });
+  // @ts-expect-error 未启用刷新时不能配置退出回调。
+  createAuthSession({ getSessionEpoch: () => 1, onUnauthorized: () => {} });
+  // @ts-expect-error 旧 Token 读取契约已移除。
+  createAuthSession({ getSessionEpoch: () => 1, getAccessToken: () => 'old' });
+  // @ts-expect-error 刷新结果不能是 Token 字符串。
+  createAuthSession({ getSessionEpoch: () => 1, shouldRefresh: recovery.shouldRefresh, refreshSession: async () => 'token' });
+  // @ts-expect-error 刷新结果不能是 null。
+  createAuthSession({ getSessionEpoch: () => 1, shouldRefresh: recovery.shouldRefresh, refreshSession: async () => null });
+  // @ts-expect-error 判断必须同步返回布尔值。
+  createAuthSession({ getSessionEpoch: () => 1, refreshSession: recovery.refreshSession, shouldRefresh: async () => true });
+  // @ts-expect-error 认证头不能返回 Token 字符串。
+  createAuthSession({ getSessionEpoch: () => 1, getAuthHeaders: () => 'token' });
+  // @ts-expect-error Cookie 配置必须为布尔值。
+  http.withAuth(auth, { withCredentials: 'include' });
+
   const token: Promise<Token> = login({ username: 'u', password: 'p' });
   const plain: Promise<{ id: number }> = workspace();
   const info: Promise<HttpResponse<{ id: number }>> = metadata.get<void, { id: number }>('/workspace')();
@@ -156,12 +196,14 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
     import { createServer } from 'node:http';
     import * as SDK from 'stellarmesh-sdk';
     const { http, createAuthSession, flattenEnvelopeResponse, HttpClientError, HttpMethod, ResponseType } = SDK;
+    assert.equal(SDK.AuthRefreshResult.REFRESHED, 'refreshed');
+    assert.equal(SDK.AuthRefreshResult.EXPIRED, 'expired');
     assert.equal(HttpMethod.GET, 'GET');
     assert.equal(ResponseType.JSON, 'json');
     assert.equal('httpClient' in SDK, false);
     assert.equal('createHttpApi' in SDK, false);
     assert.equal('requestWithMetadata' in http, false);
-    const auth = createAuthSession({ getSessionEpoch: () => 1, getAccessToken: () => null });
+    const auth = createAuthSession({ getSessionEpoch: () => 1 });
     assert.notEqual(http.withAuth(auth), http);
     assert.equal(flattenEnvelopeResponse()({ code: 0, message: '', data: 7 }, { status: 200, headers: {} }), 7);
     assert.equal(new HttpClientError('失败', { kind: 'timeout' }).kind, 'timeout');

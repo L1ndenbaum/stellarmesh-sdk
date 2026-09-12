@@ -21,9 +21,13 @@ const patient = await requestCreatePatient({ name: '示例' });
 
 声明方法的第二个参数是默认配置，返回函数的第二个参数是本次调用配置，优先级为调用配置、声明配置、客户端配置、SDK 默认值。headers 按大小写不敏感名称合并；`signal` 只在调用阶段提供。无输入接口可写 `requestWorkspace()`，携带配置时写 `requestWorkspace(undefined, { signal })`。`withMetadata()` 派生的声明返回 `HttpResponse<TResponse>`；通用 `request<TInput, TResponse>(resolve, defaults)` 在调用时同步组装方法、URL、查询和请求体，不提供立即发送入口。
 
-`HttpMethod` 和 `ResponseType` 同时提供运行时常量与同名类型，例如 `HttpMethod.GET`、`ResponseType.JSON`、`ResponseType.ARRAYBUFFER`。它们使用 `as const` 对象及派生联合类型，原有字符串字面量和 `import type` 用法继续兼容。
+`HttpMethod`、`ResponseType` 和 `AuthRefreshResult` 同时提供运行时常量与同名类型，例如 `HttpMethod.GET`、`ResponseType.JSON`、`ResponseType.ARRAYBUFFER`。它们使用 `as const` 对象及派生联合类型，原有字符串字面量和 `import type` 用法继续兼容。
 
-`createAuthSession` 创建显式共享会话，`withAuth(auth)` 装配后，普通派生继续共享刷新状态；必需的 `getSessionEpoch` 配合项目条件保存与清理，防止旧请求跨账号恢复。刷新异常直接传播，只有明确失效或恢复重放仍失败才通知退出。`authRecovery: false` 可保留凭证注入并关闭认证恢复。
+`createAuthSession` 创建显式共享会话，`withAuth(auth)` 装配后，普通派生继续共享刷新状态。业务方通过 `getAuthHeaders({ epoch })` 提供 Bearer、自定义认证头或 CSRF 头；Cookie Session 可省略该回调。`shouldRefresh` 和 `refreshSession` 必须成对配置，不提供默认 401 判断，不完整组合在类型检查和运行时均被拒绝；未启用刷新时不能配置 `onUnauthorized`。
+
+刷新回调完成凭证保存后返回 `AuthRefreshResult.REFRESHED`，SDK 重新读取认证头并最多重放一次；确认不可恢复时返回 `AuthRefreshResult.EXPIRED`。刷新异常直接传播，不通知退出。必需的 `getSessionEpoch` 配合项目条件保存与清理，防止旧请求跨账号恢复。
+
+浏览器跨源 Cookie 在绑定中显式配置 `.withAuth(auth, { withCredentials: true })`，仅对可信来源生效；Node 不提供 Cookie 容器。`authRecovery: false` 保留凭证携带并关闭认证恢复，适用于登录和刷新接口；`auth: false` 关闭 SDK 认证行为，但不禁止浏览器默认同源 Cookie。SDK 不自动生成 XSRF 头，业务方需显式提供。旧 `getAccessToken` 和刷新返回 Token／`null` 的契约已移除。
 
 详细行为、鉴权与对象传输示例见仓库[前端 SDK 接入教程](../../docs/sdk/frontend/README.md)。打包制品不包含该仓库文档，可通过源码仓库查看。
 

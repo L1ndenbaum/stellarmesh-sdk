@@ -149,10 +149,17 @@ function createApi<TMetadata extends boolean>(
     },
     withAuth: (session, binding = {}) => {
       getAuthCoordinator(session);
+      if (
+        binding.withCredentials !== undefined &&
+        typeof binding.withCredentials !== 'boolean'
+      ) {
+        throw new TypeError('withCredentials 必须为布尔值');
+      }
       return derive({
         auth: {
           session,
           binding: {
+            withCredentials: binding.withCredentials ?? false,
             trustedOrigins: binding.trustedOrigins
               ? [...binding.trustedOrigins]
               : undefined,

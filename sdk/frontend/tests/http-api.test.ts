@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  AuthRefreshResult,
   createAuthSession,
   flattenEnvelopeResponse,
   http,
@@ -168,12 +169,16 @@ describe('声明式 HTTP 接口', () => {
   });
 
   it('动态请求在认证恢复和普通重试中只映射一次', async () => {
+    let accessToken = 'old';
     const seen: string[] = [];
     const origin = await serve((req, res) => {
       seen.push(req.url ?? '');
       json(res, true, seen.length === 1 ? 401 : seen.length === 2 ? 503 : 200);
     });
-    const refresh = vi.fn(async () => 'fresh');
+    const refresh = vi.fn(async () => {
+      accessToken = 'fresh';
+      return AuthRefreshResult.REFRESHED;
+    });
     const resolve = vi.fn((id: number) => ({
       method: HttpMethod.GET,
       url: `/items/${id}`,
@@ -184,7 +189,8 @@ describe('声明式 HTTP 接口', () => {
       .withAuth(
         createAuthSession({
           getSessionEpoch: () => 1,
-          getAccessToken: () => 'old',
+          getAuthHeaders: () => ({ Authorization: `Bearer ${accessToken}` }),
+          shouldRefresh: (error: HttpClientError) => error.status === 401,
           refreshSession: refresh,
         }),
       )
@@ -379,15 +385,16 @@ describe('声明式 HTTP 接口', () => {
     let epoch = 1;
     let token = 'account-a';
     const getSessionEpoch = vi.fn(() => epoch);
-    const getAccessToken = vi.fn(() => token);
+    const getAuthHeaders = vi.fn(() => ({ Authorization: `Bearer ${token}` }));
     const refreshSession = vi.fn(async () => {
       token = 'fresh';
-      return token;
+      return AuthRefreshResult.REFRESHED;
     });
     const api = http.withBaseURL(origin).withAuth(
       createAuthSession({
         getSessionEpoch,
-        getAccessToken,
+        getAuthHeaders,
+        shouldRefresh: (error: HttpClientError) => error.status === 401,
         refreshSession,
       }),
     );
@@ -402,7 +409,7 @@ describe('声明式 HTTP 接口', () => {
     });
     const manual = api.post<void, boolean>('/manual', { authRecovery: false });
     expect(getSessionEpoch).not.toHaveBeenCalled();
-    expect(getAccessToken).not.toHaveBeenCalled();
+    expect(getAuthHeaders).not.toHaveBeenCalled();
     epoch = 2;
     token = 'account-b';
     await workspace();
