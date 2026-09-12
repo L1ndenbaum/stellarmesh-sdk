@@ -6,7 +6,7 @@
 
 | 制品 | 当前已发布版本 | 说明 |
 | --- | --- | --- |
-| 前端 HTTP SDK | `sdk/frontend/v0.1.0` | `@stellarmesh/sdk@0.1.0`，ESM，MIT |
+| 前端 HTTP SDK | `sdk/frontend/v0.2.0` | `@stellarmesh/sdk@0.2.0`，ESM，MIT |
 | 父 Go SDK | `sdk/go/v0.5.0` | 标准库 HTTP 与环境配置基础能力 |
 | Go Object Storage | `sdk/go/objectstorage/v0.1.0` | namespace 绑定的对象存储能力 |
 | Go Gateway Core | `sdk/go/gateway/v0.3.1` | 通用 `slog` 访问日志，保留限流结果 |
@@ -20,11 +20,11 @@
 
 旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。历史拆分和兼容记录见[历史发布记录](releases/history.md)。
 
-## 前端 HTTP SDK `0.2.0` 发布准备
+## 前端 HTTP SDK `0.2.0` 正式发布
 
 源码及锁文件版本已提升至 `0.2.0`，新增根入口类型 `ErrorCodeExtractor` 与不可变派生方法 `withErrorCodeExtractor`。默认继续使用 `0.1.0` 的 `code` 提取和声明式 API；项目可独立提取额外错误码，真实 HTTP 状态仍保留在 `error.status`。空返回值清空错误码，提取器配置失败保留响应诊断并停止认证恢复与重试。
 
-本次不升级运行时依赖，不修改三字段 `ApiEnvelope<T>`，不定义业务错误码，也不增加会话刷新或通知机制。使用方式及兼容细节见[错误码提取](sdk/frontend/README.md#可配置错误码提取)。发布目标为官方 registry 的 `@stellarmesh/sdk@0.2.0`、公开访问和 `latest`；此节是发布准备，实际发布验收后再更新制品矩阵和摘要。
+本次不升级运行时依赖，不修改三字段 `ApiEnvelope<T>`，不定义业务错误码，也不增加会话刷新或通知机制。使用方式及兼容细节见[错误码提取](sdk/frontend/README.md#可配置错误码提取)。已于 2026-09-13 将 [`@stellarmesh/sdk@0.2.0`](https://www.npmjs.com/package/@stellarmesh/sdk/v/0.2.0) 发布至官方 npm registry，公开访问，`latest` 指向 `0.2.0`。
 
 2026-09-13 已验证并推送源码 commit `65ff52dddabc59d8c704603417af09fdce2337da`。本地 `make verify`、129 个前端测试、Chromium 实际 HTTP 与隔离 tarball 消费全部通过；`release:prepare -- sdk/frontend/v0.2.0` 生成并验证唯一制品 `stellarmesh-sdk-0.2.0.tgz`，摘要如下：
 
@@ -35,7 +35,11 @@ SHA-256: a9528fdfadae60d30f85c16eb902d19759571cb2cf7943a6109ae9098e691059
 
 对应源码的 [GitHub CI](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/34704294630) 中，前端 HTTP SDK、Go 模块、Python Logging、Python Storage 和 Shell 检查均通过。Storage 集成拉取 `minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e` 时返回 `pull access denied`，导致汇总检查失败。该失败位于既有 Storage 集成环境，不属于前端包的运行或构建依赖。
 
-当前发布因上述 CI 失败暂停，尚未上传 npm 或创建 `sdk/frontend/v0.2.0` tag；官方制品下载与空缓存公开安装验收尚未执行。发布须等待该检查恢复，或取得本次前端发布对该检查的明确豁免，不能将已准备制品视为正式发布。继续发布时使用上述已验证制品，不重新打包替换。
+本次发布已获得对上述既有 MinIO 镜像拉取失败的明确豁免，豁免仅适用于本次前端 npm 发布，不表示整条 CI 成功。上传使用准备阶段的同一份 tarball，未重新构建或替换制品。
+
+发布后已核对官方 registry 的版本、`latest` 与 SHA-512 integrity；匿名下载的公开 tarball 与本地 SHA-512／SHA-256 完全一致，并通过包根入口的 ESM、公开 TypeScript 类型和运行时消费验证。随后在全新临时项目中使用空 npm 缓存，按包名安装 `@stellarmesh/sdk@0.2.0`，验证安装摘要、新提取入口、声明式请求、metadata 泛型、同步回调类型限制和默认错误码兼容行为。
+
+验收后创建并推送 annotated 组件 tag [`sdk/frontend/v0.2.0`](https://github.com/L1ndenbaum/stellarmesh-sdk/releases/tag/sdk/frontend/v0.2.0)，指向上述发布源码 commit `65ff52dddabc59d8c704603417af09fdce2337da`。该 tag 与已经发布的 npm 版本保持不可变；后续修订使用新版本。本次未更新 KGraph 依赖、业务 Envelope 或部署。
 
 ## 前端 HTTP SDK 首次 npm 发布
 
