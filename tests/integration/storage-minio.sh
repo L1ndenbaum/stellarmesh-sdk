@@ -3,8 +3,9 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 PYTHON=${STELLARMESH_STORAGE_TEST_PYTHON:-python3}
-MINIO_IMAGE='minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e'
-MC_IMAGE='minio/mc@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3'
+# Quay 保留现有多架构 digest，切换镜像源不升级 MinIO 或 mc。
+MINIO_IMAGE='quay.io/minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e'
+MC_IMAGE='quay.io/minio/mc@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3'
 RUN_ID="$$"
 NETWORK="stellarmesh-storage-test-${RUN_ID}"
 MINIO_CONTAINER="stellarmesh-minio-${RUN_ID}"

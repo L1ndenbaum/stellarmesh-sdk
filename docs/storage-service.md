@@ -136,7 +136,7 @@ S3 权限错误统一对外返回无内部细节的 `503`，避免向客户端�
 
 ## 6. 验证
 
-仓库默认集成入口会创建临时 Docker network，使用固定 digest 的 MinIO 与 mc 建立测试 Bucket、项目用户和最小 Policy：
+仓库默认集成入口会创建临时 Docker network，从 `quay.io/minio/minio` 与 `quay.io/minio/mc` 匿名拉取固定 digest 的镜像，建立测试 Bucket、项目用户和最小 Policy。镜像源从 Docker Hub 切换到 Quay，保留 MinIO `RELEASE.2025-04-22T22-12-26Z` 与 mc `RELEASE.2025-04-16T18-13-26Z` 及原有多架构 digest；具体引用集中在 `tests/integration/storage-minio.sh`，不使用可变 `latest` 标签：
 
 ```sh
 make integration
