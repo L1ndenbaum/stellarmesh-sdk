@@ -1,11 +1,30 @@
 package gateway
 
 import (
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
 	"time"
 )
+
+// GatewayError 描述网关确定的 HTTP 错误语义。
+// Cause 只供内部诊断，响应器不得把它直接返回给客户端。
+type GatewayError struct {
+	Status     int
+	Code       string
+	Message    string
+	RetryAfter time.Duration
+	Cause      error
+}
+
+// ErrorResponder 把网关错误写入 HTTP 响应。
+type ErrorResponder interface {
+	Respond(http.ResponseWriter, *http.Request, GatewayError)
+}
+
+// ErrorResponderFunc 让函数直接实现 ErrorResponder。
+type ErrorResponderFunc func(http.ResponseWriter, *http.Request, GatewayError)
 
 const (
 	headerXRequestID = "X-Request-ID"
@@ -15,6 +34,26 @@ const (
 
 type protocolErrorResponder struct {
 	next ErrorResponder
+}
+
+type defaultErrorResponder struct{}
+
+type defaultHealthResponder struct{}
+
+// Respond 调用错误响应函数。
+func (responder ErrorResponderFunc) Respond(w http.ResponseWriter, r *http.Request, gatewayError GatewayError) {
+	responder(w, r, gatewayError)
+}
+
+// WithErrorResponder 使用项目定义的错误响应格式。
+func WithErrorResponder(responder ErrorResponder) Option {
+	return componentOption("error_responder", func(config *config) error {
+		if isNilInterface(responder) {
+			return errors.New("gateway error responder is nil")
+		}
+		config.errorResponder = responder
+		return nil
+	})
 }
 
 func (responder protocolErrorResponder) Respond(w http.ResponseWriter, r *http.Request, gatewayError GatewayError) {
@@ -48,13 +87,9 @@ func responseAlreadyStarted(w http.ResponseWriter) bool {
 	return ok && state.WroteHeader()
 }
 
-type defaultErrorResponder struct{}
-
 func (defaultErrorResponder) Respond(w http.ResponseWriter, _ *http.Request, gatewayError GatewayError) {
 	writePlainText(w, gatewayError.Status, gatewayError.Message)
 }
-
-type defaultHealthResponder struct{}
 
 func (defaultHealthResponder) RespondHealth(w http.ResponseWriter, _ *http.Request, _ HealthResult) {
 	writePlainText(w, http.StatusOK, "ok")

@@ -38,14 +38,6 @@ func WithSlogAccessLogger(slogConfig SlogAccessLoggerConfig) Option {
 	})
 }
 
-// WithoutAccessLog 显式关闭默认启用的访问日志。
-func WithoutAccessLog() Option {
-	return componentOption("access_logger", func(config *config) error {
-		config.accessLogDisabled = true
-		return nil
-	})
-}
-
 func (logger *slogAccessLogger) Log(ctx context.Context, accessLog AccessLog) error {
 	target := logger.logger
 	if target == nil {

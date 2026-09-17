@@ -8,6 +8,49 @@ import (
 	"time"
 )
 
+// ReadinessChecker 检查网关当前是否可以可靠接收流量。
+type ReadinessChecker interface {
+	Check(context.Context) error
+}
+
+// ReadinessCheckerFunc 让函数直接实现 ReadinessChecker。
+type ReadinessCheckerFunc func(context.Context) error
+
+// HealthConfig 配置网关本地存活和就绪端点。
+type HealthConfig struct {
+	Service       string
+	LivePath      string
+	ReadyPath     string
+	CheckTimeout  time.Duration
+	Readiness     ReadinessChecker
+	LogSuccessful bool
+	Responder     HealthResponder
+}
+
+// HealthKind 标识通过检查的健康端点类型。
+type HealthKind string
+
+const (
+	// HealthKindLive 表示进程存活检查。
+	HealthKindLive HealthKind = "live"
+	// HealthKindReady 表示流量就绪检查。
+	HealthKindReady HealthKind = "ready"
+)
+
+// HealthResult 描述已经通过检查的健康端点。
+type HealthResult struct {
+	Kind    HealthKind
+	Service string
+}
+
+// HealthResponder 编码健康检查成功响应；失败响应仍由 ErrorResponder 处理。
+type HealthResponder interface {
+	RespondHealth(http.ResponseWriter, *http.Request, HealthResult)
+}
+
+// HealthResponderFunc 让函数直接实现 HealthResponder。
+type HealthResponderFunc func(http.ResponseWriter, *http.Request, HealthResult)
+
 const defaultReadinessTimeout = 2 * time.Second
 
 type healthPolicy struct {
@@ -18,6 +61,25 @@ type healthPolicy struct {
 	readiness     ReadinessChecker
 	logSuccessful bool
 	responder     HealthResponder
+}
+
+// Check 调用就绪检查函数。
+func (checker ReadinessCheckerFunc) Check(ctx context.Context) error {
+	return checker(ctx)
+}
+
+// RespondHealth 调用健康响应函数。
+func (responder HealthResponderFunc) RespondHealth(w http.ResponseWriter, r *http.Request, result HealthResult) {
+	responder(w, r, result)
+}
+
+// WithHealth 启用网关本地存活和就绪端点。
+func WithHealth(health HealthConfig) Option {
+	return componentOption("health", func(config *config) error {
+		copied := health
+		config.health = &copied
+		return nil
+	})
 }
 
 func newHealthPolicy(config *HealthConfig) (*healthPolicy, error) {

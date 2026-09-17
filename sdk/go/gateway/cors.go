@@ -10,7 +10,17 @@ import (
 	"time"
 )
 
+// CORSConfig 控制网关拥有的浏览器跨域策略。
+type CORSConfig struct {
+	AllowedOrigins   []string
+	AllowedMethods   []string
+	AllowedHeaders   []string
+	AllowCredentials bool
+	MaxAge           time.Duration
+}
+
 var defaultCORSMethods = []string{"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"}
+
 var defaultCORSHeaders = []string{"Authorization", "Content-Type", "X-Request-ID"}
 
 type corsPolicy struct {
@@ -23,6 +33,18 @@ type corsPolicy struct {
 	headersValue     string
 	credentials      bool
 	maxAge           time.Duration
+}
+
+// WithCORS 启用显式的浏览器跨域策略。
+func WithCORS(cors CORSConfig) Option {
+	return componentOption("cors", func(config *config) error {
+		copied := cors
+		copied.AllowedOrigins = append([]string(nil), cors.AllowedOrigins...)
+		copied.AllowedMethods = append([]string(nil), cors.AllowedMethods...)
+		copied.AllowedHeaders = append([]string(nil), cors.AllowedHeaders...)
+		config.cors = &copied
+		return nil
+	})
 }
 
 func newCORSPolicy(config *CORSConfig) (*corsPolicy, error) {

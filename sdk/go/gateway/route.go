@@ -8,6 +8,40 @@ import (
 	"strings"
 )
 
+// AccessMode 描述路由是否需要认证身份。
+type AccessMode uint8
+
+const (
+	// AccessProtected 是路由的安全默认值，要求请求通过认证。
+	AccessProtected AccessMode = iota
+	// AccessPublic 显式声明不需要认证的公开路由。
+	AccessPublic
+)
+
+// RouteMatch 描述一个静态路由的匹配条件。
+type RouteMatch struct {
+	Methods    []string
+	ExactPath  string
+	PathPrefix string
+}
+
+// Route 描述请求的稳定路由结果。
+type Route struct {
+	Name         string
+	Match        RouteMatch
+	Upstream     string
+	Access       AccessMode
+	MaxBodyBytes int64
+}
+
+// RouteResolver 把请求解析为一个项目声明的路由。
+type RouteResolver interface {
+	Resolve(*http.Request) (Route, bool, error)
+}
+
+// RouteResolverFunc 让函数直接实现 RouteResolver。
+type RouteResolverFunc func(*http.Request) (Route, bool, error)
+
 type staticRouteResolver struct {
 	exact    []compiledRoute
 	prefixes []compiledRoute
@@ -16,6 +50,30 @@ type staticRouteResolver struct {
 type compiledRoute struct {
 	route   Route
 	methods map[string]struct{}
+}
+
+// Resolve 调用路由解析函数。
+func (resolver RouteResolverFunc) Resolve(r *http.Request) (Route, bool, error) {
+	return resolver(r)
+}
+
+// WithRoutes 使用经过启动校验的静态路由表。
+func WithRoutes(routes ...Route) Option {
+	return componentOption("routes", func(config *config) error {
+		config.staticRoutes = append([]Route(nil), routes...)
+		return nil
+	})
+}
+
+// WithRouteResolver 使用项目提供的动态路由解析器。
+func WithRouteResolver(resolver RouteResolver) Option {
+	return componentOption("route_resolver", func(config *config) error {
+		if isNilInterface(resolver) {
+			return errors.New("gateway route resolver is nil")
+		}
+		config.routeResolver = resolver
+		return nil
+	})
 }
 
 func newStaticRouteResolver(routes []Route) (*staticRouteResolver, error) {

@@ -12,8 +12,57 @@ import (
 	"time"
 )
 
+// Upstream 描述一个在网关启动阶段解析的固定上游。
+type Upstream struct {
+	Name string
+	URL  string
+}
+
+// UpstreamResolver 在写响应前为路由返回已经构造好的代理处理器。
+type UpstreamResolver interface {
+	ResolveUpstream(Route) (http.Handler, error)
+}
+
+// UpstreamResolverFunc 让函数直接实现 UpstreamResolver。
+type UpstreamResolverFunc func(Route) (http.Handler, error)
+
 type reverseProxyResolver struct {
 	proxies map[string]http.Handler
+}
+
+// ResolveUpstream 调用上游解析函数。
+func (resolver UpstreamResolverFunc) ResolveUpstream(route Route) (http.Handler, error) {
+	return resolver(route)
+}
+
+// WithUpstreamResolver 使用项目提供的上游处理器解析器。
+func WithUpstreamResolver(resolver UpstreamResolver) Option {
+	return componentOption("upstream_resolver", func(config *config) error {
+		if isNilInterface(resolver) {
+			return errors.New("gateway upstream resolver is nil")
+		}
+		config.upstreamResolver = resolver
+		return nil
+	})
+}
+
+// WithUpstreams 使用启动时编译的固定上游地址。
+func WithUpstreams(upstreams ...Upstream) Option {
+	return componentOption("upstreams", func(config *config) error {
+		config.upstreamSpecs = append([]Upstream(nil), upstreams...)
+		return nil
+	})
+}
+
+// WithTransport 覆盖内置反向代理的共享 HTTP Transport。
+func WithTransport(transport http.RoundTripper) Option {
+	return componentOption("transport", func(config *config) error {
+		if isNilInterface(transport) {
+			return errors.New("gateway transport is nil")
+		}
+		config.transport = transport
+		return nil
+	})
 }
 
 func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, responder ErrorResponder) (*reverseProxyResolver, error) {

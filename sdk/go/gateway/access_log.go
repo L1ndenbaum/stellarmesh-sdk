@@ -5,15 +5,64 @@ import (
 	"errors"
 	"maps"
 	"net/http"
-	"reflect"
 	"time"
 )
+
+// AccessLog 是不包含查询参数或凭据的网关访问记录。
+type AccessLog struct {
+	Timestamp       time.Time
+	RequestID       string
+	Method          string
+	Path            string
+	Route           string
+	ClientIP        string
+	AuthResult      string
+	UserID          string
+	Roles           []string
+	Upstream        string
+	Status          int
+	Elapsed         time.Duration
+	ErrorCode       string
+	RateLimitResult map[RateLimitScope]string
+}
+
+// AccessLogger 接收请求完成后的规范访问记录。
+type AccessLogger interface {
+	Log(context.Context, AccessLog) error
+}
+
+// AccessLoggerFunc 让函数直接实现 AccessLogger。
+type AccessLoggerFunc func(context.Context, AccessLog) error
 
 type accessLogState struct {
 	AccessLog
 	StartedAt        time.Time
 	FailureComponent string
 	SkipSuccessful   bool
+}
+
+// Log 调用访问日志函数。
+func (logger AccessLoggerFunc) Log(ctx context.Context, accessLog AccessLog) error {
+	return logger(ctx, accessLog)
+}
+
+// WithAccessLogger 启用请求完成后的旁路访问日志。
+func WithAccessLogger(logger AccessLogger) Option {
+	return componentOption("access_logger", func(config *config) error {
+		if isNilInterface(logger) {
+			return errors.New("gateway access logger is nil")
+		}
+		config.accessLogger = logger
+		return nil
+	})
+}
+
+// WithoutAccessLog 显式关闭默认启用的访问日志。
+func WithoutAccessLog() Option {
+	return componentOption("access_logger", func(config *config) error {
+		config.accessLogDisabled = true
+		return nil
+	})
 }
 
 func newAccessLogState(r *http.Request) *accessLogState {
@@ -130,18 +179,5 @@ func defaultErrorCode(status int) string {
 		return "upstream_error"
 	default:
 		return ""
-	}
-}
-
-func isNilInterface(value any) bool {
-	if value == nil {
-		return true
-	}
-	reflected := reflect.ValueOf(value)
-	switch reflected.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return reflected.IsNil()
-	default:
-		return false
 	}
 }

@@ -8,8 +8,21 @@ import (
 	"strings"
 )
 
+// ClientIPResolver 解析经过信任边界约束的客户端地址。
+type ClientIPResolver interface {
+	Resolve(*http.Request) (string, error)
+}
+
+// ClientIPResolverFunc 让函数直接实现 ClientIPResolver。
+type ClientIPResolverFunc func(*http.Request) (string, error)
+
 type trustedProxyResolver struct {
 	prefixes []netip.Prefix
+}
+
+// Resolve 调用客户端地址解析函数。
+func (resolver ClientIPResolverFunc) Resolve(r *http.Request) (string, error) {
+	return resolver(r)
 }
 
 // WithTrustedProxies 只在直接对端命中声明的 CIDR 时信任转发头。
@@ -27,6 +40,17 @@ func WithTrustedProxies(cidrs ...string) Option {
 			prefixes = append(prefixes, prefix.Masked())
 		}
 		config.clientIPResolver = &trustedProxyResolver{prefixes: prefixes}
+		return nil
+	})
+}
+
+// WithClientIPResolver 覆盖默认仅信任 RemoteAddr 的客户端地址解析器。
+func WithClientIPResolver(resolver ClientIPResolver) Option {
+	return componentOption("client_ip_resolver", func(config *config) error {
+		if isNilInterface(resolver) {
+			return errors.New("gateway client IP resolver is nil")
+		}
+		config.clientIPResolver = resolver
 		return nil
 	})
 }
