@@ -356,3 +356,11 @@ gateway.WithoutAccessLog()
 认证错误码统一为 `missing_credential`、`invalid_credential`，替代 `missing_bearer_token`、`invalid_bearer_token`；访问日志对应使用 `missing_credential`、`invalid_credential`。缺失与无效凭证返回 `401`，提取器故障返回 `503 credential_extraction_failed`，认证器故障仍返回 `503 authentication_failed`。错误与日志不包含凭证内容。
 
 `WithAuthenticator` 改为变参函数后，原有普通调用保持有效；若将函数本身赋给固定签名的函数变量，需要同步更新变量签名或加一层闭包。显式传入空提取器或多个提取器会在构造时被拒绝。
+
+## Redis Session 初版
+
+主干新增 `gateway/sessionauth`（尚未发布），与 `jwtauth` 并列。`NewStore(StoreConfig)` 接收 Redis Client、项目 `ProjectScope`、可选 `KeySeparator` 和 `MaxSessionsPerUser`；提供 `Create`、`Lookup`、`Renew`、`Revoke`、`ListByUser`、`RevokeByUser`。`NewAuthenticator(store)` 接入 `WithAuthenticator`，Cookie 来源通过 `CookieCredential(name)` 显式装配。
+
+会话默认按项目使用 `project:session:sessionID` 和 `project:user_sessions:userID`；`KeyBuilder.SessionKey`、`KeyBuilder.UserSessionsKey` 统一拼接和转义。默认每用户最多 10 个有效会话，创建第 11 个时淘汰最早创建的会话；续期不改变创建顺序。TTL 必须至少 1 毫秒，精度为毫秒；Redis 服务端时间决定过期，认证不自动续期。按用户全部撤销后允许重新登录，也不强制中断已在执行的请求或长连接。
+
+该包依赖 Redis 和现有 `go-redis/v9`，只支持单实例或 Sentinel，不支持 Redis Cluster。Redis 安装、部署、Client 创建和关闭由业务方负责；SDK 不接管登录校验、Cookie 设置、CSRF 或管理端权限。会话与索引只能通过 Store 修改；同一项目应统一 scope、分隔符和会话上限。Session ID 是秘密凭证，不应输出到日志或未经授权的列表接口。身份 Attributes 必须可 JSON 编码，Go 读取后的数字为 `float64`，不保留自定义 Go 类型。
