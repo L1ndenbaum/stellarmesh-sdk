@@ -6,6 +6,7 @@
 - [Go 父 SDK](go/README.md)：标准库 HTTP 与环境配置能力；
 - [Go 对象存储 SDK](go/object-storage.md)：namespace绑定的进程内对象存储；
 - [Go Gateway SDK](go/gateway.md)：声明式、fail-close网关与标准 `slog` 访问日志；
+- [Redis Session 认证](go/sessionauth.md)：网关 Cookie 认证与 Redis 会话管理，主干新增、尚未发布；
 - [Go Logging SDK](go/logging.md)：零第三方依赖的 `slog.Handler` 安全装饰器；
 - [Go Kafka SDK](go/kafka.md)：Kafka连接、Publisher与Topic检查；
 - [Python Logging SDK](python/README.md)：标准库 `logging` 的安全 JSON／Pretty Formatter；

@@ -13,7 +13,7 @@
 | `sdk/frontend/` | Axios HTTP、信封处理、鉴权刷新、重试与对象传输 | `@stellarmesh/sdk`（MIT），ESM，npm `0.1.0` 已发布 |
 | `sdk/go/` | 环境配置、JSON请求解码与HTTP server基础能力 | Go Module |
 | `sdk/go/objectstorage/` | namespace绑定的对象模型与S3适配器 | 独立Go Module |
-| `sdk/go/gateway/` | 声明式Gateway、JWT、Redis限流与通用`slog`访问日志 | 独立Go Module |
+| `sdk/go/gateway/` | 声明式Gateway、JWT、Redis Session（主干新增）、Redis限流与通用`slog`访问日志 | 独立Go Module |
 | `sdk/go/logging/` | `slog.Handler`安全装饰器 | 独立Go Module |
 | `sdk/go/mq/kafka/` | Kafka连接、Publisher、Topic检查和TLS/SASL | 独立Go Module |
 | `sdk/python/logging/` | Python 标准库安全 JSON／Pretty Formatter | `stellarmesh-logging` |

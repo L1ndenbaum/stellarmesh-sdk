@@ -32,6 +32,9 @@ jobs:
       - name: 运行格式、静态、单元、竞态与隔离消费检查
         run: make go-check go-test go-race go-module-consumer
 
+      - name: 验证真实 Redis Session 会话与并发
+        run: make integration-session
+
   frontend:
     name: 前端 HTTP SDK
     runs-on: ubuntu-24.04

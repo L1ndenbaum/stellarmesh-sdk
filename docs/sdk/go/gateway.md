@@ -322,11 +322,12 @@ gateway.WithoutAccessLog()
 | `client_ip.go`、`request_id.go`、`cors.go` | 可信客户端地址、请求 ID 和跨域策略 |
 | `health.go`、`response.go` | 健康检查、健康成功响应和错误响应协议 |
 | `access_log.go`、`slog_access_log.go`、`observer.go` | 访问日志生命周期、标准库日志实现和观测事件 |
+| `credential.go` | Cookie、Bearer 和自定义凭证提取 |
 | `context.go` | 内部上下文键；公开上下文读取函数归入各自功能文件 |
 | `http_token.go`、`response_recorder.go` | HTTP token 校验和响应状态记录 |
 | `doc.go` | 包说明与维护约定 |
 
-`jwtauth/` 和 `redislimit/` 保持独立适配器包，通过根包接口接入。请求的安全阶段顺序统一由 `ServeHTTP` 维护，不由文件顺序或装配选项顺序决定。
+`jwtauth/`、`sessionauth/` 和 `redislimit/` 保持独立适配器包，通过根包接口接入。请求的安全阶段顺序统一由 `ServeHTTP` 维护，不由文件顺序或装配选项顺序决定。
 
 功能测试放在对应的 `*_test.go`；`gateway_test.go` 验证跨阶段流程，`options_test.go` 验证装配约束，`test_helpers_test.go` 只承载跨文件共用的测试构造辅助函数。跨功能测试按主要断言归档，避免复制测试或为了文件位置增加测试。
 
@@ -364,3 +365,5 @@ gateway.WithoutAccessLog()
 会话默认按项目使用 `project:session:sessionID` 和 `project:user_sessions:userID`；`KeyBuilder.SessionKey`、`KeyBuilder.UserSessionsKey` 统一拼接和转义。默认每用户最多 10 个有效会话，创建第 11 个时淘汰最早创建的会话；续期不改变创建顺序。TTL 必须至少 1 毫秒，精度为毫秒；Redis 服务端时间决定过期，认证不自动续期。按用户全部撤销后允许重新登录，也不强制中断已在执行的请求或长连接。
 
 该包依赖 Redis 和现有 `go-redis/v9`，只支持单实例或 Sentinel，不支持 Redis Cluster。Redis 安装、部署、Client 创建和关闭由业务方负责；SDK 不接管登录校验、Cookie 设置、CSRF 或管理端权限。会话与索引只能通过 Store 修改；同一项目应统一 scope、分隔符和会话上限。Session ID 是秘密凭证，不应输出到日志或未经授权的列表接口。身份 Attributes 必须可 JSON 编码，Go 读取后的数字为 `float64`，不保留自定义 Go 类型。
+
+完整的 Cookie 登录、续期、退出、用户反查与踢下线示例见 [Redis Session 接入教程](sessionauth.md)。

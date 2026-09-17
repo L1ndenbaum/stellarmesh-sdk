@@ -6,10 +6,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/jwtauth"
 	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/redislimit"
+	"github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway/sessionauth"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -20,6 +22,49 @@ func (scriptRunner) Eval(ctx context.Context, _ string, _ []string, _ ...interfa
 }
 
 func main() {
+	sessions, err := sessionauth.NewStore(sessionauth.StoreConfig{Client: scriptRunner{}, ProjectScope: "consumer"})
+	if err != nil {
+		panic(err)
+	}
+	sessionAuthenticator, err := sessionauth.NewAuthenticator(sessions)
+	if err != nil {
+		panic(err)
+	}
+	cookie, err := gateway.CookieCredential("sid")
+	if err != nil {
+		panic(err)
+	}
+	keys, err := sessionauth.NewKeyBuilder(sessionauth.KeyConfig{})
+	if err != nil {
+		panic(err)
+	}
+	if key, err := keys.SessionKey("consumer", "example"); err != nil || key != "consumer:session:example" {
+		panic("session key contract")
+	}
+	if key, err := keys.UserSessionsKey("consumer", "user"); err != nil || key != "consumer:user_sessions:user" {
+		panic("session user index contract")
+	}
+	sessionHandler, err := gateway.New(
+		gateway.WithRoutes(gateway.Route{Name: "session", Match: gateway.RouteMatch{ExactPath: "/"}, Upstream: "backend"}),
+		gateway.WithUpstreams(gateway.Upstream{Name: "backend", URL: "http://127.0.0.1:8080"}),
+		gateway.WithAuthenticator(sessionAuthenticator, cookie),
+	)
+	if err != nil {
+		panic(err)
+	}
+	var _ http.Handler = sessionHandler
+	var _ sessionauth.SessionReader = sessions
+	var _ gateway.Authenticator = sessionAuthenticator
+	var _ gateway.CredentialExtractor = gateway.BearerCredential()
+	var _ func(context.Context, sessionauth.CreateOptions) (sessionauth.Session, error) = sessions.Create
+	var _ func(context.Context, string, time.Duration) (sessionauth.Session, bool, error) = sessions.Renew
+	var _ func(context.Context, string) error = sessions.Revoke
+	var _ func(context.Context, string) ([]sessionauth.Session, error) = sessions.ListByUser
+	var _ func(context.Context, string) error = sessions.RevokeByUser
+	var _ error = sessionauth.ErrCorruptSession
+	var _ error = sessionauth.ErrSessionCollision
+	var _ error = gateway.ErrInvalidCredential
+
 	defaultHandler, err := gateway.New(
 		gateway.WithRoutes(gateway.Route{
 			Name: "default", Match: gateway.RouteMatch{ExactPath: "/default"},

@@ -22,7 +22,7 @@ export GOMODCACHE ?= $(ROOT)/.cache/go-mod
 	python-storage-check python-storage-test shell-check go-module-consumer \
 	image-storage images integration-storage integration integration-aws \
 	frontend-bootstrap frontend-browser-bootstrap frontend-format frontend-check \
-	frontend-build frontend-test frontend-browser-test frontend-consumer frontend-verify
+	frontend-build frontend-test frontend-browser-test frontend-consumer frontend-verify integration-session
 
 bootstrap: python-logging-bootstrap python-storage-bootstrap frontend-bootstrap frontend-browser-bootstrap
 
@@ -90,6 +90,7 @@ python-storage-check: python-storage-bootstrap
 
 shell-check:
 	sh -n tests/integration/storage-minio.sh
+	sh -n tests/integration/gateway-session-redis.sh
 	sh -n tests/go-module-consumer.sh
 	git diff --check
 
@@ -124,7 +125,10 @@ images: image-storage
 integration-storage: python-storage-bootstrap image-storage
 	STELLARMESH_STORAGE_TEST_PYTHON=$(ROOT)/$(PYTHON_STORAGE_DIR)/.venv/bin/python ./tests/integration/storage-minio.sh
 
-integration: integration-storage
+integration-session:
+	./tests/integration/gateway-session-redis.sh
+
+integration: integration-storage integration-session
 
 integration-aws:
 	STELLARMESH_STORAGE_AWS_INTEGRATION=1 go test ./sdk/go/objectstorage/s3store -run '^TestAWSManualIntegration$$' -count=1
