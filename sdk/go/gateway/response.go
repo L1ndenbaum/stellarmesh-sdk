@@ -26,19 +26,11 @@ type ErrorResponder interface {
 // ErrorResponderFunc 让函数直接实现 ErrorResponder。
 type ErrorResponderFunc func(http.ResponseWriter, *http.Request, GatewayError)
 
-const (
-	headerXRequestID = "X-Request-ID"
-	headerXUserID    = "X-User-ID"
-	headerXUserRoles = "X-User-Roles"
-)
-
 type protocolErrorResponder struct {
 	next ErrorResponder
 }
 
 type defaultErrorResponder struct{}
-
-type defaultHealthResponder struct{}
 
 // Respond 调用错误响应函数。
 func (responder ErrorResponderFunc) Respond(w http.ResponseWriter, r *http.Request, gatewayError GatewayError) {
@@ -91,13 +83,18 @@ func (defaultErrorResponder) Respond(w http.ResponseWriter, _ *http.Request, gat
 	writePlainText(w, gatewayError.Status, gatewayError.Message)
 }
 
-func (defaultHealthResponder) RespondHealth(w http.ResponseWriter, _ *http.Request, _ HealthResult) {
-	writePlainText(w, http.StatusOK, "ok")
-}
-
 func writePlainText(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
 	_, _ = io.WriteString(w, message+"\n")
+}
+
+func (gateway *Gateway) fail(w http.ResponseWriter, r *http.Request, gatewayError GatewayError) {
+	recordGatewayError(r, gatewayError)
+	gateway.errorResponder.Respond(w, r, gatewayError)
+}
+
+func unavailableError(code string, cause error) GatewayError {
+	return GatewayError{Status: http.StatusServiceUnavailable, Code: code, Message: "service unavailable", Cause: cause}
 }

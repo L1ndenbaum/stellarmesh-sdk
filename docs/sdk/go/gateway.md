@@ -307,6 +307,29 @@ gateway.WithoutAccessLog()
 6. 访问日志失败不会改变上游已经产生的状态码；
 7. `/health/ready` 能反映项目声明的关键依赖状态。
 
+## 源码组织与维护
+
+网关根目录保持同一个 `package gateway`，公开导入路径和调用方式不因文件归档改变。每项能力的类型、接口、函数适配器、`WithXxx` 装配选项和实现就近放置；新增扩展点时优先扩充所属功能文件，不重新引入集中式 `types.go`、`interfaces.go` 或独立契约子包。
+
+下表路径均相对于 `sdk/go/gateway/`：
+
+| 文件 | 职责 |
+|---|---|
+| `gateway.go` | 网关构造、固定安全顺序的请求流水线和流水线级 panic 恢复 |
+| `options.go` | 装配基础设施、内部配置、重复配置和空值检查 |
+| `route.go`、`proxy.go` | 路由声明与匹配、上游解析与反向代理 |
+| `authentication.go`、`policy.go`、`rate_limit.go` | 身份认证与注入、授权及转发前策略、三类限流 |
+| `client_ip.go`、`request_id.go`、`cors.go` | 可信客户端地址、请求 ID 和跨域策略 |
+| `health.go`、`response.go` | 健康检查、健康成功响应和错误响应协议 |
+| `access_log.go`、`slog_access_log.go`、`observer.go` | 访问日志生命周期、标准库日志实现和观测事件 |
+| `context.go` | 内部上下文键；公开上下文读取函数归入各自功能文件 |
+| `http_token.go`、`response_recorder.go` | HTTP token 校验和响应状态记录 |
+| `doc.go` | 包说明与维护约定 |
+
+`jwtauth/` 和 `redislimit/` 保持独立适配器包，通过根包接口接入。请求的安全阶段顺序统一由 `ServeHTTP` 维护，不由文件顺序或装配选项顺序决定。
+
+功能测试放在对应的 `*_test.go`；`gateway_test.go` 验证跨阶段流程，`options_test.go` 验证装配约束，`test_helpers_test.go` 只承载跨文件共用的测试构造辅助函数。跨功能测试按主要断言归档，避免复制测试或为了文件位置增加测试。
+
 ## 从 `v0.1.0` 升级到 `v0.2.0`
 
 `v0.1.0` 默认返回带 `code`、`message`、`data`、`timestamp` 和 `error_reason` 的 Stellarmesh JSON envelope；`v0.2.0` 改为协议中立的纯文本。升级前应检查调用方、探针和前端是否解析默认错误正文或健康响应。需要保留原结构时，先在项目仓库实现上面的两个响应器并完成契约测试，再升级 Module。已经显式配置 `WithErrorResponder` 的项目继续保留自己的错误正文，并会在响应器执行前获得 SDK 设置的 `Retry-After`。

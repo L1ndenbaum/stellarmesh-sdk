@@ -48,3 +48,13 @@ func WithObserver(observer Observer) Option {
 		return nil
 	})
 }
+
+func (gateway *Gateway) safeObserve(ctx context.Context, observation Observation) {
+	if gateway.observer == nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	gateway.observer.Observe(ctx, observation)
+}

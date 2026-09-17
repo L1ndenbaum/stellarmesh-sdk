@@ -147,3 +147,16 @@ func defaultProxyTransport() *http.Transport {
 		ExpectContinueTimeout: time.Second,
 	}
 }
+
+func validateStaticUpstreams(routes []Route, resolver UpstreamResolver) error {
+	for _, route := range routes {
+		compiled, err := compileRoute(route)
+		if err != nil {
+			return err
+		}
+		if _, err := resolver.ResolveUpstream(compiled.route); err != nil {
+			return errors.New("invalid upstream for route " + route.Name + ": " + err.Error())
+		}
+	}
+	return nil
+}

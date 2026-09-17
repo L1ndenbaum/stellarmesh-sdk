@@ -3,12 +3,12 @@ package gateway
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestGatewayRunsSecurityStagesInFixedOrder(t *testing.T) {
@@ -84,37 +84,6 @@ func TestGatewayFailsClosedWhenLimiterFails(t *testing.T) {
 	}
 }
 
-func TestGatewayRejectsProtectedRoutesWithoutAuthenticatorAtConstruction(t *testing.T) {
-	_, err := New(
-		WithRoutes(Route{Name: "protected", Match: RouteMatch{ExactPath: "/private"}, Upstream: "backend"}),
-		withTestUpstreams(map[string]http.Handler{"backend": http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}),
-	)
-	if err == nil || !strings.Contains(err.Error(), "authenticator") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestGatewayDynamicProtectedRouteWithoutAuthenticatorFailsClosed(t *testing.T) {
-	gateway, err := New(
-		WithRouteResolver(RouteResolverFunc(func(*http.Request) (Route, bool, error) {
-			return Route{Name: "dynamic", Upstream: "backend", Access: AccessProtected}, true, nil
-		})),
-		withTestUpstreams(map[string]http.Handler{"backend": http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-			t.Fatal("request reached upstream")
-		})}),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "http://gateway/dynamic", nil)
-	request.Header.Set("Authorization", "Bearer token")
-	gateway.ServeHTTP(response, request)
-	if response.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d", response.Code)
-	}
-}
-
 func TestGatewayRejectsInvalidDynamicRouteBeforeProxying(t *testing.T) {
 	proxied := false
 	gateway, err := New(
@@ -135,89 +104,73 @@ func TestGatewayRejectsInvalidDynamicRouteBeforeProxying(t *testing.T) {
 	}
 }
 
-func TestStaticRoutesPreferExactThenLongestPrefix(t *testing.T) {
-	resolver, err := newStaticRouteResolver([]Route{
-		{Name: "root", Match: RouteMatch{PathPrefix: "/api/"}, Upstream: "root", Access: AccessPublic},
-		{Name: "nested", Match: RouteMatch{PathPrefix: "/api/v1/"}, Upstream: "nested", Access: AccessPublic},
-		{Name: "exact", Match: RouteMatch{ExactPath: "/api/v1/items"}, Upstream: "exact", Access: AccessPublic},
-	})
+func TestComponentPanicReturns500AndProducesAccessLog(t *testing.T) {
+	accessLogs := make([]AccessLog, 0, 1)
+	gateway, err := New(
+		WithRouteResolver(RouteResolverFunc(func(*http.Request) (Route, bool, error) {
+			panic("route resolver failed")
+		})),
+		WithAccessLogger(AccessLoggerFunc(func(_ context.Context, accessLog AccessLog) error {
+			accessLogs = append(accessLogs, accessLog)
+			return nil
+		})),
+		withTestUpstreams(map[string]http.Handler{"backend": http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for path, want := range map[string]string{
-		"/api/v1/items": "exact",
-		"/api/v1/other": "nested",
-		"/api/v2/items": "root",
-	} {
-		route, found, resolveErr := resolver.Resolve(httptest.NewRequest(http.MethodGet, path, nil))
-		if resolveErr != nil || !found || route.Name != want {
-			t.Fatalf("Resolve(%q) = %#v, %v, %v; want %q", path, route, found, resolveErr, want)
-		}
-	}
-}
-
-func TestGatewayRejectsDuplicateOptions(t *testing.T) {
-	_, err := New(
-		WithRoutes(publicRoute()),
-		withTestUpstreams(map[string]http.Handler{"backend": http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})}),
-		WithAuthorizer(AuthorizerFunc(func(context.Context, *http.Request, RequestContext) (PolicyDecision, error) {
-			return PolicyDecision{Allowed: true}, nil
-		})),
-		WithAuthorizer(AuthorizerFunc(func(context.Context, *http.Request, RequestContext) (PolicyDecision, error) {
-			return PolicyDecision{Allowed: true}, nil
-		})),
-	)
-	if err == nil || !strings.Contains(err.Error(), "duplicate") {
-		t.Fatalf("error = %v", err)
-	}
-}
-
-func TestGatewayReturnsRateLimitRetryAfter(t *testing.T) {
-	gateway := mustGateway(t,
-		WithClientIPRateLimiter(RateLimiterFunc(func(context.Context, RateLimitRequest) (RateLimitDecision, error) {
-			return RateLimitDecision{Allowed: false, RetryAfter: 1500 * time.Millisecond}, nil
-		})),
-	)
 	response := httptest.NewRecorder()
 	gateway.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://gateway/public", nil))
-	if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "2" {
-		t.Fatalf("status = %d, Retry-After = %q", response.Code, response.Header().Get("Retry-After"))
+	if response.Code != http.StatusInternalServerError || len(accessLogs) != 1 {
+		t.Fatalf("status = %d, access logs = %d", response.Code, len(accessLogs))
+	}
+	if accessLogs[0].ErrorCode != "gateway_panic" {
+		t.Fatalf("access log = %#v", accessLogs[0])
 	}
 }
 
-func recordingLimiter(name string, appendStage func(string)) RateLimiter {
-	return RateLimiterFunc(func(context.Context, RateLimitRequest) (RateLimitDecision, error) {
-		appendStage(name)
-		return RateLimitDecision{Allowed: true}, nil
-	})
-}
-
-func mustGateway(t *testing.T, options ...Option) *Gateway {
-	t.Helper()
-	base := []Option{
-		WithRoutes(publicRoute()),
-		withTestUpstreams(map[string]http.Handler{"backend": http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusNoContent)
-		})}),
-	}
-	base = append(base, options...)
-	gateway, err := New(base...)
+func TestChunkedRequestAboveRouteLimitReturns413(t *testing.T) {
+	route := publicRoute()
+	route.MaxBodyBytes = 4
+	gateway, err := New(
+		WithRoutes(route),
+		WithUpstreams(Upstream{Name: "backend", URL: "http://backend.internal"}),
+		WithTransport(roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			_, readErr := io.ReadAll(r.Body)
+			return nil, readErr
+		})),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return gateway
+	request := httptest.NewRequest(http.MethodPost, "http://gateway/public", strings.NewReader("too large"))
+	request.ContentLength = -1
+	response := httptest.NewRecorder()
+	gateway.ServeHTTP(response, request)
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
 }
 
-func publicRoute() Route {
-	return Route{Name: "public", Match: RouteMatch{ExactPath: "/public"}, Upstream: "backend", Access: AccessPublic}
+func TestGatewayRejectsTypedNilResolvedUpstream(t *testing.T) {
+	var upstream *typedNilHandler
+	handler, err := New(
+		WithRoutes(publicRoute()),
+		WithUpstreamResolver(UpstreamResolverFunc(func(Route) (http.Handler, error) {
+			return upstream, nil
+		})),
+		WithoutAccessLog(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "http://gateway/public", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, body = %q", response.Code, response.Body.String())
+	}
 }
 
-func withTestUpstreams(upstreams map[string]http.Handler) Option {
-	return WithUpstreamResolver(UpstreamResolverFunc(func(route Route) (http.Handler, error) {
-		handler, ok := upstreams[route.Upstream]
-		if !ok {
-			return nil, errors.New("missing test upstream")
-		}
-		return handler, nil
-	}))
-}
+type typedNilHandler struct{}
+
+func (*typedNilHandler) ServeHTTP(http.ResponseWriter, *http.Request) {}

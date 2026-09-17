@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sort"
@@ -197,4 +198,19 @@ func sortedKeys(values map[string]struct{}) []string {
 func cloneRoute(route Route) Route {
 	route.Match.Methods = append([]string(nil), route.Match.Methods...)
 	return route
+}
+
+func containsProtectedRoute(routes []Route) bool {
+	for _, route := range routes {
+		if route.Access == AccessProtected {
+			return true
+		}
+	}
+	return false
+}
+
+// RouteFromContext 返回 SDK 选中的路由副本。
+func RouteFromContext(ctx context.Context) (Route, bool) {
+	route, ok := ctx.Value(routeContextKey).(Route)
+	return cloneRoute(route), ok
 }

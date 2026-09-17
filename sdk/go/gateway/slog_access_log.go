@@ -22,20 +22,20 @@ type slogAccessLogger struct {
 	includeIdentity bool
 }
 
-// NewSlogAccessLogger 创建不拥有输出目标和生命周期的标准库访问日志实现。
-func NewSlogAccessLogger(config SlogAccessLoggerConfig) AccessLogger {
-	return &slogAccessLogger{
-		logger:          config.Logger,
-		includeIdentity: config.IncludeIdentity,
-	}
-}
-
 // WithSlogAccessLogger 使用标准库 slog 输出访问日志。
 func WithSlogAccessLogger(slogConfig SlogAccessLoggerConfig) Option {
 	return componentOption("access_logger", func(gatewayConfig *config) error {
 		gatewayConfig.accessLogger = NewSlogAccessLogger(slogConfig)
 		return nil
 	})
+}
+
+// NewSlogAccessLogger 创建不拥有输出目标和生命周期的标准库访问日志实现。
+func NewSlogAccessLogger(config SlogAccessLoggerConfig) AccessLogger {
+	return &slogAccessLogger{
+		logger:          config.Logger,
+		includeIdentity: config.IncludeIdentity,
+	}
 }
 
 func (logger *slogAccessLogger) Log(ctx context.Context, accessLog AccessLog) error {

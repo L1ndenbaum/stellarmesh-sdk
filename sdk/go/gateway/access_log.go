@@ -106,16 +106,6 @@ func (gateway *Gateway) finishRequest(ctx context.Context, recorder *responseRec
 	})
 }
 
-func (gateway *Gateway) safeObserve(ctx context.Context, observation Observation) {
-	if gateway.observer == nil {
-		return
-	}
-	defer func() {
-		_ = recover()
-	}()
-	gateway.observer.Observe(ctx, observation)
-}
-
 func callAccessLogger(ctx context.Context, logger AccessLogger, accessLog AccessLog) (err error) {
 	defer func() {
 		if recover() != nil {

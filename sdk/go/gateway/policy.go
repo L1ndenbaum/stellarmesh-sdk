@@ -67,3 +67,35 @@ func WithBeforeProxyPolicy(policy BeforeProxyPolicy) Option {
 		return nil
 	})
 }
+
+func (gateway *Gateway) applyAuthorizer(w http.ResponseWriter, r *http.Request, request RequestContext) bool {
+	if gateway.authorizer == nil {
+		return true
+	}
+	decision, err := gateway.authorizer.Authorize(r.Context(), r, request)
+	if err != nil {
+		gateway.fail(w, r, unavailableError("authorization_failed", err))
+		return false
+	}
+	if decision.Allowed {
+		return true
+	}
+	gateway.fail(w, r, GatewayError{Status: http.StatusForbidden, Code: "forbidden", Message: "forbidden"})
+	return false
+}
+
+func (gateway *Gateway) applyBeforeProxy(w http.ResponseWriter, r *http.Request, request RequestContext) bool {
+	if gateway.beforeProxy == nil {
+		return true
+	}
+	decision, err := gateway.beforeProxy.Evaluate(r.Context(), r, request)
+	if err != nil {
+		gateway.fail(w, r, unavailableError("before_proxy_policy_failed", err))
+		return false
+	}
+	if decision.Allowed {
+		return true
+	}
+	gateway.fail(w, r, GatewayError{Status: http.StatusForbidden, Code: "proxy_policy_rejected", Message: "forbidden"})
+	return false
+}

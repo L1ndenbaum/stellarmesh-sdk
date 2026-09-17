@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/http"
@@ -111,4 +112,21 @@ func parseRemoteAddr(remoteAddr string) (netip.Addr, error) {
 		return netip.Addr{}, errors.New("invalid remote address")
 	}
 	return address.Unmap(), nil
+}
+
+func resolveRemoteAddr(r *http.Request) (string, error) {
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err == nil {
+		return host, nil
+	}
+	if net.ParseIP(strings.TrimSpace(r.RemoteAddr)) != nil {
+		return strings.TrimSpace(r.RemoteAddr), nil
+	}
+	return "", errors.New("invalid remote address")
+}
+
+// ClientIPFromContext 返回经过可信代理策略解析的客户端地址。
+func ClientIPFromContext(ctx context.Context) (string, bool) {
+	clientIP, ok := ctx.Value(clientIPContextKey).(string)
+	return clientIP, ok
 }

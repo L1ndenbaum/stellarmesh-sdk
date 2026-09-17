@@ -63,6 +63,8 @@ type healthPolicy struct {
 	responder     HealthResponder
 }
 
+type defaultHealthResponder struct{}
+
 // Check 调用就绪检查函数。
 func (checker ReadinessCheckerFunc) Check(ctx context.Context) error {
 	return checker(ctx)
@@ -156,4 +158,8 @@ func (policy *healthPolicy) handle(w http.ResponseWriter, r *http.Request, gatew
 	}
 	policy.responder.RespondHealth(w, r, HealthResult{Kind: kind, Service: policy.service})
 	return true
+}
+
+func (defaultHealthResponder) RespondHealth(w http.ResponseWriter, _ *http.Request, _ HealthResult) {
+	writePlainText(w, http.StatusOK, "ok")
 }

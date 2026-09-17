@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"net/http"
 	"time"
 )
 
@@ -73,4 +74,26 @@ func rateLimiterOption(name string, limiter RateLimiter, assign func(*config, Ra
 		assign(config, limiter)
 		return nil
 	})
+}
+
+func (gateway *Gateway) applyRateLimit(w http.ResponseWriter, r *http.Request, limiter RateLimiter, request RateLimitRequest) bool {
+	if limiter == nil {
+		setRateLimitResult(r, request.Scope, "disabled")
+		return true
+	}
+	decision, err := limiter.Allow(r.Context(), request)
+	if err != nil {
+		setRateLimitResult(r, request.Scope, "error")
+		gateway.fail(w, r, unavailableError("rate_limiter_unavailable", err))
+		return false
+	}
+	if decision.Allowed {
+		setRateLimitResult(r, request.Scope, "allowed")
+		return true
+	}
+	setRateLimitResult(r, request.Scope, "rejected")
+	gateway.fail(w, r, GatewayError{
+		Status: http.StatusTooManyRequests, Code: "rate_limit_exceeded", Message: "rate limit exceeded", RetryAfter: decision.RetryAfter,
+	})
+	return false
 }
