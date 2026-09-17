@@ -348,3 +348,11 @@ gateway.WithoutAccessLog()
 4. 验证访问日志失败仍不会改变业务响应，身份字段仍默认关闭。
 
 本次 SDK 不包含共享 gateway 可执行程序，也不包含服务发现、动态配置、配置热更新、自动重试、熔断、WAF、缓存、灰度路由或管理控制面。这些能力应在出现明确的跨项目需求后独立设计。
+
+## 可插拔凭证提取迁移
+
+`WithAuthenticator(authenticator)` 继续默认提取 Bearer 凭证，也可以传入一个 `CredentialExtractor` 函数。使用 Cookie 时先调用 `CookieCredential(name)` 校验名称，再将返回值作为第二个参数。提取器不读取认证存储、不写响应；返回空字符串表示缺失，返回或包装 `ErrInvalidCredential` 表示格式错误，其他错误视为组件故障。内置提取器拒绝重复认证头、重复同名 Cookie 和格式错误，不自动回退到其他凭证来源。公开路由跳过提取和认证。
+
+认证错误码统一为 `missing_credential`、`invalid_credential`，替代 `missing_bearer_token`、`invalid_bearer_token`；访问日志对应使用 `missing_credential`、`invalid_credential`。缺失与无效凭证返回 `401`，提取器故障返回 `503 credential_extraction_failed`，认证器故障仍返回 `503 authentication_failed`。错误与日志不包含凭证内容。
+
+`WithAuthenticator` 改为变参函数后，原有普通调用保持有效；若将函数本身赋给固定签名的函数变量，需要同步更新变量签名或加一层闭包。显式传入空提取器或多个提取器会在构造时被拒绝。

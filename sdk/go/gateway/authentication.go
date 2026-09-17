@@ -26,7 +26,7 @@ type AuthenticationDecision struct {
 	Reason        string
 }
 
-// Authenticator 校验 Bearer token；返回错误表示组件故障并触发 fail-close。
+// Authenticator 校验提取后的凭证；返回错误表示组件故障并触发 fail-close。
 type Authenticator interface {
 	Authenticate(context.Context, string) (AuthenticationDecision, error)
 }
@@ -40,11 +40,19 @@ func (authenticate AuthenticatorFunc) Authenticate(ctx context.Context, token st
 }
 
 // WithAuthenticator 启用受保护路由认证。
-func WithAuthenticator(authenticator Authenticator) Option {
+func WithAuthenticator(authenticator Authenticator, extractors ...CredentialExtractor) Option {
+	extractor := BearerCredential()
+	if len(extractors) == 1 {
+		extractor = extractors[0]
+	}
 	return componentOption("authenticator", func(config *config) error {
 		if isNilInterface(authenticator) {
 			return errors.New("gateway authenticator is nil")
 		}
+		if len(extractors) > 1 || extractor == nil {
+			return errors.New("gateway requires exactly one non-nil credential extractor")
+		}
+		config.credentialExtractor = extractor
 		config.authenticator = authenticator
 		return nil
 	})
@@ -60,27 +68,31 @@ func (gateway *Gateway) authenticate(w http.ResponseWriter, r *http.Request, rou
 		gateway.fail(w, r, unavailableError("authenticator_unavailable", errors.New("gateway authenticator is not configured")))
 		return nil, false
 	}
-	raw := strings.TrimSpace(r.Header.Get("Authorization"))
-	if len(raw) <= len("Bearer ") || !strings.EqualFold(raw[:len("Bearer ")], "Bearer ") {
-		setAuthResult(r, "missing_token", nil)
-		gateway.fail(w, r, GatewayError{Status: http.StatusUnauthorized, Code: "missing_bearer_token", Message: "unauthorized"})
+	credential, err := gateway.credentialExtractor(r)
+	if err != nil {
+		if errors.Is(err, ErrInvalidCredential) {
+			setAuthResult(r, "invalid_credential", nil)
+			gateway.fail(w, r, GatewayError{Status: http.StatusUnauthorized, Code: "invalid_credential", Message: "unauthorized"})
+		} else {
+			setAuthResult(r, "error", nil)
+			gateway.fail(w, r, unavailableError("credential_extraction_failed", err))
+		}
 		return nil, false
 	}
-	token := strings.TrimSpace(raw[len("Bearer "):])
-	if token == "" {
-		setAuthResult(r, "missing_token", nil)
-		gateway.fail(w, r, GatewayError{Status: http.StatusUnauthorized, Code: "missing_bearer_token", Message: "unauthorized"})
+	if credential == "" {
+		setAuthResult(r, "missing_credential", nil)
+		gateway.fail(w, r, GatewayError{Status: http.StatusUnauthorized, Code: "missing_credential", Message: "unauthorized"})
 		return nil, false
 	}
-	decision, err := gateway.authenticator.Authenticate(r.Context(), token)
+	decision, err := gateway.authenticator.Authenticate(r.Context(), credential)
 	if err != nil {
 		setAuthResult(r, "error", nil)
 		gateway.fail(w, r, unavailableError("authentication_failed", err))
 		return nil, false
 	}
 	if !decision.Authenticated || strings.TrimSpace(decision.Identity.UserID) == "" {
-		setAuthResult(r, "invalid_token", nil)
-		gateway.fail(w, r, GatewayError{Status: http.StatusUnauthorized, Code: "invalid_bearer_token", Message: "unauthorized"})
+		setAuthResult(r, "invalid_credential", nil)
+		gateway.fail(w, r, GatewayError{Status: http.StatusUnauthorized, Code: "invalid_credential", Message: "unauthorized"})
 		return nil, false
 	}
 	identity := cloneIdentity(decision.Identity)

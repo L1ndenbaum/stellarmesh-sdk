@@ -22,6 +22,7 @@ type config struct {
 	staticRoutes         []Route
 	upstreamResolver     UpstreamResolver
 	authenticator        Authenticator
+	credentialExtractor  CredentialExtractor
 	authorizer           Authorizer
 	beforeProxy          BeforeProxyPolicy
 	clientIPResolver     ClientIPResolver

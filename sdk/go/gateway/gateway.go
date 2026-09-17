@@ -10,21 +10,22 @@ import (
 
 // Gateway 按固定的安全顺序执行项目声明的组件。
 type Gateway struct {
-	routes           RouteResolver
-	upstreams        UpstreamResolver
-	authenticator    Authenticator
-	authorizer       Authorizer
-	beforeProxy      BeforeProxyPolicy
-	clientIPResolver ClientIPResolver
-	clientIPLimiter  RateLimiter
-	userLimiter      RateLimiter
-	upstreamLimiter  RateLimiter
-	errorResponder   ErrorResponder
-	requestID        RequestIDConfig
-	cors             *corsPolicy
-	accessLogger     AccessLogger
-	observer         Observer
-	health           *healthPolicy
+	routes              RouteResolver
+	upstreams           UpstreamResolver
+	authenticator       Authenticator
+	credentialExtractor CredentialExtractor
+	authorizer          Authorizer
+	beforeProxy         BeforeProxyPolicy
+	clientIPResolver    ClientIPResolver
+	clientIPLimiter     RateLimiter
+	userLimiter         RateLimiter
+	upstreamLimiter     RateLimiter
+	errorResponder      ErrorResponder
+	requestID           RequestIDConfig
+	cors                *corsPolicy
+	accessLogger        AccessLogger
+	observer            Observer
+	health              *healthPolicy
 }
 
 // New 校验所有声明式组件并构造网关处理器。
@@ -95,21 +96,22 @@ func New(options ...Option) (*Gateway, error) {
 		return nil, err
 	}
 	return &Gateway{
-		routes:           config.routeResolver,
-		upstreams:        config.upstreamResolver,
-		authenticator:    config.authenticator,
-		authorizer:       config.authorizer,
-		beforeProxy:      config.beforeProxy,
-		clientIPResolver: config.clientIPResolver,
-		clientIPLimiter:  config.clientIPLimiter,
-		userLimiter:      config.userLimiter,
-		upstreamLimiter:  config.upstreamLimiter,
-		errorResponder:   config.errorResponder,
-		requestID:        requestID,
-		cors:             cors,
-		accessLogger:     config.accessLogger,
-		observer:         config.observer,
-		health:           health,
+		routes:              config.routeResolver,
+		upstreams:           config.upstreamResolver,
+		authenticator:       config.authenticator,
+		credentialExtractor: config.credentialExtractor,
+		authorizer:          config.authorizer,
+		beforeProxy:         config.beforeProxy,
+		clientIPResolver:    config.clientIPResolver,
+		clientIPLimiter:     config.clientIPLimiter,
+		userLimiter:         config.userLimiter,
+		upstreamLimiter:     config.upstreamLimiter,
+		errorResponder:      config.errorResponder,
+		requestID:           requestID,
+		cors:                cors,
+		accessLogger:        config.accessLogger,
+		observer:            config.observer,
+		health:              health,
 	}, nil
 }
 
