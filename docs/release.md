@@ -6,7 +6,7 @@
 
 | 制品 | 当前已发布版本 | 说明 |
 | --- | --- | --- |
-| 前端 HTTP SDK | `sdk/frontend/v0.2.0` | `@stellarmesh/sdk@0.2.0`，ESM，MIT |
+| 前端 HTTP／SSE SDK | `sdk/frontend/v0.3.0` | `@stellarmesh/sdk@0.3.0`，ESM，MIT |
 | 父 Go SDK | `sdk/go/v0.5.0` | 标准库 HTTP 与环境配置基础能力 |
 | Go Object Storage | `sdk/go/objectstorage/v0.1.0` | namespace 绑定的对象存储能力 |
 | Go Gateway Core | `sdk/go/gateway/v0.3.1` | 通用 `slog` 访问日志，保留限流结果 |
@@ -20,11 +20,22 @@
 
 旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。历史拆分和兼容记录见[历史发布记录](releases/history.md)。
 
-## 前端 SSE SDK 0.3.0 发布准备
+## 前端 SSE SDK 0.3.0 已发布
 
-目标版本为 `@stellarmesh/sdk@0.3.0`，组件 tag 为 `sdk/frontend/v0.3.0`。新增声明式 `http.sse.get/post/request`、共享 AuthSession 恢复和 SSE 生命周期管理；普通 HTTP 与上传继续使用 Axios，依赖版本保持不变。此段是发布准备记录，公开发布完成后补充源码、制品摘要和 registry 消费结果。
+2026-09-21 已发布 `@stellarmesh/sdk@0.3.0`，npm `latest` 指向该版本。新增声明式 `http.sse.get/post/request`、增量 SSE 解析、共享 AuthSession 恢复和流生命周期管理；普通 HTTP 与上传继续使用 Axios，依赖版本保持不变。
 
-本轮已通过本地 `make verify`、164 个前端测试、Chromium 实际 SSE／Cookie／上传验证和隔离 tarball 消费。正式上传仍须针对提交后的源码通过远端 CI，并使用 `npm run release:prepare -- sdk/frontend/v0.3.0` 生成和验证唯一制品；不沿用旧版本 CI 豁免。
+发布源码为 `f6efb868c7d6fdaa3c54b8b68c7b795efd2dbbfc`，组件 annotated tag 为 [`sdk/frontend/v0.3.0`](https://github.com/L1ndenbaum/stellarmesh-sdk/releases/tag/sdk/frontend/v0.3.0)。本地 `make verify`、164 个前端测试、Chromium 实际 SSE／Cookie／上传验证和隔离 tarball 消费均通过；该源码的[持续验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/35600466699)全部通过，包含 Go／Redis、Python、Storage 集成与前端，没有使用旧版本的 CI 豁免。
+
+`release:prepare -- sdk/frontend/v0.3.0` 生成并验证唯一制品，上传同一份 tarball，未重建替换：
+
+```text
+SHA-256: acfd64ac9895d78acf9ddcebf810ab243f6ea3bd7a26b66760461399797a8f4b
+SHA-512: bIFiShFZzf5m1n12SFMYGmbGvoUAKuZj9vnd4jDla3jHEG3canpBvAKGpL1HEGU3LhvyID+1wfO21wYCmiimcQ==
+```
+
+发布后已核对官方 registry 版本、`latest` 和 integrity；匿名下载的公开 tarball 与上述摘要一致，通过 ESM、SSE 运行时及公开 TypeScript 契约验证。另在全新目录使用空缓存、空认证配置按包名安装正式版本并验证 SSE，安装 integrity 与发布制品相同。
+
+本机曾出现 `xdg-open` 等待 Chrome 退出，使 npm 在浏览器验证成功后仍等待启动器。此时尚未最终上传；确认 registry 无该版本后结束等待会话，使用同一制品及 `--browser=false` 重新完成发布验证。后续手工发布默认采用该选项，在已有浏览器打开 npm 给出的链接，不让 CLI 等待浏览器进程退出。
 
 ## 前端 HTTP SDK `0.2.0` 正式发布
 
@@ -71,20 +82,20 @@ SHA-256: 2233314a4a24cfa776ebf9cd0ea94ba5aee4960119722e6a65e44abea7a74c98
 cd sdk/frontend
 npm ci --registry=https://registry.npmjs.org/
 npx playwright install --with-deps chromium
-npm run release:prepare -- sdk/frontend/v0.2.0
+npm run release:prepare -- sdk/frontend/v0.3.0
 ```
 
-`release:prepare` 校验包名、MIT、正式版本号、锁文件根元数据及公开 registry 配置；依次完成格式／静态／类型检查、行为测试、干净构建、Chromium 验证，再打包一次并验证这份 tarball。每次成功输出一个独立的 `.artifacts/0.2.0-随机后缀/` 目录，包含：
+`release:prepare` 校验包名、MIT、正式版本号、锁文件根元数据及公开 registry 配置；依次完成格式／静态／类型检查、行为测试、干净构建、Chromium 验证，再打包一次并验证这份 tarball。每次成功输出一个独立的 `.artifacts/0.3.0-随机后缀/` 目录，包含：
 
-- `stellarmesh-sdk-0.2.0.tgz`：通过验证的 npm 制品；
+- `stellarmesh-sdk-0.3.0.tgz`：通过验证的 npm 制品；
 - `release.json`：包名、版本、文件名、SHA-512 integrity、SHA-256、registry、公开访问权限与 `latest` 标签。
 
-目录被 Git、Biome 和 ESLint 忽略，也不会进入 npm 包。失败时清理本次不完整制品，不覆盖以前的成功结果。可传入组件 tag 做版本一致性校验，例如 `npm run release:prepare -- sdk/frontend/v0.2.0`；这不会创建 tag。当前命令只接受正式版本号，不支持预发布版本与标签的自动选择。
+目录被 Git、Biome 和 ESLint 忽略，也不会进入 npm 包。失败时清理本次不完整制品，不覆盖以前的成功结果。可传入组件 tag 做版本一致性校验，例如 `npm run release:prepare -- sdk/frontend/v0.3.0`；这不会创建 tag。当前命令只接受正式版本号，不支持预发布版本与标签的自动选择。
 
 `npm run build` 每次清除旧 `dist/`，避免已删除模块残留。`npm pack` 的 `prepack` 只执行干净构建；完整发布检查由 `release:prepare` 负责，避免消费验证触发打包后递归验证。消费验证安装时禁用生命周期脚本，并检查包清单、许可证、版本、ESM 与公开类型契约。验证已有制品时使用：
 
 ```sh
-npm run test:consumer -- /绝对路径/stellarmesh-sdk-0.2.0.tgz
+npm run test:consumer -- /绝对路径/stellarmesh-sdk-0.3.0.tgz
 ```
 
 已有制品路径不会触发源码重建，验证前后检查其内容摘要一致。
@@ -100,19 +111,19 @@ npm run test:consumer -- /绝对路径/stellarmesh-sdk-0.2.0.tgz
 ```sh
 npm login --registry=https://registry.npmjs.org/
 npm whoami --registry=https://registry.npmjs.org/
-release_dir='/绝对路径/sdk/frontend/.artifacts/0.2.0-随机后缀'
-npm publish "$release_dir/stellarmesh-sdk-0.2.0.tgz" \
-  --ignore-scripts --registry=https://registry.npmjs.org/ --access public --tag latest
+release_dir='/绝对路径/sdk/frontend/.artifacts/0.3.0-随机后缀'
+npm publish "$release_dir/stellarmesh-sdk-0.3.0.tgz" \
+  --ignore-scripts --registry=https://registry.npmjs.org/ --access public --tag latest --browser=false
 ```
 
 上传前核对 tarball 的 SHA-256 与 `release.json` 一致；发布失败先确认 registry 是否已经存在该版本，不能直接修改内容后复用相同版本。发布后查询真实元数据：
 
 ```sh
-npm view @stellarmesh/sdk@0.2.0 \
+npm view @stellarmesh/sdk@0.3.0 \
   name version license dist.integrity --json --registry=https://registry.npmjs.org/
 ```
 
-将 `dist.integrity` 与准备时保存的 SHA-512 比较，再从官方 registry 下载该版本到新临时目录，使用 `test:consumer` 验证下载的 tarball，并在全新业务消费目录安装 `@stellarmesh/sdk@0.2.0` 验证公开安装。全部通过后，记录源码 commit、创建指向该 commit 的不可变组件 tag `sdk/frontend/v0.2.0`，更新已发布矩阵。当前没有前端 tag 发布触发器，根 `vX.Y.Z` tag 仍只用于镜像。
+将 `dist.integrity` 与准备时保存的 SHA-512 比较，再从官方 registry 下载该版本到新临时目录，使用 `test:consumer` 验证下载的 tarball，并在全新业务消费目录安装 `@stellarmesh/sdk@0.3.0` 验证公开安装。全部通过后，记录源码 commit、创建指向该 commit 的不可变组件 tag `sdk/frontend/v0.3.0`，更新已发布矩阵。当前没有前端 tag 发布触发器，根 `vX.Y.Z` tag 仍只用于镜像。
 
 ### 后续自动发布
 
