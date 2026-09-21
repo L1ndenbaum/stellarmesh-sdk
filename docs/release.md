@@ -20,6 +20,12 @@
 
 旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。历史拆分和兼容记录见[历史发布记录](releases/history.md)。
 
+## 前端 SSE SDK 0.3.0 发布准备
+
+目标版本为 `@stellarmesh/sdk@0.3.0`，组件 tag 为 `sdk/frontend/v0.3.0`。新增声明式 `http.sse.get/post/request`、共享 AuthSession 恢复和 SSE 生命周期管理；普通 HTTP 与上传继续使用 Axios，依赖版本保持不变。此段是发布准备记录，公开发布完成后补充源码、制品摘要和 registry 消费结果。
+
+本轮已通过本地 `make verify`、164 个前端测试、Chromium 实际 SSE／Cookie／上传验证和隔离 tarball 消费。正式上传仍须针对提交后的源码通过远端 CI，并使用 `npm run release:prepare -- sdk/frontend/v0.3.0` 生成和验证唯一制品；不沿用旧版本 CI 豁免。
+
 ## 前端 HTTP SDK `0.2.0` 正式发布
 
 源码及锁文件版本已提升至 `0.2.0`，新增根入口类型 `ErrorCodeExtractor` 与不可变派生方法 `withErrorCodeExtractor`。默认继续使用 `0.1.0` 的 `code` 提取和声明式 API；项目可独立提取额外错误码，真实 HTTP 状态仍保留在 `error.status`。空返回值清空错误码，提取器配置失败保留响应诊断并停止认证恢复与重试。
