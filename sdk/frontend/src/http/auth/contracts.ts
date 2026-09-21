@@ -1,5 +1,5 @@
-import type { HttpClientError } from '../error/http-client-error.js';
-import type { HttpHeaders } from '../request/contracts.js';
+import type { HttpClientError } from '../error/http-client-error';
+import type { HttpHeaders } from '../request/contracts';
 
 declare const authSessionBrand: unique symbol;
 

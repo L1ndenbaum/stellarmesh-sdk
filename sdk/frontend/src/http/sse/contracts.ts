@@ -1,4 +1,4 @@
-import type { HttpHeaders, HttpRequestOptions } from '../request/contracts.js';
+import type { HttpHeaders, HttpRequestOptions } from '../request/contracts';
 
 export interface SseMessage {
   data: string;

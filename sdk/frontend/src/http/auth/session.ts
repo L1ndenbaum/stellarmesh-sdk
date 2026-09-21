@@ -1,15 +1,15 @@
 import axios from 'axios';
-import { mergeHeaders, normalizeError } from '../transport/axios-transport.js';
-import { HttpClientError } from '../error/http-client-error.js';
-import { AuthRefreshResult } from './contracts.js';
-import type { HttpHeaders } from '../request/contracts.js';
+import { mergeHeaders, normalizeError } from '../transport/axios-transport';
+import { HttpClientError } from '../error/http-client-error';
+import { AuthRefreshResult } from './contracts';
+import type { HttpHeaders } from '../request/contracts';
 import type {
   AuthBindingOptions,
   AuthSession,
   AuthSessionContext,
   AuthSessionEpoch,
   AuthSessionOptions,
-} from './contracts.js';
+} from './contracts';
 
 interface RefreshRound {
   refresh?: Promise<AuthRefreshResult>;

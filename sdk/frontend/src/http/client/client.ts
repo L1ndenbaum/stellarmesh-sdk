@@ -3,15 +3,15 @@ import {
   mergeHeaders,
   normalizeError,
   send,
-} from '../transport/axios-transport.js';
-import { createRequestAuth } from '../auth/request.js';
-import { abortable, throwIfCanceled } from '../error/cancellation.js';
-import { HttpClientError } from '../error/http-client-error.js';
-import { extractErrorCode } from '../error/extract-error-code.js';
-import { retryDelay, validateNumber, waitForRetry } from '../retry/policy.js';
-import type { HttpRequest } from '../request/contracts.js';
-import type { HttpResponse } from '../response/contracts.js';
-import type { ClientOptions } from './contracts.js';
+} from '../transport/axios-transport';
+import { createRequestAuth } from '../auth/request';
+import { abortable, throwIfCanceled } from '../error/cancellation';
+import { HttpClientError } from '../error/http-client-error';
+import { extractErrorCode } from '../error/extract-error-code';
+import { retryDelay, validateNumber, waitForRetry } from '../retry/policy';
+import type { HttpRequest } from '../request/contracts';
+import type { HttpResponse } from '../response/contracts';
+import type { ClientOptions } from './contracts';
 
 /** 内部执行器始终返回元信息，公开声明入口决定最终交付形态。 */
 export function createExecutor(options: ClientOptions) {

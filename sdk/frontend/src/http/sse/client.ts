@@ -1,15 +1,15 @@
-import type { ClientOptions } from '../client/contracts.js';
-import { createRequestAuth } from '../auth/request.js';
-import { abortable, throwIfCanceled } from '../error/cancellation.js';
-import { extractErrorCode } from '../error/extract-error-code.js';
-import { HttpClientError } from '../error/http-client-error.js';
-import type { HttpRequest } from '../request/contracts.js';
-import { validateNumber } from '../retry/policy.js';
+import type { ClientOptions } from '../client/contracts';
+import { createRequestAuth } from '../auth/request';
+import { abortable, throwIfCanceled } from '../error/cancellation';
+import { extractErrorCode } from '../error/extract-error-code';
+import { HttpClientError } from '../error/http-client-error';
+import type { HttpRequest } from '../request/contracts';
+import { validateNumber } from '../retry/policy';
 import {
   createTransport,
   mergeHeaders,
   normalizeError,
-} from '../transport/axios-transport.js';
+} from '../transport/axios-transport';
 import type {
   SseApi,
   SseDeclarationOptions,
@@ -17,8 +17,8 @@ import type {
   SseOptions,
   SseRequest,
   SseRequestDescriptor,
-} from './contracts.js';
-import { createSseParser } from './parser.js';
+} from './contracts';
+import { createSseParser } from './parser';
 
 function copyParams(params: SseOptions['params']): SseOptions['params'] {
   return params instanceof URLSearchParams

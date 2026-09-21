@@ -1,13 +1,13 @@
-import type { AuthBindingOptions, AuthSession } from '../auth/contracts.js';
-import type { ErrorCodeExtractor } from '../error/contracts.js';
-import type { HttpResponse, ResponseTransform } from '../response/contracts.js';
-import type { RetryOptions } from '../retry/contracts.js';
-import type { SseApi } from '../sse/contracts.js';
+import type { AuthBindingOptions, AuthSession } from '../auth/contracts';
+import type { ErrorCodeExtractor } from '../error/contracts';
+import type { HttpResponse, ResponseTransform } from '../response/contracts';
+import type { RetryOptions } from '../retry/contracts';
+import type { SseApi } from '../sse/contracts';
 import type {
   HttpHeaders,
   HttpMethod,
   HttpRequestOptions,
-} from '../request/contracts.js';
+} from '../request/contracts';
 
 /** 取消信号只属于单次调用，不能绑定到可复用的接口声明。 */
 export interface HttpApiDeclarationOptions

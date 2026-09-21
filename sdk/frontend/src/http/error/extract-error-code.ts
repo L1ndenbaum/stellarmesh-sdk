@@ -1,5 +1,5 @@
-import type { ErrorCodeExtractor } from './contracts.js';
-import { HttpClientError, HttpErrorKind } from './http-client-error.js';
+import type { ErrorCodeExtractor } from './contracts';
+import { HttpClientError, HttpErrorKind } from './http-client-error';
 
 export function extractErrorCode(
   error: HttpClientError,

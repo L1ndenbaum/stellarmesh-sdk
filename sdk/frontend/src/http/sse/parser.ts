@@ -1,4 +1,4 @@
-import type { SseMessage } from './contracts.js';
+import type { SseMessage } from './contracts';
 
 /** 增量解析行与事件，既不裁剪业务数据，也不将 EOF 当作事件分隔符。 */
 export function createSseParser() {

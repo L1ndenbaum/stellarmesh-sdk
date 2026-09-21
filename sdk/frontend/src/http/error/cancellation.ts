@@ -1,4 +1,4 @@
-import { HttpClientError } from './http-client-error.js';
+import { HttpClientError } from './http-client-error';
 
 export function canceledError(signal?: AbortSignal): HttpClientError {
   return new HttpClientError('请求已取消', {

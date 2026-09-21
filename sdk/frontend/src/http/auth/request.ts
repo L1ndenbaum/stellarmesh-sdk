@@ -1,9 +1,9 @@
-import type { ClientOptions } from '../client/contracts.js';
-import { abortable, throwIfCanceled } from '../error/cancellation.js';
-import { HttpClientError } from '../error/http-client-error.js';
-import type { HttpRequest } from '../request/contracts.js';
-import { AuthRefreshResult } from './contracts.js';
-import { getAuthCoordinator, isTrustedTarget } from './session.js';
+import type { ClientOptions } from '../client/contracts';
+import { abortable, throwIfCanceled } from '../error/cancellation';
+import { HttpClientError } from '../error/http-client-error';
+import type { HttpRequest } from '../request/contracts';
+import { AuthRefreshResult } from './contracts';
+import { getAuthCoordinator, isTrustedTarget } from './session';
 
 /** HTTP 与 SSE 共用单次请求的认证边界，刷新代次仍由 AuthSession 协调。 */
 export function createRequestAuth(

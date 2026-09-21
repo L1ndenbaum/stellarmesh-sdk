@@ -1,4 +1,4 @@
-import type { ResponseType } from '../response/contracts.js';
+import type { ResponseType } from '../response/contracts';
 
 export const HttpMethod = {
   GET: 'GET',

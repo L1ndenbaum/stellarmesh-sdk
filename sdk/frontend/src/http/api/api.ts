@@ -1,11 +1,11 @@
-import { getAuthCoordinator } from '../auth/session.js';
-import { createExecutor } from '../client/client.js';
-import { createSseApi } from '../sse/client.js';
-import type { ClientOptions } from '../client/contracts.js';
-import { throwIfCanceled } from '../error/cancellation.js';
-import { defaultRetry, validateNumber } from '../retry/policy.js';
-import { HttpMethod, type HttpRequestOptions } from '../request/contracts.js';
-import { mergeHeaders, normalizeError } from '../transport/axios-transport.js';
+import { getAuthCoordinator } from '../auth/session';
+import { createExecutor } from '../client/client';
+import { createSseApi } from '../sse/client';
+import type { ClientOptions } from '../client/contracts';
+import { throwIfCanceled } from '../error/cancellation';
+import { defaultRetry, validateNumber } from '../retry/policy';
+import { HttpMethod, type HttpRequestOptions } from '../request/contracts';
+import { mergeHeaders, normalizeError } from '../transport/axios-transport';
 import type {
   HttpApi,
   HttpApiBodyMethod,
@@ -16,7 +16,7 @@ import type {
   HttpApiRequest,
   HttpApiRequestDescriptor,
   HttpApiResult,
-} from './contracts.js';
+} from './contracts';
 
 function copyParams(
   params: HttpRequestOptions['params'],

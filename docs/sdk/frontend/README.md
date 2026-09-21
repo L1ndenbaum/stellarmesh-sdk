@@ -567,7 +567,7 @@ try {
 
 ## 构建与验证
 
-使用 Node 24 和 npm。包提供 ESM 与 `.d.ts`，只导出根入口，不依赖消费者编译仓库源码。初版验证浏览器 HTTP 场景和 Node ESM 制品消费，未验证 Expo 或全部 Axios adapter 行为。
+开发与构建使用 Node 24（至少 24.11）和 npm；这一版本要求来自构建工具，不是消费者的 Node 最低版本声明。tsdown 从包根入口构建 ESM 与打包后的 `.d.ts`，产物为 `dist/index.js` 和 `dist/index.d.ts`，目标为 ES2022。包只导出根入口，不依赖消费者编译仓库源码；Axios 保留为外部运行时依赖，由消费者解析对应平台的实现。初版验证浏览器 HTTP／SSE 场景和 Node ESM 制品消费，未验证 Expo 或全部 Axios adapter 行为。
 
 ```sh
 npm --prefix sdk/frontend ci
@@ -576,4 +576,6 @@ npx playwright install --with-deps chromium
 npm run verify
 ```
 
-浏览器测试启动临时本地服务，验证跨域对象传输以及同源／跨源 HttpOnly Cookie 会话恢复；消费测试打包后在临时目录安装 tarball，检查真实 ESM 与 TypeScript 导出。源码测试不能代替生产对象存储、CORS、会话服务和部署环境验收。
+源码按功能组织，内部 TypeScript 导入采用无后缀相对路径；`tsc --noEmit` 独立负责类型检查。构建先清理旧输出，再由 tsdown 生成 JavaScript 和类型声明；esbuild 仅用于浏览器测试页面的组装。
+
+浏览器测试以已经构建的 SDK 为入口，启动临时本地服务，验证跨域对象传输、同源／跨源 HttpOnly Cookie 会话恢复及 SSE；单独运行 `test:browser` 前需先运行 `build`。消费测试在临时目录安装 tarball，检查制品文件、Axios 外部导入、真实 Node ESM 请求，以及 NodeNext 与 Bundler 两种解析模式下的公开类型，均不跳过声明文件检查。源码测试不能代替生产对象存储、CORS、会话服务和部署环境验收。

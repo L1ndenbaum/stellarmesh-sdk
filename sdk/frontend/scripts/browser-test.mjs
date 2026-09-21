@@ -21,7 +21,8 @@ async function serve(handler) {
 
 try {
   await build({
-    entryPoints: ['src/index.ts'],
+    // 验证发布构建，再由消费者的浏览器构建器解析外部依赖。
+    entryPoints: ['dist/index.js'],
     bundle: true,
     format: 'iife',
     globalName: 'SDK',

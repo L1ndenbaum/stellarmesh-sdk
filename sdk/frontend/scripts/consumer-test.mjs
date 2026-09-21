@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
+import ts from 'typescript';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const expected = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -18,13 +19,23 @@ if (supplied) {
 }
 const directory = await mkdtemp(join(tmpdir(), 'stellarmesh-consumer-'));
 try {
-  // 外部制品只读取，不触发源码构建或重新打包；默认模式仍验证当前源码打包结果。
+  // 先独立构建，避免 prepack 的构建日志混入 npm pack 的 JSON 输出。
+  // 外部制品只读取，不触发源码构建或重新打包。
+  if (!supplied) {
+    execFileSync('npm', ['run', 'build'], { cwd: root, stdio: 'inherit' });
+  }
   const [packed] = JSON.parse(
     execFileSync(
       'npm',
       supplied
         ? ['pack', supplied, '--dry-run', '--ignore-scripts', '--json']
-        : ['pack', '--json', '--pack-destination', directory],
+        : [
+            'pack',
+            '--ignore-scripts',
+            '--json',
+            '--pack-destination',
+            directory,
+          ],
       { cwd: root, encoding: 'utf8' },
     ),
   );
@@ -39,22 +50,16 @@ try {
   assert.equal(packed.name, expected.name);
   assert.equal(packed.version, expected.version);
   const files = packed.files.map((file) => file.path);
-  for (const file of [
-    'dist/index.js',
-    'dist/index.d.ts',
-    'package.json',
-    'README.md',
-    'LICENSE',
-  ]) {
-    assert(files.includes(file), `发布制品缺少 ${file}`);
-  }
-  assert(
-    files.every(
-      (file) =>
-        ['package.json', 'README.md', 'LICENSE'].includes(file) ||
-        (file.startsWith('dist/') && /\.(js|d\.ts)$/.test(file)),
-    ),
-    '制品包含非发布文件',
+  assert.deepEqual(
+    files.toSorted(),
+    [
+      'dist/index.js',
+      'dist/index.d.ts',
+      'package.json',
+      'README.md',
+      'LICENSE',
+    ].toSorted(),
+    '制品必须只包含约定的入口、类型声明与包元数据',
   );
   await writeFile(
     join(directory, 'package.json'),
@@ -86,6 +91,21 @@ try {
   assert.deepEqual(installed.repository, expected.repository);
   assert.deepEqual(installed.exports, expected.exports);
   assert.deepEqual(installed.dependencies, expected.dependencies);
+  const entry = ts.createSourceFile(
+    'index.js',
+    await readFile(join(installedRoot, 'dist/index.js'), 'utf8'),
+    ts.ScriptTarget.ES2022,
+    false,
+    ts.ScriptKind.JS,
+  );
+  const imports = entry.statements
+    .filter(ts.isImportDeclaration)
+    .map((statement) => statement.moduleSpecifier.text);
+  assert.deepEqual(
+    [...new Set(imports)],
+    ['axios'],
+    'JavaScript 入口应保留 Axios 包导入，不依赖内部源码或开发工具',
+  );
   assert.equal(
     await readFile(join(installedRoot, 'LICENSE'), 'utf8'),
     await readFile(join(root, 'LICENSE'), 'utf8'),
@@ -279,23 +299,29 @@ export type RemovedConfigurableClient = SDK.ConfigurableHttpClient;
 export type RemovedBodyMethod = SDK.HttpBodyMethod;
 `,
   );
-  execFileSync(
-    process.execPath,
-    [
-      join(root, 'node_modules/typescript/bin/tsc'),
-      '--strict',
-      '--noEmit',
-      '--skipLibCheck',
-      '--target',
-      'ES2022',
-      '--module',
-      'NodeNext',
-      '--moduleResolution',
-      'NodeNext',
-      'consumer.ts',
-    ],
-    { cwd: directory, stdio: 'inherit' },
-  );
+  for (const [module, resolution] of [
+    ['NodeNext', 'NodeNext'],
+    ['ESNext', 'Bundler'],
+  ]) {
+    execFileSync(
+      process.execPath,
+      [
+        join(root, 'node_modules/typescript/bin/tsc'),
+        '--strict',
+        '--noEmit',
+        '--skipLibCheck',
+        'false',
+        '--target',
+        'ES2022',
+        '--module',
+        module,
+        '--moduleResolution',
+        resolution,
+        'consumer.ts',
+      ],
+      { cwd: directory, stdio: 'inherit' },
+    );
+  }
   execFileSync(
     process.execPath,
     [
@@ -369,7 +395,7 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
   );
   assert.equal(await digest(), integrity, '验证过程中 tarball 不应变化');
   console.log(
-    '隔离 tarball 消费验证通过：发布文件、ESM 导入与 TypeScript 公开类型',
+    '隔离 tarball 消费验证通过：发布文件、Axios 外部依赖、ESM 导入与 NodeNext／Bundler 公开类型',
   );
 } finally {
   await rm(directory, { recursive: true, force: true });

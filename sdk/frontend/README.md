@@ -143,7 +143,7 @@ src/
 - 信封适配器的专属类型与实现共同放在 `response/envelope.ts`；错误类、构造选项及类型守卫共同放在 `error/http-client-error.ts`，取消和等待辅助函数放在 `error/cancellation.ts`。不要求每个功能都创建契约文件。
 - 错误码提取契约及辅助实现归 `error/`；`api` 保存派生配置，`client` 在统一错误处理阶段应用，不在传输和信封路径各自维护一份配置。
 - 契约不引用客户端、认证协调器或 Axios 实现；认证契约通过类型导入引用错误类。认证会话的品牌声明与公开接口放在一起，私有刷新状态留在实现内。
-- 内部直接引用具体文件，保留 ESM `.js` 路径及 `import type`，不通过包根入口或功能目录的聚合入口引用自身。`src/index.ts` 是唯一公开入口，不提供内部子路径导出。
+- 源码与测试使用无后缀的相对路径直接引用具体 TypeScript 文件，保留 `import type`，不通过包根入口或功能目录的聚合入口引用自身。`src/index.ts` 是唯一公开入口，不提供内部子路径导出。直接由 Node 执行的 JavaScript 脚本仍保留相对导入的文件扩展名。
 
 这里的契约属于前端 HTTP API；仓库根目录 `contracts/` 继续负责跨语言公共协议，不在功能目录重复定义共享协议。行为测试继续通过包根入口验证公开契约，不依赖内部文件布局。
 
@@ -159,7 +159,7 @@ ESLint 的 `@stylistic/padding-line-between-statements` 负责检查和自动补
 
 ## 本地开发
 
-使用 Node 24 和 npm，在本目录执行：
+使用 Node 24（至少 24.11）和 npm，在本目录执行；最低版本是 tsdown 的构建环境要求，不代表消费者必须使用相同 Node 版本：
 
 ```sh
 npm ci
@@ -168,9 +168,17 @@ npm run format
 npm run verify
 ```
 
-`verify` 包含格式、静态和类型检查、行为测试、构建、Chromium 实际 HTTP 验证，以及隔离目录内的 tarball 消费测试。浏览器测试使用临时本地 HTTP 服务，不访问生产服务。消费测试需访问 npm 安装 tarball 的运行时依赖。
+`verify` 包含格式、静态和类型检查、行为测试、构建、Chromium 实际 HTTP／SSE 验证，以及隔离目录内的 tarball 消费测试。浏览器测试从 `dist/index.js` 组装测试页面，使用临时本地 HTTP 服务，不访问生产服务；单独运行 `test:browser` 前需先构建。消费测试需访问 npm 安装 tarball 的运行时依赖，同时使用 NodeNext 与 Bundler 解析模式检查公开类型，两者均关闭 `skipLibCheck`，并验证 Node ESM 实际请求。
 
 提供 ESM JavaScript 和类型声明，不提供 CommonJS 入口。初版验证浏览器与 Node ESM 消费，不声称已验证 Expo 或所有 Axios 适配器。
+
+## 构建职责
+
+`tsc --noEmit` 负责源码、测试和构建配置的类型检查，使用 ESNext 模块与 Bundler 模块解析；tsdown 从唯一入口构建 SDK 自身代码并打包声明，输出 `dist/index.js` 和 `dist/index.d.ts`。构建目标为 ES2022，使用中立平台配置，不压缩、不生成 sourcemap。源码仍按功能维护，发布目录不再逐文件对应源码目录。
+
+Axios 保留为 npm 运行时依赖，不将实现或类型内联到 SDK；最终由消费者的运行环境或构建工具解析包入口。esbuild 仅用于将已经构建的 SDK 与依赖组装成浏览器测试页面。业务项目继续从 `@stellarmesh/sdk` 导入，不需要编译 SDK 源码。
+
+tarball 验证要求制品只包含上述两个构建文件、`package.json`、`README.md` 与 `LICENSE`，并检查 Axios 外部导入。每次构建先清理旧输出，避免已删除的内部模块残留到发布包。
 
 ## 发布准备与许可证
 
@@ -178,6 +186,6 @@ npm run verify
 
 在本目录运行 `npm run release:prepare`，完成检查、行为测试、干净构建和 Chromium 验证后，生成一份 tarball，并在独立目录验证这份 tarball 的元数据、类型与运行时行为。成功时保留 `.artifacts/` 下的制品和 `release.json`，记录版本、目标 registry 与 SHA-512／SHA-256 校验信息；该命令不发布 npm 包。
 
-`npm run build` 会先删除旧 `dist/`。普通 `npm pack` 通过 `prepack` 自动干净构建，但不会替代完整发布验证；消费测试与 `prepack` 不互相调用。`npm run test:consumer -- /绝对路径/包文件.tgz` 可验证指定的已有制品，不重新构建或替换它。发布时应上传已经验证的 tarball。
+`npm run build` 会先删除旧 `dist/`。普通 `npm pack` 通过 `prepack` 自动干净构建，但不会替代完整发布验证；默认消费测试先显式构建，再跳过脚本打包，避免构建日志混入打包的 JSON 输出。`npm run test:consumer -- /绝对路径/包文件.tgz` 可验证指定的已有制品，不重新构建或替换它。发布时应上传已经验证的 tarball。
 
 首次发布、手动制品工作流和后续自动发布安排见[发布说明](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#前端-http-sdk-首次-npm-发布)。

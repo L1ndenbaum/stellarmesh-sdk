@@ -8,8 +8,8 @@ import {
   http,
   HttpClientError,
   isHttpClientError,
-} from '../src/index.js';
-import type { HttpApi, HttpResponse } from '../src/index.js';
+} from '../src/index';
+import type { HttpApi, HttpResponse } from '../src/index';
 
 type Handler = (
   req: IncomingMessage,

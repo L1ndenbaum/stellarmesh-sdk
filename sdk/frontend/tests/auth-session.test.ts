@@ -8,8 +8,8 @@ import {
   flattenEnvelopeResponse,
   http,
   HttpClientError,
-} from '../src/index.js';
-import type { AuthSessionOptions, HttpHeaders } from '../src/index.js';
+} from '../src/index';
+import type { AuthSessionOptions, HttpHeaders } from '../src/index';
 
 const servers: Server[] = [];
 

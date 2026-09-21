@@ -1,8 +1,8 @@
 import axios, { AxiosHeaders } from 'axios';
 import type { AxiosInstance } from 'axios';
-import { HttpClientError } from '../error/http-client-error.js';
-import type { HttpRequest } from '../request/contracts.js';
-import type { HttpResponse } from '../response/contracts.js';
+import { HttpClientError } from '../error/http-client-error';
+import type { HttpRequest } from '../request/contracts';
+import type { HttpResponse } from '../response/contracts';
 
 export function normalizeHeaders(headers: object): Record<string, string> {
   const result: Record<string, string> = {};

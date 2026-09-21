@@ -10,8 +10,8 @@ import {
   HttpErrorKind,
   isHttpClientError,
   ResponseType,
-} from '../src/index.js';
-import type { ErrorCodeExtractor } from '../src/index.js';
+} from '../src/index';
+import type { ErrorCodeExtractor } from '../src/index';
 
 const servers: Server[] = [];
 

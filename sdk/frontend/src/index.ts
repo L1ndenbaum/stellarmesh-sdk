@@ -1,4 +1,4 @@
-export { http } from './http/api/api.js';
+export { http } from './http/api/api';
 export type {
   HttpApi,
   HttpApiBodyMethod,
@@ -10,39 +10,39 @@ export type {
   HttpApiRequestDescriptor,
   HttpApiRequestMethod,
   HttpApiResult,
-} from './http/api/contracts.js';
-export { HttpMethod } from './http/request/contracts.js';
+} from './http/api/contracts';
+export { HttpMethod } from './http/request/contracts';
 export type {
   HttpHeaders,
   HttpProgress,
   HttpRequest,
   HttpRequestOptions,
-} from './http/request/contracts.js';
-export { ResponseType } from './http/response/contracts.js';
+} from './http/request/contracts';
+export { ResponseType } from './http/response/contracts';
 export type {
   HttpResponse,
   ResponseContext,
   ResponseTransform,
-} from './http/response/contracts.js';
-export { AuthRefreshResult } from './http/auth/contracts.js';
-export { createAuthSession } from './http/auth/session.js';
+} from './http/response/contracts';
+export { AuthRefreshResult } from './http/auth/contracts';
+export { createAuthSession } from './http/auth/session';
 export type {
   AuthSession,
   AuthBindingOptions,
   AuthSessionContext,
   AuthSessionEpoch,
   AuthSessionOptions,
-} from './http/auth/contracts.js';
-export type { RetryOptions } from './http/retry/contracts.js';
-export { flattenEnvelopeResponse } from './http/response/envelope.js';
-export type { ApiEnvelope, EnvelopeOptions } from './http/response/envelope.js';
+} from './http/auth/contracts';
+export type { RetryOptions } from './http/retry/contracts';
+export { flattenEnvelopeResponse } from './http/response/envelope';
+export type { ApiEnvelope, EnvelopeOptions } from './http/response/envelope';
 export {
   HttpClientError,
   HttpErrorKind,
   isHttpClientError,
-} from './http/error/http-client-error.js';
-export type { HttpClientErrorOptions } from './http/error/http-client-error.js';
-export type { ErrorCodeExtractor } from './http/error/contracts.js';
+} from './http/error/http-client-error';
+export type { HttpClientErrorOptions } from './http/error/http-client-error';
+export type { ErrorCodeExtractor } from './http/error/contracts';
 
 export type {
   SseApi,
@@ -53,4 +53,4 @@ export type {
   SseQueryDeclarationOptions,
   SseRequest,
   SseRequestDescriptor,
-} from './http/sse/contracts.js';
+} from './http/sse/contracts';

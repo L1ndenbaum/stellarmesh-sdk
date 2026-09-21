@@ -6,12 +6,12 @@ import {
   createAuthSession,
   http,
   HttpMethod,
-} from '../src/index.js';
+} from '../src/index';
 import type {
   AuthSessionOptions,
   SseMessage,
   SseRequestDescriptor,
-} from '../src/index.js';
+} from '../src/index';
 
 const encoder = new TextEncoder();
 const servers: Server[] = [];

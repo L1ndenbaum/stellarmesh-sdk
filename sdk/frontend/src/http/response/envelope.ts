@@ -1,5 +1,5 @@
-import { HttpClientError } from '../error/http-client-error.js';
-import type { ResponseTransform } from './contracts.js';
+import { HttpClientError } from '../error/http-client-error';
+import type { ResponseTransform } from './contracts';
 
 /** 可配置工具类型，不代表所有业务项目必须采用的跨语言协议。 */
 export interface ApiEnvelope<T> {

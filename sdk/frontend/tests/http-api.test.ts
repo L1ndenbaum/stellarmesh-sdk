@@ -8,12 +8,12 @@ import {
   http,
   HttpClientError,
   HttpMethod,
-} from '../src/index.js';
+} from '../src/index';
 import type {
   HttpApiDeclarationOptions,
   HttpApiQueryMethod,
   HttpApiRequestDescriptor,
-} from '../src/index.js';
+} from '../src/index';
 const servers: Server[] = [];
 
 async function serve(
