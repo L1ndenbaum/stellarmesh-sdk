@@ -2,6 +2,7 @@ import type { AuthBindingOptions, AuthSession } from '../auth/contracts.js';
 import type { ErrorCodeExtractor } from '../error/contracts.js';
 import type { HttpResponse, ResponseTransform } from '../response/contracts.js';
 import type { RetryOptions } from '../retry/contracts.js';
+import type { SseApi } from '../sse/contracts.js';
 import type {
   HttpHeaders,
   HttpMethod,
@@ -76,6 +77,7 @@ export interface HttpApiRequestMethod<TMetadata extends boolean = false> {
 }
 
 export interface HttpApi<TMetadata extends boolean = false> {
+  readonly sse: SseApi;
   get: HttpApiQueryMethod<TMetadata>;
   head: HttpApiQueryMethod<TMetadata>;
   delete: HttpApiQueryMethod<TMetadata>;

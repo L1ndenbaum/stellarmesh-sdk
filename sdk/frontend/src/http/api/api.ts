@@ -1,5 +1,6 @@
 import { getAuthCoordinator } from '../auth/session.js';
 import { createExecutor } from '../client/client.js';
+import { createSseApi } from '../sse/client.js';
 import type { ClientOptions } from '../client/contracts.js';
 import { throwIfCanceled } from '../error/cancellation.js';
 import { defaultRetry, validateNumber } from '../retry/policy.js';
@@ -121,6 +122,7 @@ function createApi<TMetadata extends boolean>(
         true,
       );
   return {
+    sse: createSseApi(options),
     get: queryMethod('GET'),
     head: queryMethod('HEAD'),
     delete: queryMethod('DELETE'),

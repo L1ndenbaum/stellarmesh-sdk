@@ -18,7 +18,10 @@ export function abortable<T>(
 ): Promise<T> {
   if (!signal) return promise;
   return new Promise<T>((resolve, reject) => {
-    const abort = () => reject(canceledError(signal));
+    const abort = () => {
+      cleanup();
+      reject(canceledError(signal));
+    };
     const cleanup = () => signal.removeEventListener('abort', abort);
     signal.addEventListener('abort', abort, { once: true });
     if (signal.aborted) abort();

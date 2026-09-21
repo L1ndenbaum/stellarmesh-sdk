@@ -4,8 +4,7 @@ import {
   normalizeError,
   send,
 } from '../transport/axios-transport.js';
-import { AuthRefreshResult } from '../auth/contracts.js';
-import { getAuthCoordinator, isTrustedTarget } from '../auth/session.js';
+import { createRequestAuth } from '../auth/request.js';
 import { abortable, throwIfCanceled } from '../error/cancellation.js';
 import { HttpClientError } from '../error/http-client-error.js';
 import { extractErrorCode } from '../error/extract-error-code.js';
@@ -17,9 +16,6 @@ import type { ClientOptions } from './contracts.js';
 /** 内部执行器始终返回元信息，公开声明入口决定最终交付形态。 */
 export function createExecutor(options: ClientOptions) {
   const transport = createTransport(options.baseURL);
-  const session = options.auth
-    ? getAuthCoordinator(options.auth.session)
-    : undefined;
   async function execute(input: HttpRequest): Promise<HttpResponse<unknown>> {
     const request = {
       ...input,
@@ -33,30 +29,9 @@ export function createExecutor(options: ClientOptions) {
       true,
     );
     throwIfCanceled(request.signal);
-    const authenticated =
-      options.auth &&
-      request.auth !== false &&
-      isTrustedTarget(request.url, options.baseURL, options.auth.binding);
-    const withCredentials = Boolean(
-      authenticated && options.auth!.binding.withCredentials,
-    );
-    if (
-      withCredentials &&
-      (typeof XMLHttpRequest === 'undefined' || typeof location === 'undefined')
-    ) {
-      throw new HttpClientError('跨源 Cookie 会话仅支持浏览器环境', {
-        kind: 'auth',
-      });
-    }
-    const snapshot = authenticated ? session!.capture() : undefined;
-    const checkActive = () => {
-      throwIfCanceled(request.signal);
-      if (snapshot) session!.assertCurrent(snapshot);
-    };
-    let authHeaders = snapshot
-      ? await abortable(session!.headers(snapshot), request.signal)
-      : {};
-    let recovered = false;
+    const auth = createRequestAuth(options, request);
+    const { checkActive, withCredentials } = auth;
+    let authHeaders = await auth.headers();
     let retries = 0;
     while (true) {
       checkActive();
@@ -109,33 +84,9 @@ export function createExecutor(options: ClientOptions) {
           // 项目回调可能同步取消请求或切换会话，仍遵循原来的会话边界。
           checkActive();
         }
-        if (
-          snapshot &&
-          session!.canRefresh &&
-          request.authRecovery !== false &&
-          session!.shouldRefresh(error)
-        ) {
-          checkActive();
-          if (!recovered) {
-            recovered = true;
-            // 回调异常直接离开循环，不通知退出，也不能当成业务请求的传输失败重试。
-            const result = await abortable(
-              session!.refresh(snapshot),
-              request.signal,
-            );
-            checkActive();
-            if (result === AuthRefreshResult.REFRESHED) {
-              // 刷新只报告恢复结果；认证头重新读取，Cookie 由浏览器管理。
-              authHeaders = await abortable(
-                session!.headers(snapshot),
-                request.signal,
-              );
-              checkActive();
-              continue;
-            }
-          }
-          await abortable(session!.notify(snapshot, error), request.signal);
-          throw error;
+        if (await auth.recover(error)) {
+          authHeaders = await auth.headers();
+          continue;
         }
         checkActive();
         // 只有真实传输失败消耗普通重试额度；信封恢复需显式命中认证谓词。

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { build } from 'esbuild';
 import { chromium } from '@playwright/test';
 import { testBrowserAuth } from './browser-auth-test.mjs';
+import { testBrowserSse } from './browser-sse-test.mjs';
 
 const directory = await mkdtemp(join(tmpdir(), 'stellarmesh-browser-'));
 const servers = [];
@@ -250,6 +251,7 @@ try {
   assert(seenAuth.every((value) => value === undefined));
   assert(stored.has('/object?signature=a%2Fb%2Bc&part=1'));
   await testBrowserAuth(browser, bundle);
+  await testBrowserSse(browser, bundle);
   console.log(
     '浏览器验证通过：声明式调用、信封、错误码提取、鉴权、跨域隔离、上传下载、进度、ETag、超时与取消',
   );

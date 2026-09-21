@@ -126,6 +126,36 @@ const upload = metadata.request<{ url: string; file: Blob }, string>(input => ({
   method: HttpMethod.PUT, url: input.url, data: input.file,
 }), { responseType: ResponseType.TEXT });
 export const literalMethod: MethodType = 'GET';
+export function checkSseTypes(): void {
+  const events = api.sse.get<Query>('/events');
+  const post = api.sse.post<LoginRequest>('/events', { params: { mode: 'live' } });
+  const stream: AsyncIterable<SDK.SseMessage> = post({ username: 'u', password: 'p' }, { signal: new AbortController().signal });
+  const withMetadata: AsyncIterable<SDK.SseMessage> = api.withMetadata().sse.get<void>('/events')();
+  const dynamic = api.sse.request<{ id: string }>(input => ({ method: HttpMethod.POST, url: '/events/' + input.id, data: { id: input.id } }));
+  void [stream, withMetadata, dynamic({ id: '1' }), events({ page: 1 })];
+  // @ts-expect-error 查询 DTO 必须匹配。
+  events({ page: 'one' });
+  // @ts-expect-error 必填输入不能省略。
+  post();
+  // @ts-expect-error SSE 不是一次性 Promise。
+  const promise: Promise<SDK.SseMessage> = stream;
+  void promise;
+  // @ts-expect-error SSE 不接受重试配置。
+  api.sse.post<void>('/', { maxRetries: 1 });
+  // @ts-expect-error SSE 不接受普通响应类型。
+  api.sse.get<void>('/', { responseType: ResponseType.JSON });
+  // @ts-expect-error 查询只有一个来源。
+  events({ page: 1 }, { params: {} });
+  // @ts-expect-error 声明不能绑定取消信号。
+  api.sse.post<void>('/', { signal: new AbortController().signal });
+  // @ts-expect-error 动态映射必须同步。
+  api.sse.request<void>(async () => ({ method: HttpMethod.GET, url: '/' }));
+  // @ts-expect-error SSE 仅支持 GET 与 POST。
+  api.sse.request<void>(() => ({ method: HttpMethod.PUT, url: '/' }));
+  // @ts-expect-error GET 不允许请求体。
+  const descriptor: SDK.SseRequestDescriptor = { method: HttpMethod.GET, url: '/', data: {} };
+  void descriptor;
+}
 export function checkTypes(): void {
   // @ts-expect-error 提取器必须同步，不能返回 Promise。
   http.withErrorCodeExtractor(async () => 'EXPIRED');
@@ -296,6 +326,11 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
     let calls = 0;
     const server = createServer((req, res) => {
       calls++;
+      if (req.url === '/events') {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        res.end('data: public-package\\n\\n');
+        return;
+      }
       if (req.url === '/failure') {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ code: 401, error_code: 'EXPIRED', message: '会话失效', data: null }));
@@ -311,6 +346,9 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
       assert.deepEqual(await declared(), { id: 7 });
       assert.deepEqual((await api.withMetadata().request(() => ({ method: HttpMethod.GET, url: '/items' }))()).data, { id: 7 });
       assert.equal(calls, 2);
+      const messages = [];
+      for await (const message of api.sse.post('/events')({ id: 7 })) messages.push(message.data);
+      assert.deepEqual(messages, ['public-package']);
       const custom = api.withErrorCodeExtractor(data => data.error_code).withResponseTransform(flattenEnvelopeResponse());
       assert.notEqual(custom, api);
       await assert.rejects(custom.get('/failure')(), error => {

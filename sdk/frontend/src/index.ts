@@ -43,3 +43,14 @@ export {
 } from './http/error/http-client-error.js';
 export type { HttpClientErrorOptions } from './http/error/http-client-error.js';
 export type { ErrorCodeExtractor } from './http/error/contracts.js';
+
+export type {
+  SseApi,
+  SseMessage,
+  SseOptions,
+  SseDeclarationOptions,
+  SseQueryOptions,
+  SseQueryDeclarationOptions,
+  SseRequest,
+  SseRequestDescriptor,
+} from './http/sse/contracts.js';
