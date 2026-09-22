@@ -11,7 +11,7 @@
 | Go Object Storage | `sdk/go/objectstorage/v0.1.0` | namespace 绑定的对象存储能力 |
 | Go Gateway Core | `sdk/go/gateway/v0.3.1` | 通用 `slog` 访问日志，保留限流结果 |
 | Go Kafka | `sdk/go/mq/kafka/v0.1.0` | 轻量 Kafka 连接与 Publisher |
-| Python Object Storage | 尚未发布 | 主干准备 `stellarmesh-objectstorage==0.1.0`，直连 S3／MinIO |
+| Python Object Storage | `sdk/python/objectstorage/v0.1.0` | `stellarmesh-objectstorage==0.1.0`，直连 S3／MinIO |
 | Python Storage | `sdk/python/storage/v0.1.1` | `stellarmesh-storage==0.1.1` |
 | storage-service | 根镜像 tag `v0.3.0` | Storage v1，支持 pretty／JSON 与日志级别 |
 | Go Logging | `sdk/go/logging/v0.4.0` | `slog.Handler`安全装饰器 |
@@ -115,9 +115,9 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 
 仍使用这些制品的项目必须在自己的迁移窗口内排空旧客户端队列、服务 spool、Kafka lag 和 DLQ，再切换 Collector 路线。强事务审计不能依赖这条普通日志链路，应使用业务数据库或 transactional outbox。
 
-## Python Object Storage 发布准备
+## Python Object Storage 发布流程
 
-首版使用组件 tag `sdk/python/objectstorage/v0.1.0`，只触发 `release-python.yml`。发布前先完成 `make verify`、`make integration-objectstorage`，并用本地 wheel 检查业务接入。推送源码并确认 CI 通过后才创建 annotated tag。
+首版 `0.1.0` 已于 2026-09-22 发布，验收摘要见[发布记录](releases/history.md#python-object-storage-010-已发布)。以下以首版组件 tag `sdk/python/objectstorage/v0.1.0` 说明流程；后续发布必须提升版本并使用新的不可变 tag，只触发 `release-python.yml`。发布前先完成 `make verify`、`make integration-objectstorage`，并用本地 wheel 检查业务接入。推送源码并确认 CI 通过后才创建 annotated tag。
 
 首次发布须在 TestPyPI 和 PyPI 分别建立 Pending Trusted Publisher：项目名 `stellarmesh-objectstorage`、Owner `L1ndenbaum`、Repository `stellarmesh-sdk`、Workflow `release-python.yml`，Environment 分别为 `testpypi` 和 `pypi`。不在仓库保存 API Token。
 

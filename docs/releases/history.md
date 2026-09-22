@@ -2,6 +2,21 @@
 
 > 本文件保存旧版本拆分、失败处理和迁移背景。文中的“当前”“未发布”和版本矩阵均表示记录写入时的状态，不是现行发布指令；实际操作以[当前发布文档](../release.md)为准。
 
+## Python Object Storage 0.1.0 已发布
+
+2026-09-22 已通过 Trusted Publishing 将 `stellarmesh-objectstorage==0.1.0` 发布到 [TestPyPI](https://test.pypi.org/project/stellarmesh-objectstorage/0.1.0/) 和 [PyPI](https://pypi.org/project/stellarmesh-objectstorage/0.1.0/)。同步使用 Boto3，异步使用 aioboto3，提供绑定 Bucket／Prefix 的对象传输、预签名和显式 Multipart；旧 `stellarmesh-storage`、Storage 服务及 Go SDK 版本保持不变。
+
+发布源码为 `1ccfb6f2e24cbe01ccdca377089150cec5d4f94d`，对应 annotated tag `sdk/python/objectstorage/v0.1.0`。该源码的[持续验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/35731749484)全部通过，包含新包的 Python 3.11、真实 MinIO 与制品消费检查；本地全仓 `make verify` 也通过。
+
+[发布工作流](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/35735245772)构建唯一 wheel／sdist，完成 Twine、公开注释与隔离消费验证后，先发布 TestPyPI，核对制品并完成仓库既有 environment review，再将同一 Actions artifact 提升至 PyPI，未重新构建。
+
+| 制品 | SHA-256 |
+| --- | --- |
+| `stellarmesh_objectstorage-0.1.0-py3-none-any.whl` | `111be7bb6d1aed7ea508ca98be43816154786a73180d0169ebb5f8f6e6d07d02` |
+| `stellarmesh_objectstorage-0.1.0.tar.gz` | `9782e3336f7b7e260e4cb9adfc84faf5b89f2848727dec8be061389dc51230b5` |
+
+发布后从官方 PyPI 匿名下载上述两个文件，摘要与 Actions／TestPyPI 一致；全新虚拟环境使用空缓存、官方索引按包名安装成功，公开导入、同步／异步签名与关闭行为通过。公开 wheel 再次通过严格类型消费与 README／docstring 保留检查。真实 MinIO 验证不代表生产 AWS 权限或业务模型验收。
+
 ## 前端 SSE SDK 0.3.0 已发布
 
 2026-09-21 已发布 `@stellarmesh/sdk@0.3.0`，npm `latest` 指向该版本。新增声明式 `http.sse.get/post/request`、增量 SSE 解析、共享 AuthSession 恢复和流生命周期管理；普通 HTTP 与上传继续使用 Axios，依赖版本保持不变。
