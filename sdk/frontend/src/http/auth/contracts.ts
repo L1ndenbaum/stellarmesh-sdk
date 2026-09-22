@@ -8,12 +8,15 @@ export interface AuthSession {
   readonly [authSessionBrand]: true;
 }
 
+/** 业务维护的会话代号；不同登录会话不得复用旧值。 */
 export type AuthSessionEpoch = string | number;
 
+/** 当前逻辑请求捕获的会话；异步保存和清理仍须由业务核对 epoch。 */
 export interface AuthSessionContext {
   readonly epoch: AuthSessionEpoch;
 }
 
+/** 业务完成刷新后的明确结果；临时故障应抛异常，而非返回 EXPIRED。 */
 export const AuthRefreshResult = {
   REFRESHED: 'refreshed',
   EXPIRED: 'expired',
@@ -32,6 +35,7 @@ interface AuthSessionBaseOptions {
 }
 
 interface AuthRecoveryOptions {
+  /** 同步业务判定，仅接收 HTTP／业务错误；SDK 不默认匹配 401。 */
   shouldRefresh(error: HttpClientError): boolean;
   /** 完成凭证条件保存或 Cookie 刷新后报告结果；异常仅使本次操作失败。 */
   refreshSession(context: AuthSessionContext): Promise<AuthRefreshResult>;
@@ -52,7 +56,9 @@ interface AuthWithoutRecoveryOptions {
 export type AuthSessionOptions = AuthSessionBaseOptions &
   (AuthRecoveryOptions | AuthWithoutRecoveryOptions);
 
+/** 认证目标边界；不自动发现可信域名或提供 Node Cookie 容器。 */
 export interface AuthBindingOptions {
+  /** 省略时只信任 baseURL 的 origin；显式列表替换该默认范围。 */
   trustedOrigins?: readonly string[];
   /** 仅对可信目标启用浏览器跨源 Cookie；默认关闭，不控制同源 Cookie。 */
   withCredentials?: boolean;

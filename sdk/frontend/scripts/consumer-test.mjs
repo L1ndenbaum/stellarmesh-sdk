@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
+import { verifyExamples } from './example-test.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const expected = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -393,6 +394,7 @@ export type RemovedBodyMethod = SDK.HttpBodyMethod;
     ],
     { cwd: directory, stdio: 'inherit' },
   );
+  await verifyExamples(root, directory, installedRoot);
   assert.equal(await digest(), integrity, '验证过程中 tarball 不应变化');
   console.log(
     '隔离 tarball 消费验证通过：发布文件、Axios 外部依赖、ESM 导入与 NodeNext／Bundler 公开类型',

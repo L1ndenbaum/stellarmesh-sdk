@@ -8,11 +8,18 @@ export interface ApiEnvelope<T> {
   data?: T | null;
 }
 
+/** 业务信封工具配置，不预设项目错误码目录。 */
 export interface EnvelopeOptions {
+  /** 默认接受数值 0 或数值 2xx；字符串成功码需业务显式判断。 */
   isSuccess?(code: number | string): boolean;
+  /** 默认 false，非信封响应报 RESPONSE_FORMAT；true 时原样返回。 */
   allowNonEnvelope?: boolean;
 }
 
+/**
+ * 将成功信封解包为 data；业务失败抛 BUSINESS，204 返回 undefined。
+ * @remarks 装配到 withResponseTransform，不作用于成功 SSE；不会验证 data 的 DTO 字段。
+ */
 export function flattenEnvelopeResponse(
   options: EnvelopeOptions = {},
 ): ResponseTransform {

@@ -29,3 +29,5 @@ make integration
 每项完成的改动以中文 conventional commit 提交，提交前执行 `git diff --check`。公开行为变化同时更新指南、IDE 注释及必要示例，协议和默认值以实现与契约测试为准。不要顺带修复文档整理中发现的运行时问题。
 
 发布是单独操作，按[发布流程](docs/release.md)验证唯一制品、CI 和远端权限；本地构建、准备 tarball 或提交代码都不等同于发布。
+
+前端源码布局、导入排版和 tsdown 制品职责见[前端维护指南](docs/contributing/frontend.md)。

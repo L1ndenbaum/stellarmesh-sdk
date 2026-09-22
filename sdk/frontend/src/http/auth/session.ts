@@ -169,6 +169,12 @@ const sessions = new WeakMap<
   ReturnType<typeof createAuthCoordinator>
 >();
 
+/**
+ * 创建可供多个声明入口共享的会话恢复协调器，不读取或保存业务凭证。
+ * @param options 刷新判断和执行必须成对提供；无刷新时不能配置退出通知。
+ * @returns 绑定到 withAuth 的会话对象，SSR 应按用户请求创建。
+ * @remarks 非法配置同步抛 TypeError；执行回调异常归一化为鉴权错误，保留 cause。
+ */
 export function createAuthSession(options: AuthSessionOptions): AuthSession {
   if (!options || typeof options !== 'object') {
     throw new TypeError('createAuthSession 需要会话配置');
