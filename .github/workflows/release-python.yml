@@ -5,6 +5,7 @@ on:
     tags:
       - "sdk/python/logging/v*.*.*"
       - "sdk/python/storage/v*.*.*"
+      - "sdk/python/objectstorage/v*.*.*"
 
 permissions:
   contents: read
@@ -34,6 +35,11 @@ jobs:
               package_path="sdk/python/storage"
               distribution="stellarmesh-storage"
               tag_version="${GITHUB_REF_NAME#sdk/python/storage/v}"
+              ;;
+            sdk/python/objectstorage/v*.*.*)
+              package_path="sdk/python/objectstorage"
+              distribution="stellarmesh-objectstorage"
+              tag_version="${GITHUB_REF_NAME#sdk/python/objectstorage/v}"
               ;;
             *)
               echo "不支持的 Python 组件 tag：$GITHUB_REF_NAME" >&2
@@ -87,7 +93,7 @@ jobs:
           uv lock --project "$PACKAGE_PATH" --check
           uv run --project "$PACKAGE_PATH" --frozen ruff check "$PACKAGE_PATH"
           uv run --project "$PACKAGE_PATH" --frozen ruff format --check "$PACKAGE_PATH"
-          uv run --project "$PACKAGE_PATH" --frozen mypy "$PACKAGE_PATH/src" "$PACKAGE_PATH/tests"
+          uv run --project "$PACKAGE_PATH" --frozen mypy --config-file "$PACKAGE_PATH/pyproject.toml" "$PACKAGE_PATH/src" "$PACKAGE_PATH/tests"
           (
             cd "$PACKAGE_PATH"
             uv run --frozen pytest
@@ -102,6 +108,9 @@ jobs:
           uv build --project "$PACKAGE_PATH" --out-dir dist
           uv run --project "$PACKAGE_PATH" --frozen twine check dist/*
           uv run --project "$PACKAGE_PATH" --frozen python tests/docs/python_artifact.py "$PACKAGE_PATH" dist
+          if [ "$PACKAGE_PATH" = "sdk/python/objectstorage" ]; then
+            uv run --project "$PACKAGE_PATH" --frozen python tests/package-consumer/python-objectstorage/consume.py dist
+          fi
 
       - name: 上传发布制品
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

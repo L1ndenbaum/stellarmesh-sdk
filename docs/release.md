@@ -11,6 +11,7 @@
 | Go Object Storage | `sdk/go/objectstorage/v0.1.0` | namespace 绑定的对象存储能力 |
 | Go Gateway Core | `sdk/go/gateway/v0.3.1` | 通用 `slog` 访问日志，保留限流结果 |
 | Go Kafka | `sdk/go/mq/kafka/v0.1.0` | 轻量 Kafka 连接与 Publisher |
+| Python Object Storage | 尚未发布 | 主干准备 `stellarmesh-objectstorage==0.1.0`，直连 S3／MinIO |
 | Python Storage | `sdk/python/storage/v0.1.1` | `stellarmesh-storage==0.1.1` |
 | storage-service | 根镜像 tag `v0.3.0` | Storage v1，支持 pretty／JSON 与日志级别 |
 | Go Logging | `sdk/go/logging/v0.4.0` | `slog.Handler`安全装饰器 |
@@ -96,7 +97,7 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 - 根 tag `vX.Y.Z` 只构建并发布 `ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service`；
 - `sdk/go/vX.Y.Z` 只验证父 Go Module；
 - `sdk/go/objectstorage/vX.Y.Z`、`sdk/go/gateway/vX.Y.Z`、`sdk/go/logging/vX.Y.Z` 和 `sdk/go/mq/kafka/vX.Y.Z` 分别发布对应嵌套 Module；
-- `sdk/python/logging/vX.Y.Z` 与 `sdk/python/storage/vX.Y.Z` 分别发布对应 Python distribution；
+- `sdk/python/logging/vX.Y.Z`、`sdk/python/storage/vX.Y.Z` 与 `sdk/python/objectstorage/vX.Y.Z` 分别发布对应 Python distribution；
 - Go 与 Python组件 tag 不触发镜像构建，根 tag 也不触发 Python 发布。
 
 发布工作流必须从公共 Go Proxy 或实际构建出的 wheel/sdist验证制品，不能依赖仓库 `go.work`、本地 `replace` 或可变源码目录。公开 GHCR 镜像可以匿名拉取；生产环境仍应固定已验证的 manifest digest。
@@ -113,6 +114,20 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 - `stellarmesh-logging==0.2.0`。
 
 仍使用这些制品的项目必须在自己的迁移窗口内排空旧客户端队列、服务 spool、Kafka lag 和 DLQ，再切换 Collector 路线。强事务审计不能依赖这条普通日志链路，应使用业务数据库或 transactional outbox。
+
+## Python Object Storage 发布准备
+
+首版使用组件 tag `sdk/python/objectstorage/v0.1.0`，只触发 `release-python.yml`。发布前先完成 `make verify`、`make integration-objectstorage`，并用本地 wheel 检查业务接入。推送源码并确认 CI 通过后才创建 annotated tag。
+
+首次发布须在 TestPyPI 和 PyPI 分别建立 Pending Trusted Publisher：项目名 `stellarmesh-objectstorage`、Owner `L1ndenbaum`、Repository `stellarmesh-sdk`、Workflow `release-python.yml`，Environment 分别为 `testpypi` 和 `pypi`。不在仓库保存 API Token。
+
+工作流构建唯一 wheel／sdist，完成 Twine、公共说明和隔离消费验证后上传 Actions artifact；TestPyPI 与 PyPI 两个阶段下载同一制品，不重新构建。显式检查已有制品可使用：
+
+```sh
+uv run --project sdk/python/objectstorage --frozen python tests/package-consumer/python-objectstorage/consume.py /绝对路径/dist
+```
+
+发布后从官方 PyPI 匿名下载 wheel／sdist，比较 Actions artifact 的 SHA-256，并用空缓存安装正式包名验证。完成后才更新本页矩阵和历史记录。旧 `stellarmesh-storage` 继续使用独立版本与原有 HTTP 契约。
 
 ## storage-service 镜像发布
 
