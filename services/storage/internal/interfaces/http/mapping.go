@@ -62,6 +62,7 @@ func checksum(value objectstorage.HeaderChecksum) *storagev1.Checksum {
 	}
 }
 
+// 保留 provider 已签名的方法、URL 和多值请求头；重写内容会破坏数据面签名。
 func presignedRequest(request objectstorage.PresignedRequest) storagev1.PresignedRequest {
 	return storagev1.PresignedRequest{
 		Method: request.Method, URL: request.URL, Headers: request.Headers, ExpiresAt: request.ExpiresAt,

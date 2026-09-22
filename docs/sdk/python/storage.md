@@ -134,3 +134,13 @@ async with AsyncClient(config) as client:
 - `ClientClosedError`。
 
 异常字符串不包含 token、预签名 URL、provider 响应体或 signed headers 中的安全令牌。需要诊断时记录异常类别、HTTP 状态和业务自己的低基数操作名，不要记录请求 URL。
+
+## 可执行完整示例
+
+[示例源码](../../../sdk/python/storage/tests/example_storage.py)由本包 pytest、Ruff 和 mypy 验证。同步上传与异步下载用 HTTPX 替身验证；不表示真实 S3 服务集成通过。
+
+## 生命周期与本地文件
+
+复用一个客户端可复用连接池，应用退出时统一关闭；注入的 HTTPX transport 会随所属客户端关闭，不应跨不同生命周期共享。配置的 timeout_seconds 是 HTTPX 各阶段超时，max_attempts 包含首次请求；Multipart 创建与完成不自动重试。
+
+upload_file 会在重试时重新读取源文件，调用期间必须保持文件稳定。download_file 在目标同目录写临时文件，成功后替换目标，保留原始签名进行有限重试。异步取消时当前实现不保证删除临时文件，详见[维护记录](../../contributing/known-limitations.md)；本轮没有修改这一行为。

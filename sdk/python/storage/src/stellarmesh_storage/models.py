@@ -94,7 +94,19 @@ class StrictModel(BaseModel):
 
 
 class ClientConfig(StrictModel):
-    """同步和异步客户端共享配置。"""
+    """同步和异步客户端共享的严格、不可变配置。
+
+    Attributes:
+        base_url: HTTP(S) 控制面根地址，禁止 userinfo、query 与 fragment。
+        token: 至少 32 字符的服务 token；不参与 repr 或 model_dump。
+        timeout_seconds: HTTPX 各阶段超时秒数，默认 5，范围 (0, 3600]。
+        max_attempts: 包含首次请求的总次数，默认 3，范围 1 至 10。
+            Multipart 创建和完成始终只尝试一次。
+        initial_backoff_seconds: 初始退避秒数，默认 0.1，范围 (0, 60]。
+        max_backoff_seconds: 退避上限秒数，默认 1，不得小于初始值。
+
+    配置非法时抛 pydantic.ValidationError；不隐式读取业务环境变量。
+    """
 
     model_config = ConfigDict(
         extra="forbid", strict=True, frozen=True, hide_input_in_errors=True
@@ -216,6 +228,8 @@ class MultipartPartRequest(StrictModel):
 
 
 class CompletedPart(StrictModel):
+    """完成 Multipart 所需的分片编号与原始 ETag，不把 ETag 当作内容摘要。"""
+
     part_number: int = Field(ge=MIN_PART_NUMBER, le=MAX_PART_NUMBER)
     etag: str
 
@@ -250,6 +264,8 @@ class MultipartAbortRequest(StrictModel):
 
 
 class ObjectInfo(StrictModel):
+    """已校验的对象元数据；size 以字节计，metadata 不含 Bucket 凭据。"""
+
     key: str
     version_id: str | None = None
     etag: str | None = None
@@ -261,6 +277,10 @@ class ObjectInfo(StrictModel):
 
 
 class PresignedRequest(StrictModel):
+    """完整签名请求；保持 method、原 URL 和多值 headers，不追加控制面 token。
+
+    URL 自身含临时授权，不应写入日志；expires_at 是服务返回的到期时间。"""
+
     method: Literal["GET", "PUT"]
     url: str
     headers: dict[str, list[str]]
@@ -276,6 +296,8 @@ class PresignedRequest(StrictModel):
 
 
 class MultipartUpload(StrictModel):
+    """显式上传会话；业务负责保存 upload_id 并最终完成或中止。"""
+
     key: str
     upload_id: str
 

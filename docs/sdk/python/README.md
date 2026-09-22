@@ -73,3 +73,7 @@ handler.setFormatter(PrettyFormatter(static_fields={"service": "orders-api"}))
 推荐把单行JSON写stdout，再由项目自己的Vector等Collector完成解析、有界磁盘buffer、恢复重放和数据库投影。数据库不可用时的容量、满载策略、重复语义和告警属于Collector部署设计；Formatter成功不表示记录已经持久化。
 
 `0.3.0`删除了`Client`、`AsyncClient`、`ClientConfig`、`LogEvent`、`EventKind`、自定义`Level`、`StellarmeshHandler`、远程重试、全局Client、shutdown和audit门面。项目必须先完成Collector验证，再升级依赖和删除logging-service配置。强事务审计继续使用业务数据库或transactional outbox。
+
+## 可执行完整示例
+
+[示例源码](../../../sdk/python/logging/tests/example_logging.py)由本包 pytest、Ruff 和 mypy 验证。使用 StringIO 检查真实日志输出。

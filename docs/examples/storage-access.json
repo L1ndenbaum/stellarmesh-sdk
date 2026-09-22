@@ -1,0 +1,18 @@
+{
+  "namespaces": {
+    "documents": {"bucket": "project-documents", "prefix": ""},
+    "images": {"bucket": "project-images", "prefix": "originals/"}
+  },
+  "principals": {
+    "backend": {
+      "tokens": [
+        "storage-backend-current-token-00000001",
+        "storage-backend-next-token-0000000001"
+      ],
+      "grants": {
+        "documents": ["read", "write", "delete"],
+        "images": ["read", "write"]
+      }
+    }
+  }
+}

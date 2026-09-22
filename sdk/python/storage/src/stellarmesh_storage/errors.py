@@ -2,7 +2,13 @@
 
 
 class StorageError(Exception):
-    """所有 storage 客户端异常的基类。"""
+    """所有 Storage 请求异常的基类；输入模型验证与本地 OSError 另行传播。
+
+    Attributes:
+        status_code: 相关 HTTP 状态；无响应或统一不可用错误时可能为 None。
+
+    不把异常 cause、签名 URL 或业务响应直接写入日志。
+    """
 
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
         super().__init__(message)

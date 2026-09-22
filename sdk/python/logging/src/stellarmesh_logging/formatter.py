@@ -226,9 +226,27 @@ class _SafeFormatter(logging.Formatter):
 
 
 class JSONFormatter(_SafeFormatter):
-    """把 LogRecord 编码为有界、脱敏的单行 JSON。"""
+    """把 LogRecord 编码为有界、脱敏的单行 JSON。
+
+    Args:
+        static_fields: 固定字段的浅拷贝，不能覆盖 time、level、msg 等保留字段。
+        extra_sensitive_keys: 追加规范化后精确匹配的敏感字段名。
+        max_message_bytes: 消息 UTF-8 字节上限，默认 16384。
+        max_string_bytes: 单个字段字符串字节上限，默认 16384。
+        max_attributes: 固定字段与嵌套容器共享的节点预算，默认 64。
+        max_depth: 最大展开深度，默认 8。
+        include_source: 是否输出源码位置，默认 False。
+
+    Raises:
+        ValueError: 字节预算不足以容纳占位符、节点或深度预算非正，
+            或固定字段／敏感字段配置非法。
+
+    Formatter 不拥有 Handler 或输出流，不创建后台任务；应用负责关闭 Handler。
+    嵌套值不深拷贝，格式化时不要并发修改。消息正文不做任意文本秘密扫描。
+    """
 
     def format(self, record: logging.LogRecord) -> str:
+        """返回格式化文本，不修改原始 LogRecord 或写入输出目标。"""
         result = self._record_fields(record)
         try:
             return json.dumps(
@@ -249,9 +267,27 @@ class JSONFormatter(_SafeFormatter):
 
 
 class PrettyFormatter(_SafeFormatter):
-    """展示相同的安全字段；不加入颜色，异常堆栈在读取时可直接分行阅读。"""
+    """输出无颜色的可读字段与多行异常；采集 JSON 时应使用 JSONFormatter。
+
+    Args:
+        static_fields: 固定字段的浅拷贝，不能覆盖 time、level、msg 等保留字段。
+        extra_sensitive_keys: 追加规范化后精确匹配的敏感字段名。
+        max_message_bytes: 消息 UTF-8 字节上限，默认 16384。
+        max_string_bytes: 单个字段字符串字节上限，默认 16384。
+        max_attributes: 固定字段与嵌套容器共享的节点预算，默认 64。
+        max_depth: 最大展开深度，默认 8。
+        include_source: 是否输出源码位置，默认 False。
+
+    Raises:
+        ValueError: 字节预算不足以容纳占位符、节点或深度预算非正，
+            或固定字段／敏感字段配置非法。
+
+    Formatter 不拥有 Handler 或输出流，不创建后台任务；应用负责关闭 Handler。
+    嵌套值不深拷贝，格式化时不要并发修改。消息正文不做任意文本秘密扫描。
+    """
 
     def format(self, record: logging.LogRecord) -> str:
+        """返回格式化文本，不修改原始 LogRecord 或写入输出目标。"""
         result = self._record_fields(record)
         prefix = (
             f"{_pretty_text(result['time'])} {_pretty_text(result['level'])} "

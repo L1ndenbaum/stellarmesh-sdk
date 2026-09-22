@@ -1,42 +1,48 @@
-# stellarmesh-logging
+# Python Logging
 
-`stellarmesh-logging` 为 Python 3.11 及以上项目提供标准库 `logging` 的安全 `JSONFormatter` 与 `PrettyFormatter`。当前公共版本为 `0.5.0`；不包含远程 Client、HTTP token、后台线程、Kafka、spool、数据库表或日志级别策略，也没有运行时第三方依赖。
+Python 3.11 及以上，无第三方运行依赖；使用标准库 logging，格式与级别由应用选择。
+
+## 安装
+
+示例适用于 `0.5.0`，当前发布状态见[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
 
 ```sh
-pip install stellarmesh-logging==0.5.0
+python -m pip install stellarmesh-logging==0.5.0
 ```
 
+## 最小完整示例
+
+在应用中调用 `write_example(sys.stdout)`；示例测试使用 StringIO 并断言实际 JSON 输出与脱敏。
+
+<!-- example: sdk/python/logging/tests/example_logging.py -->
 ```python
+"""可执行的标准库日志接入，输出流由调用方管理。"""
+
 import logging
-import sys
+from typing import TextIO
 
 from stellarmesh_logging import JSONFormatter
 
-handler = logging.StreamHandler(sys.stdout)
-handler.setFormatter(
-    JSONFormatter(
-        static_fields={
-            "service": "orders-api",
-            "environment": "production",
-        }
-    )
-)
 
-logger = logging.getLogger("orders")
-logger.setLevel(logging.INFO)
-logger.addHandler(handler)
-logger.info(
-    "request completed",
-    extra={"request_id": "request-1", "duration_ms": 12.5},
-)
+def write_example(stream: TextIO) -> None:
+    """将一条安全 JSON 写入 stream，不修改全局默认 Logger。"""
+    logger = logging.Logger("example", level=logging.INFO)
+    handler = logging.StreamHandler(stream)
+    try:
+        handler.setFormatter(JSONFormatter(static_fields={"service": "example-api"}))
+        logger.addHandler(handler)
+        logger.info("请求完成", extra={"password": "example-secret", "duration_ms": 12})
+    finally:
+        logger.removeHandler(handler)
+        handler.close()
+    # StreamHandler.close 不关闭调用方的 stream；文件或 StringIO 由外部 with 关闭。
 ```
+<!-- /example -->
 
-每条记录包含 `time`、`level`、`msg` 和 `logger`。项目可以用 `static_fields` 声明稳定字段，并通过 `LogRecord.extra` 添加自己的顶层字段；基础保留字段不能被覆盖。Formatter 支持异常结构化、Unicode、内置容器和敏感字段规范化后的精确匹配；固定字段和嵌套容器共享属性预算。`token_count`、`session_id` 不因敏感词子串而被遮盖。复杂业务对象、自定义容器和 dataclass 需先显式转为字段。
+## 关键限制
 
-本地开发可改用 `PrettyFormatter`，构造参数与 `JSONFormatter` 相同。两者共享字段脱敏、预算和异常处理，只改变展示：pretty 使用无颜色的时间、级别、Logger、消息和 `key=value` 字段，异常堆栈缩进分行；终端控制字符会转义。JSON 仍是单行格式，现有消费者无需修改。
+Formatter 不持有输出流、不发送 HTTP 或启动后台任务。JSON 用于结构化采集，PrettyFormatter 用于本地阅读；清洗不会扫描任意消息正文。
 
-Formatter 不拥有 `StreamHandler` 或文件描述符，也不读取 `LOG_LEVEL`、`LOG_FORMAT` 等环境变量。输出到 stdout、stderr、文件或其他目标，格式选择、日志等级和 Handler 生命周期都由项目使用 Python 标准库配置。需要采集时使用 JSON，再由项目自己的 Vector 等 Collector 完成有界持久缓冲、恢复重放和数据库投影；pretty 不作为 JSON Collector 的输入。
+## 深入指南
 
-`0.2.0` 是旧远程 Logging v2 客户端的最后版本。`0.3.0` 是有意的破坏性版本，删除了 `Client`、`LogEvent`、`StellarmeshHandler`、结构化审计门面和关闭入口；仍依赖旧 API 的项目必须先完成 Collector迁移，不能直接升级。事务性审计应写入业务数据库或 transactional outbox，不能把普通 stdout日志当作合规级不可丢失记录。
-
-`0.4.0` 的支持类型、节点预算和故障责任有意收窄，升级前阅读[Python 接入与迁移教程](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/sdk/python/README.md)和[字段清洗约定](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/contracts/logging/sanitization.md)。项目自己的凭据名称可通过 `extra_sensitive_keys` 扩展。
+[接入与迁移](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/sdk/python/README.md)、[架构边界](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/sdk-content.md)、[贡献与验证](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/CONTRIBUTING.md)。源码和注释以主干为准，已发布制品行为以对应 tag 为准。

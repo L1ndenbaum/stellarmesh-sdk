@@ -24,6 +24,7 @@ func (handler *Handler) authorize(w http.ResponseWriter, request *http.Request, 
 	return false
 }
 
+// 未配置或未授权的 namespace 使用同一拒绝类别，避免暴露 Bucket 映射。
 func (handler *Handler) storeAndValidate(w http.ResponseWriter, namespaceName, key, versionID, contentType string, metadata map[string]string) (application.Store, objectstorage.Namespace, bool) {
 	store, exists := handler.registry.Store(namespaceName)
 	namespace, configured := handler.policy.Namespace(namespaceName)

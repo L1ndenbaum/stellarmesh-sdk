@@ -58,6 +58,8 @@ def test_access_schema_and_openapi_are_valid() -> None:
     )
     jsonschema.Draft202012Validator.check_schema(schema)
     jsonschema.validate(valid, schema)
+    example = json.loads((_ROOT / "docs/examples/storage-access.json").read_text())
+    jsonschema.validate(example, schema)
     document = yaml.safe_load((_CONTRACT / "openapi.yaml").read_text())
     validate(document)
     assert set(document["paths"]) == {

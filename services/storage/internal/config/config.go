@@ -35,6 +35,8 @@ type Config struct {
 }
 
 // Load 严格读取 STELLARMESH_STORAGE_* 和标准 AWS region 环境变量。
+// 显式非法值不回退为可运行配置；region 优先 AWS_REGION，再用 AWS_DEFAULT_REGION。
+// 访问文件只在启动装配时加载，本函数不安装资源或推断生产凭据。
 func Load() (Config, error) {
 	loader := envconfig.NewStrictLoader()
 	region := strings.TrimSpace(os.Getenv("AWS_REGION"))

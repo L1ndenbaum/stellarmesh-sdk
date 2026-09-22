@@ -30,12 +30,13 @@ Storage v1 的公开、语言无关定义位于 `contracts/storage/v1`。服务�
 - `POST /v1/multipart/create`、`POST /v1/multipart/presign-part`；
 - `POST /v1/multipart/complete`、`POST /v1/multipart/abort`。
 
-业务请求使用 `X-Storage-Service-Token`，JSON 中只出现逻辑 `namespace` 和 `key`，不能出现 Bucket。请求体最大 64 KiB，所有结构拒绝未知字段。完整结构见 `contracts/storage/v1/openapi.yaml`。
+业务请求使用 `X-Storage-Service-Token`，JSON 中只出现逻辑 `namespace` 和 `key`，不能出现 Bucket。请求体最大 64 KiB，所有结构拒绝未知字段。完整结构见 [Storage OpenAPI](../contracts/storage/v1/openapi.yaml)，客户端操作参考留在各语言指南。
 
 ## 2. 访问配置
 
-服务从只读挂载文件加载 namespace 与客户端授权：
+服务从只读挂载文件加载 namespace 与客户端授权。以下均为虚构值，不能作为真实凭据使用；[配置源码](examples/storage-access.json)通过[权威 Schema](../contracts/storage/v1/access-config.schema.json)与现有契约测试验证：
 
+<!-- example: docs/examples/storage-access.json -->
 ```json
 {
   "namespaces": {
@@ -56,6 +57,7 @@ Storage v1 的公开、语言无关定义位于 `contracts/storage/v1`。服务�
   }
 }
 ```
+<!-- /example -->
 
 权限映射固定为：
 
@@ -158,3 +160,17 @@ make integration-aws
 ```
 
 手动入口会在给定 Prefix 下创建、读取并删除唯一测试对象。运行前必须确认身份只能访问测试范围。
+
+## 首次启动与排障路径
+
+首次启动前，部署方须准备 Bucket／最小权限 Policy、运行身份、只读访问文件、镜像 digest，以及客户端能够访问的签名 endpoint。按本文配置表注入设置后启动镜像，先查 `/health/live`，再查 `/health/ready`，最后用[Python 完整示例](../sdk/python/storage/tests/example_storage.py)完成一次控制面签名与数据面传输。这里是操作步骤，文档检查不会启动或部署服务。
+
+| 现象 | 检查顺序 |
+| --- | --- |
+| 启动失败 | 访问文件 Schema、重复 token、未知 capability、region 与正数超时；日志不要输出配置全文 |
+| live 正常、ready 为 503 | 检查每个 namespace 的 Bucket／Prefix、项目凭据、网络和 S3 权限；ready 使用周期检查的最近结果 |
+| 控制面返回 401／403 | 分别核对 token 与 namespace／capability 授权；应用授权不能代替 Bucket Policy |
+| 签名成功但直传失败 | 客户端可达的 endpoint、原始 URL 与全部签名头、有效期、CORS；不要给数据面追加 service token |
+| 上传完成但业务记录缺失 | SDK 不拥有业务事务和完成确认；按项目上传流程检查，不靠服务 readiness 推断业务成功 |
+
+服务配置与权限说明在本页维护，线协议在[契约入口](../contracts/storage/v1/README.md)维护。服务不会自动执行资源迁移、创建 Bucket 或提供生产部署编排。

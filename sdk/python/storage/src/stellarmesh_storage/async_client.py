@@ -39,7 +39,23 @@ ModelType = TypeVar("ModelType", bound=ObjectInfo | PresignedRequest | Multipart
 
 
 class AsyncClient:
-    """异步控制面客户端，并执行显式预签名 GET/PUT。"""
+    """复用控制面与数据面连接池的异步 Storage 客户端。
+
+    使用 async with 管理生命周期，或在应用退出时 await aclose()。
+    两个池均由客户端创建和关闭；注入 transport 也随所属 HTTPX 池关闭，勿跨
+    不同生命周期的客户端共享它。服务 token 只发送到控制面，数据面不跟随重定向。
+    关闭后不可再次使用；不要在请求进行时并发关闭。
+
+    Args:
+        config: 不可变连接与有限重试配置。
+        transport: 可选控制面 HTTPX 传输，用于测试或项目网络配置。
+        data_transport: 可选数据面传输，与控制面认证隔离。
+
+    Raises:
+        ClientClosedError: 在关闭后发起操作。
+        pydantic.ValidationError: 操作输入不满足严格请求模型。
+        StorageError: 控制面或数据面请求失败；本地文件错误仍可抛 OSError。
+    """
 
     def __init__(
         self,
@@ -84,6 +100,20 @@ class AsyncClient:
     async def stat(
         self, namespace: str, key: str, *, version_id: str | None = None
     ) -> ObjectInfo:
+        """读取逻辑对象或指定版本的元数据，不下载对象字节。
+
+        Args:
+            namespace: 服务访问文件声明的逻辑空间，不是 Bucket。
+            key: 空间内的逻辑对象键。
+            version_id: 可选版本，不指定时由对象存储解析当前对象。
+
+        Returns:
+            严格校验的 ObjectInfo；ETag 是不透明值，不能假设为 MD5。
+
+        Raises:
+            NotFoundError: 对象或版本不存在。
+            StorageError: 权限、服务或响应格式错误。可重试故障受 max_attempts 限制。
+        """
         return await self._model_request(
             _operations.stat(namespace, key, version_id=version_id)
         )
@@ -91,6 +121,16 @@ class AsyncClient:
     async def delete(
         self, namespace: str, key: str, *, version_id: str | None = None
     ) -> None:
+        """删除对象或指定版本；是否产生删除标记由 Bucket 版本策略决定。
+
+        Args:
+            namespace: 已授权的逻辑空间。
+            key: 逻辑对象键。
+            version_id: 显式删除的版本，可省略。
+
+        Raises:
+            StorageError: 权限或存储故障；该控制面操作允许有限重试。
+        """
         await self._empty_request(
             _operations.delete(namespace, key, version_id=version_id)
         )
@@ -103,6 +143,20 @@ class AsyncClient:
         version_id: str | None = None,
         expires_in: int = 900,
     ) -> PresignedRequest:
+        """取得下载签名，不发出数据面请求。
+
+        Args:
+            namespace: 已授权的逻辑空间。
+            key: 逻辑对象键。
+            version_id: 可选对象版本。
+            expires_in: 有效期秒数，默认 900，协议范围 60 至 3600。
+
+        Returns:
+            保留 URL、method、headers 和 expires_at 的签名描述；业务负责保密。
+
+        Raises:
+            StorageError: 控制面拒绝、不可用或响应无效。
+        """
         return await self._model_request(
             _operations.presign_get(
                 namespace,
@@ -123,6 +177,23 @@ class AsyncClient:
         checksum: Checksum | None = None,
         expires_in: int = 900,
     ) -> PresignedRequest:
+        """取得单次上传签名，不读取或上传文件。
+
+        Args:
+            namespace: 已授权的逻辑空间。
+            key: 逻辑对象键。
+            size: 声明的字节数，0 至 5 GiB，实际上传必须一致。
+            content_type: 可选媒体类型。
+            metadata: 用户字符串元数据；条数与字节预算受共享契约限制。
+            checksum: 可选标准 Base64 校验和。
+            expires_in: 秒数，默认 900，范围 60 至 3600。
+
+        Returns:
+            数据面请求描述；不得重写签名 URL 或遗漏签名头。
+
+        Raises:
+            StorageError: 控制面拒绝、不可用或响应无效。
+        """
         return await self._model_request(
             _operations.presign_put(
                 namespace,
@@ -144,6 +215,21 @@ class AsyncClient:
         metadata: dict[str, str] | None = None,
         checksum: Checksum | None = None,
     ) -> MultipartUpload:
+        """创建显式分片上传；该操作不自动重试。
+
+        Args:
+            namespace: 已授权的逻辑空间。
+            key: 逻辑对象键。
+            content_type: 可选媒体类型。
+            metadata: 可选字符串元数据。
+            checksum: 可选 Base64 校验和。
+
+        Returns:
+            MultipartUpload；调用方负责保存 upload_id、上传分片并完成或中止。
+
+        Raises:
+            StorageError: 请求失败；失败不证明服务端没有创建上传会话。
+        """
         return await self._model_request(
             _operations.create_multipart(
                 namespace,
@@ -163,6 +249,21 @@ class AsyncClient:
         *,
         expires_in: int = 900,
     ) -> PresignedRequest:
+        """取得已有上传会话的单片 PUT 签名，不调度分片上传。
+
+        Args:
+            namespace: 逻辑空间。
+            key: 原始对象键。
+            upload_id: 创建返回的上传标识。
+            part_number: 分片编号，1 至 10000。
+            expires_in: 有效期秒数，默认 900，范围 60 至 3600。
+
+        Returns:
+            必须完整使用的预签名请求。
+
+        Raises:
+            StorageError: 权限、上传会话或服务故障。
+        """
         return await self._model_request(
             _operations.presign_part(
                 namespace,
@@ -180,11 +281,35 @@ class AsyncClient:
         upload_id: str,
         parts: list[CompletedPart],
     ) -> ObjectInfo:
+        """提交分片清单并完成对象，不自动重试。
+
+        Args:
+            namespace: 逻辑空间。
+            key: 原始对象键。
+            upload_id: 原始上传标识。
+            parts: 每片编号与上传响应的原始 ETag；编号不可重复。
+
+        Returns:
+            完成对象的元数据。
+
+        Raises:
+            StorageError: 完成失败或结果不明确；业务决定后续查询或清理。
+        """
         return await self._model_request(
             _operations.complete_multipart(namespace, key, upload_id, parts)
         )
 
     async def abort_multipart(self, namespace: str, key: str, upload_id: str) -> None:
+        """中止指定分片上传；放弃上传时由业务显式调用。
+
+        Args:
+            namespace: 逻辑空间。
+            key: 原始对象键。
+            upload_id: 原始上传标识。
+
+        Raises:
+            StorageError: 权限或存储故障；允许有限重试。
+        """
         await self._empty_request(
             _operations.abort_multipart(namespace, key, upload_id)
         )
@@ -200,6 +325,21 @@ class AsyncClient:
         checksum: Checksum | None = None,
         expires_in: int = 900,
     ) -> None:
+        """先签名，再直接 PUT 字节；不会自动转为 Multipart。
+
+        Args:
+            namespace: 逻辑空间。
+            key: 逻辑对象键。
+            data: 完整字节内容，至多 5 GiB。
+            content_type: 可选媒体类型。
+            metadata: 可选字符串元数据。
+            checksum: 可选 Base64 校验和。
+            expires_in: 签名有效期秒数，默认 900。
+
+        Raises:
+            PayloadTooLargeError: 超过单次上传限制。
+            StorageError: 签名或上传失败。数据面有限重试复用同一签名，不携带服务 token。
+        """
         if len(data) > MAX_SINGLE_PUT_BYTES:
             raise PayloadTooLargeError(
                 "single PUT exceeds 5 GiB; use the explicit Multipart API"
@@ -226,6 +366,22 @@ class AsyncClient:
         checksum: Checksum | None = None,
         expires_in: int = 900,
     ) -> None:
+        """按文件流上传；每次重试重新打开源文件，重试期间不得修改源文件。
+
+        Args:
+            namespace: 逻辑空间。
+            key: 逻辑对象键。
+            source: 本地文件路径；SDK 打开并关闭句柄，不删除源文件。
+            content_type: 可选媒体类型。
+            metadata: 可选字符串元数据。
+            checksum: 可选 Base64 校验和。
+            expires_in: 签名有效期秒数，默认 900。
+
+        Raises:
+            OSError: 本地文件读取失败。
+            PayloadTooLargeError: 超过 5 GiB，需使用显式 Multipart。
+            StorageError: 签名或上传失败；重试复用同一签名。
+        """
         source_path = path_value(source)
         size = source_path.stat().st_size
         if size > MAX_SINGLE_PUT_BYTES:
@@ -271,6 +427,24 @@ class AsyncClient:
         version_id: str | None = None,
         expires_in: int = 900,
     ) -> Path:
+        """流式写入同目录临时文件，成功后用 os.replace 覆盖目标。
+
+        Args:
+            namespace: 逻辑空间。
+            key: 逻辑对象键。
+            target: 本地目标路径；自动创建父目录，成功时覆盖已有文件。
+            version_id: 可选对象版本。
+            expires_in: 签名有效期秒数，默认 900。
+
+        Returns:
+            写入后的目标 Path；不会把整个对象缓存在内存中。
+
+        Raises:
+            OSError: 本地写入或替换失败。
+            StorageError: 签名或下载失败；有限重试使用同一签名与新的临时文件。
+
+        异步取消不保证清除已创建的临时文件；当前限制见维护记录。
+        """
         target_path = path_value(target)
         presigned = await self.presign_get(
             namespace,
