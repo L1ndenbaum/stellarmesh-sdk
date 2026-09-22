@@ -18,61 +18,15 @@
 | 旧 Gateway Logging Adapter | `0.2.0` | 冻结的远程日志适配器，只供迁移 |
 | 旧 Logging 运行时镜像 | 根镜像 tag `v0.2.0` | 最后版本，不再构建新版本 |
 
-旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。历史拆分和兼容记录见[历史发布记录](releases/history.md)。
+旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。2026-09-22 只读核对了官方 npm、PyPI 元数据及远端组件 tag；镜像摘要沿用已记录的发布验收，本轮没有重新拉取镜像。Gateway `sessionauth`／凭证提取扩展仍为主干能力，未包含在当前 Gateway 制品中。
 
-## 前端 SSE SDK 0.3.0 已发布
+历史拆分和兼容记录见[历史发布记录](releases/history.md)。
 
-2026-09-21 已发布 `@stellarmesh/sdk@0.3.0`，npm `latest` 指向该版本。新增声明式 `http.sse.get/post/request`、增量 SSE 解析、共享 AuthSession 恢复和流生命周期管理；普通 HTTP 与上传继续使用 Axios，依赖版本保持不变。
+## 前端 npm 发布流程
 
-发布源码为 `f6efb868c7d6fdaa3c54b8b68c7b795efd2dbbfc`，组件 annotated tag 为 [`sdk/frontend/v0.3.0`](https://github.com/L1ndenbaum/stellarmesh-sdk/releases/tag/sdk/frontend/v0.3.0)。本地 `make verify`、164 个前端测试、Chromium 实际 SSE／Cookie／上传验证和隔离 tarball 消费均通过；该源码的[持续验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/35600466699)全部通过，包含 Go／Redis、Python、Storage 集成与前端，没有使用旧版本的 CI 豁免。
+包归属 `stellarmesh`，采用 MIT，仅公开 ESM 包根入口。主干目前采用 tsdown 构建；已发布版本的制品内容以对应 tag 和历史记录为准，不能用同版本重新上传。
 
-`release:prepare -- sdk/frontend/v0.3.0` 生成并验证唯一制品，上传同一份 tarball，未重建替换：
-
-```text
-SHA-256: acfd64ac9895d78acf9ddcebf810ab243f6ea3bd7a26b66760461399797a8f4b
-SHA-512: bIFiShFZzf5m1n12SFMYGmbGvoUAKuZj9vnd4jDla3jHEG3canpBvAKGpL1HEGU3LhvyID+1wfO21wYCmiimcQ==
-```
-
-发布后已核对官方 registry 版本、`latest` 和 integrity；匿名下载的公开 tarball 与上述摘要一致，通过 ESM、SSE 运行时及公开 TypeScript 契约验证。另在全新目录使用空缓存、空认证配置按包名安装正式版本并验证 SSE，安装 integrity 与发布制品相同。
-
-本机曾出现 `xdg-open` 等待 Chrome 退出，使 npm 在浏览器验证成功后仍等待启动器。此时尚未最终上传；确认 registry 无该版本后结束等待会话，使用同一制品及 `--browser=false` 重新完成发布验证。后续手工发布默认采用该选项，在已有浏览器打开 npm 给出的链接，不让 CLI 等待浏览器进程退出。
-
-## 前端 HTTP SDK `0.2.0` 正式发布
-
-源码及锁文件版本已提升至 `0.2.0`，新增根入口类型 `ErrorCodeExtractor` 与不可变派生方法 `withErrorCodeExtractor`。默认继续使用 `0.1.0` 的 `code` 提取和声明式 API；项目可独立提取额外错误码，真实 HTTP 状态仍保留在 `error.status`。空返回值清空错误码，提取器配置失败保留响应诊断并停止认证恢复与重试。
-
-本次不升级运行时依赖，不修改三字段 `ApiEnvelope<T>`，不定义业务错误码，也不增加会话刷新或通知机制。使用方式及兼容细节见[错误码提取](sdk/frontend/README.md#可配置错误码提取)。已于 2026-09-13 将 [`@stellarmesh/sdk@0.2.0`](https://www.npmjs.com/package/@stellarmesh/sdk/v/0.2.0) 发布至官方 npm registry，公开访问，`latest` 指向 `0.2.0`。
-
-2026-09-13 已验证并推送源码 commit `65ff52dddabc59d8c704603417af09fdce2337da`。本地 `make verify`、129 个前端测试、Chromium 实际 HTTP 与隔离 tarball 消费全部通过；`release:prepare -- sdk/frontend/v0.2.0` 生成并验证唯一制品 `stellarmesh-sdk-0.2.0.tgz`，摘要如下：
-
-```text
-SHA-512 integrity: sha512-k1bs5J6fqVQ2ITuqZl0nuWIWRwsHBbnsqsM6WqQ6FURlzZb6U/PdA64OHFsUxChwadd1lO56FWTnmpxHq29UKA==
-SHA-256: a9528fdfadae60d30f85c16eb902d19759571cb2cf7943a6109ae9098e691059
-```
-
-对应源码的 [GitHub CI](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/34704294630) 中，前端 HTTP SDK、Go 模块、Python Logging、Python Storage 和 Shell 检查均通过。Storage 集成拉取 `minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e` 时返回 `pull access denied`，导致汇总检查失败。该失败位于既有 Storage 集成环境，不属于前端包的运行或构建依赖。
-
-本次发布已获得对上述既有 MinIO 镜像拉取失败的明确豁免，豁免仅适用于本次前端 npm 发布，不表示整条 CI 成功。上传使用准备阶段的同一份 tarball，未重新构建或替换制品。
-
-发布后已核对官方 registry 的版本、`latest` 与 SHA-512 integrity；匿名下载的公开 tarball 与本地 SHA-512／SHA-256 完全一致，并通过包根入口的 ESM、公开 TypeScript 类型和运行时消费验证。随后在全新临时项目中使用空 npm 缓存，按包名安装 `@stellarmesh/sdk@0.2.0`，验证安装摘要、新提取入口、声明式请求、metadata 泛型、同步回调类型限制和默认错误码兼容行为。
-
-验收后创建并推送 annotated 组件 tag [`sdk/frontend/v0.2.0`](https://github.com/L1ndenbaum/stellarmesh-sdk/releases/tag/sdk/frontend/v0.2.0)，指向上述发布源码 commit `65ff52dddabc59d8c704603417af09fdce2337da`。该 tag 与已经发布的 npm 版本保持不可变；后续修订使用新版本。本次未更新 KGraph 依赖、业务 Envelope 或部署。
-
-## 前端 HTTP SDK 首次 npm 发布
-
-前端包为 `@stellarmesh/sdk`，首次发布版本 `0.1.0`，采用 MIT 许可证，许可证位于 `sdk/frontend/LICENSE` 并随 npm 包分发。该许可证针对前端包，不改变其他语言模块的许可声明。已于 2026-09-12 发布到官方 npm registry，公开包为 [`@stellarmesh/sdk@0.1.0`](https://www.npmjs.com/package/@stellarmesh/sdk/v/0.1.0)。包归属 npm 组织 `stellarmesh`，由具备组织发布权限的账号维护。
-
-包只提供 ESM JavaScript 和类型声明，唯一公开入口是包根；发布清单只包含 `dist/`、`package.json`、`README.md` 和 `LICENSE`。运行时依赖仍为锁定版本的 Axios。首次发布不升级依赖，组件 tag 为 `sdk/frontend/v0.1.0`。
-
-认证装配已统一为 `createAuthSession` 与 `withAuth(auth, bindingOptions)`，支持显式恢复策略和 Cookie Session。使用前阅读[认证接口迁移](sdk/frontend/README.md#未发布初版的认证接口迁移)及项目凭证条件提交示例。
-
-首次发布源码 commit 为 `b89936671c17abd4a7eda30e79236e266025e0fa`，包含大写 `HttpErrorKind.HTTP` 等运行时常量及同名类型。发布上传的是一次构建并验证的 tarball，官方 registry 匿名下载的制品与本地 SHA-512／SHA-256 一致，公开 tarball 的 ESM 和 TypeScript 消费验证通过；随后在全新目录使用空 npm 缓存按包名安装 `@stellarmesh/sdk@0.1.0`，确认大写错误常量、声明式入口与安装摘要一致，当时的 `latest` 指向 `0.1.0`。
-
-```text
-SHA-256: 2233314a4a24cfa776ebf9cd0ea94ba5aee4960119722e6a65e44abea7a74c98
-```
-
-本地 `make verify`、104 个前端测试、Chromium 与隔离消费验证通过。对应源码的 [GitHub CI](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/34675639098) 中前端任务已通过；Storage 集成因拉取外部 MinIO 镜像被拒绝而失败，不能将本次记录视为整条 CI 成功。该集成不属于前端 npm 包的运行或构建依赖。
+以下命令以已经发布的 `0.3.0` 说明制品命名；下一次正式发布必须先提升源码及锁文件版本并统一替换命令中的版本。仅准备本地制品不会发布，也不会创建 tag。
 
 ### 准备并验证唯一制品
 
@@ -147,40 +101,6 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 
 发布工作流必须从公共 Go Proxy 或实际构建出的 wheel/sdist验证制品，不能依赖仓库 `go.work`、本地 `replace` 或可变源码目录。公开 GHCR 镜像可以匿名拉取；生产环境仍应固定已验证的 manifest digest。
 
-## Python Logging `0.5.0` 与 storage-service `0.3.0`
-
-两个制品已从源码 `7c08afe519d73db528c7b3010c780c28b8313fce` 正式发布：
-
-- Python Logging `0.5.0` 新增 `PrettyFormatter`，与 JSON 共用字段清洗、预算及异常处理，不修改现有 JSON 输出契约。公开安装命令为 `python -m pip install stellarmesh-logging==0.5.0`。
-- storage-service `0.3.0` 读取应用层 `LOG_LEVEL` 与 `LOG_FORMAT`，默认 `info`／`pretty`，采集环境应显式使用 `json`；标准库 Text／JSON Handler 共用 Go Logging `0.4.0` 的安全装饰器。启动、退出及 HTTP 服务错误明确使用 ERROR 级别。
-- Go Logging 保持 `0.4.0`，Object Storage SDK、旧日志运行时镜像和其他组件未重新发布。
-
-[Python 发布工作流](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/34023002746)已完成构建、TestPyPI 与正式 PyPI；[镜像发布工作流](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/34023002871)已完成验证、双架构镜像、SBOM 与 provenance。
-
-公开镜像固定引用为：
-
-```text
-ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service@sha256:fbc59a34a34072b4c5f800e36553312ff2b711b4ba309ffed074b83ec1b13a33
-```
-
-发布后已在全新 Python 环境从正式 PyPI 安装并验证版本元数据、两种 Formatter 与脱敏；使用空临时 `DOCKER_CONFIG` 匿名检查、拉取公开镜像，确认 `linux/amd64`、`linux/arm64` manifest，并使用该公开镜像通过 Storage v1／MinIO 集成与 pretty／JSON 启动错误检查。上述为公开制品与本地容器验证，不代表业务生产环境已部署或 Collector 链路已验收。
-
-## Logging `0.4.0` 与 Gateway `0.3.1`
-
-三个组件已从同一源码 `2494919ce5d84d2710267959ca1ebf8fc7577469` 发布，组件 tag 均保持不可变：
-
-- Go Logging：`sdk/go/logging/v0.4.0`；
-- Python Logging：`sdk/python/logging/v0.4.0`，正式 PyPI 安装 `stellarmesh-logging==0.4.0`；
-- Gateway Core：`sdk/go/gateway/v0.3.1`。
-
-Logging 本次收窄自动类型展开、改为精确敏感字段匹配、统一分组与容器预算，并删除 Go 的两个 panic 错误类别。它是破坏性变更，迁移步骤见[Go 教程](sdk/go/logging.md)、[Python 教程](sdk/python/README.md)和[共享清洗约定](../contracts/logging/sanitization.md)。
-
-Gateway 修复访问日志复制时丢失 `RateLimitResult` 的问题，保留已执行限流阶段的结果；日志副本的 map 和 Roles 与原始状态隔离。公开接口和鉴权、限流决策不变。
-
-源码持续验证、两个 Go tag 的公共消费者工作流，以及 Python 构建、TestPyPI、正式 PyPI 工作流均已通过。发布后另在全新环境验证公共 Go Proxy/checksum database 消费及正式 PyPI 安装、版本元数据、公开格式化 API 和嵌套脱敏输出。本次没有创建根 tag 或重新发布镜像。
-
-未来发布仍须先推送已验证源码并等待持续验证成功，再确认目标 tag 不存在、创建组件 tag。Python 使用同一份构建 artifact 依次发布 TestPyPI 与正式 PyPI；发布后验证真实制品，再更新已发布矩阵。
-
 ## 旧日志制品边界
 
 以下历史制品仍可按原版本引用，但不再接收新功能或重建：
@@ -215,3 +135,13 @@ ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service
 5. 确认 `dev` 与远端同步、`git diff --check` 通过且工作区干净。
 
 Actions runner、PyPI 审批或公共代理的临时问题可以在同一不可变 commit上重跑或等待。只要必须修改源码、workflow、锁文件或制品内容，对应组件就必须提升 patch，不能复用已经推送的 tag。
+
+## 历史入口
+
+<a id="前端-sse-sdk-030-已发布"></a>
+<a id="前端-http-sdk-020-正式发布"></a>
+<a id="前端-http-sdk-首次-npm-发布"></a>
+<a id="python-logging-050-与-storage-service-030"></a>
+<a id="logging-040-与-gateway-031"></a>
+
+旧发布入口保留于此。历史版本的源码、CI 结果、摘要与豁免记录见[历史发布记录](releases/history.md)；新的发布操作见[前端 npm 发布流程](#前端-npm-发布流程)。

@@ -1,41 +1,20 @@
 # Stellarmesh SDK
 
-本仓库提供跨项目复用的轻量 SDK、声明式 Go 网关和项目级对象存储控制面。日志默认路线是语言标准库输出结构化单行 JSON，再由业务项目选择 Vector 等 Collector 和自己的数据库投影；本仓库不再提供公共日志运行时。业务项目负责声明自己的路由、namespace、少量日志字段约定及部署参数；本仓库不提供 Docker Compose、环境变量文件或生产资源编排。
+提供跨项目复用的轻量 SDK、声明式 Go 网关和项目级对象存储控制面。业务项目拥有 DTO、会话策略、日志投影和部署配置；SDK 通过公开配置和可注入接口接入这些能力。
 
-## 仓库内容
+## 接入组件
 
-- `contracts/logging/sanitization.md`：Go/Python Logging 共用的字段清洗约定与样例，Python `0.5.0` 双格式继续遵循同一安全边界。
-- `contracts/logging/v1/`、`contracts/logging/v2/`：只读冻结的历史远程日志契约，仅供仍运行 `0.2.0` 的项目迁移。
-- `contracts/storage/v1/`：Storage 控制面 OpenAPI、访问配置 Schema、共享限制与测试数据。
-- `sdk/go/`：只依赖标准库的 Go HTTP、server 与环境配置基础能力。
-- `sdk/go/objectstorage/`：独立发布、namespace 绑定的进程内对象存储 Module。
-- `sdk/go/gateway/`：独立发布的 fail-close 声明式 Gateway、JWT 认证与 Redis 限流 Module。
-- `sdk/go/logging/`：独立发布、仅依赖标准库的 `slog.Handler` 安全装饰器。
-- `sdk/go/mq/kafka/`：独立发布的轻量 Kafka Go Module，提供 PLAIN、SCRAM、TLS/mTLS、Publisher 和 Topic 检查。
-- `sdk/frontend/`：独立 TypeScript HTTP 包 `@stellarmesh/sdk`（MIT），封装 Axios、信封处理、鉴权刷新、重试及对象传输；已发布 npm `0.1.0`。
-- `sdk/python/logging/`：独立发布、无运行时第三方依赖的标准库 JSON／Pretty Formatter；格式由应用选择。
-- `sdk/python/storage/`：独立发布的 `stellarmesh-storage` 同步与异步对象存储客户端。
-- `services/storage/`：签发 S3/MinIO 预签名请求的项目级控制面服务，不代理对象字节。
+从 [SDK 选择与接入](docs/sdk/README.md)选择组件，沿着“安装 → 最小示例 → 场景指南 → 迁移说明”完成接入。各组件独立发布，当前可安装版本统一查阅[发布矩阵](docs/release.md#当前制品矩阵)，源码版本不代表制品已发布。
 
-详细说明见[SDK 内容](docs/sdk-content.md)，语言 SDK 的使用方法见[SDK 接入教程](docs/sdk/README.md)，Go 日志接入见[Go Logging SDK](docs/sdk/go/logging.md)，Kafka 接入见[Go Kafka SDK](docs/sdk/go/kafka.md)，网关接入见[Go 网关 SDK](docs/sdk/go/gateway.md)，对象存储服务部署见[storage-service 部署与权限边界](docs/storage-service.md)，平台服务与业务项目的整体接入步骤见[接入 SDK](docs/sdk-integration.md)，版本与不可变制品规则见[发布与版本引用](docs/release.md)。
+- 理解组件组合与边界：[架构说明](docs/sdk-content.md)。
+- 将 SDK 接入业务系统：[跨组件接入](docs/sdk-integration.md)。
+- 部署对象存储控制面：[Storage 服务](docs/storage-service.md)。
+- 查阅权威协议：[共享契约](contracts/README.md)。
 
-## 本地验证
+## 参与维护
 
-```sh
-make bootstrap
-make format
-make verify
-make race
-make images
-make integration
-```
-
-`make bootstrap` 按两个独立 `uv.lock` 创建 Python 3.11 环境，并使用 Node 24、npm 安装前端锁定依赖和 Chromium。Linux 首次安装浏览器系统依赖可在 `sdk/frontend/` 执行 `npx playwright install --with-deps chromium`。`make verify` 会执行 Go 格式检查、`go vet`、Go 测试、两个 Python 项目的 Ruff、mypy、pytest、依赖兼容检查、前端格式／静态／类型检查、行为测试、构建、Chromium 传输和隔离 tarball 消费验证、Shell 语法检查与 `git diff --check`。`make race` 运行全部 Go 竞态检查。`make images` 构建 storage-service，`make integration-session` 使用隔离 Redis 验证会话与并发，接入方式见 [Redis Session 认证](docs/sdk/go/sessionauth.md)。`make integration` 同时执行 Session 集成，并验证 MinIO 最小权限、预签名直传、Multipart、版本删除、readiness 故障恢复和优雅关闭。测试结束后清理临时容器、网络和 Secret，不要求仓库提供 Compose。
-
-前端单独开发使用 `make frontend-format` 与 `make frontend-verify`，接入方式见[前端 HTTP SDK](docs/sdk/frontend/README.md)，npm 制品准备见[发布说明](docs/release.md#前端-http-sdk-首次-npm-发布)。浏览器验证使用临时本地服务，消费验证需要 npm 依赖访问；运行验证前先完成 `make bootstrap`。
-
-本地与 Python 发布流程的 mypy 只检查各包的 `src/`、`tests/`，构建后可以直接重新验证，无需删除 `build/` 或已有制品。
+从[贡献指南](CONTRIBUTING.md)准备环境和运行验证；文档、注释与示例遵循[维护规范](docs/documentation.md)。发布操作与历史记录分别由[发布入口](docs/release.md)和[历史记录](docs/releases/history.md)维护。
 
 ## 生产责任边界
 
-本仓库拥有 SDK 与 Storage v1 协议。日志表、解析规则、保留策略、Collector 配置及其数据库凭据由采用该能力的业务项目拥有；生产资源和迁移执行由业务部署或 `server-infrastructure` 编排。对象存储 Bucket、Policy、CORS、Versioning、Lifecycle、Secret、镜像 digest、迁移时机和发布顺序同样不属于 SDK。常驻服务不得持有管理员或迁移凭据，不会自动创建 Bucket，也不会在启动时自动执行数据库迁移。
+本仓库拥有 SDK 与 Storage v1 协议。日志默认使用语言标准库输出，再由项目选择 Collector 和数据库投影；旧 Logging v1/v2 仅为迁移冻结保留。生产资源、数据库迁移、Bucket、Policy、CORS、Secret 和发布顺序由业务部署或基础设施仓库管理。本仓库不提供 Compose 或生产环境文件，服务不持有管理员／迁移凭据，不自动创建 Bucket 或执行迁移。

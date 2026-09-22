@@ -1,37 +1,26 @@
-# SDK 接入教程
+# SDK 选择与接入
 
-本目录按可独立发布的组件划分：
+先按需求选组件，再打开指南中的固定版本安装与最小示例。当前已发布版本只在[发布矩阵](../release.md#当前制品矩阵)维护；主干新增能力不代表 registry 已发布。
 
-- [前端 HTTP SDK](frontend/README.md)：Axios 客户端、可选信封解包、鉴权刷新及对象字节传输；源码 `0.1.0` 尚未发布；
-- [Go 父 SDK](go/README.md)：标准库 HTTP 与环境配置能力；
-- [Go 对象存储 SDK](go/object-storage.md)：namespace绑定的进程内对象存储；
-- [Go Gateway SDK](go/gateway.md)：声明式、fail-close网关与标准 `slog` 访问日志；
-- [Redis Session 认证](go/sessionauth.md)：网关 Cookie 认证与 Redis 会话管理，主干新增、尚未发布；
-- [Go Logging SDK](go/logging.md)：零第三方依赖的 `slog.Handler` 安全装饰器；
-- [Go Kafka SDK](go/kafka.md)：Kafka连接、Publisher与Topic检查；
-- [Python Logging SDK](python/README.md)：标准库 `logging` 的安全 JSON／Pretty Formatter；
-- [Python Storage SDK](python/storage.md)：通过storage-service获取预签名请求；
-- [storage-service部署](../storage-service.md)：项目级对象存储控制面。
-
-当前 Go Logging 已发布 `0.4.0`，Python Logging 已发布 `0.5.0` 双格式支持；Go 安全 Handler 不需要为格式切换升级。升级前阅读[字段清洗约定](../../contracts/logging/sanitization.md)及语言教程中的迁移说明。
+| 需求 | 组件与接入指南 | 前置条件 |
+| --- | --- | --- |
+| 浏览器／Node 声明式 HTTP、SSE | [前端 SDK](frontend/README.md) | ESM；浏览器流使用 Fetch |
+| Go 环境配置、JSON 解码、HTTP server | [父 Go SDK](go/README.md) | Go 1.24 |
+| 路由、认证、限流与反向代理 | [Go Gateway](go/gateway.md) | 项目提供路由与安全策略 |
+| Cookie 会话管理与踢下线 | [Redis Session](go/sessionauth.md) | **主干能力，尚未发布**；Redis 单实例或 Sentinel |
+| Go 安全结构化日志 | [Go Logging](go/logging.md) | 标准库 `log/slog`，无第三方运行依赖 |
+| Kafka 连接、发布与 Topic 检查 | [Go Kafka](go/kafka.md) | 外部 Kafka，项目管理 Topic／ACL |
+| Go 进程内对象存储 | [Go Object Storage](go/object-storage.md) | S3／MinIO 项目凭据 |
+| Python 安全日志格式化 | [Python Logging](python/README.md) | Python 3.11，标准库 `logging` |
+| Python 对象上传下载 | [Python Storage](python/storage.md) | Python 3.11，Storage 控制面和 S3／MinIO |
+| 项目对象存储控制面 | [Storage 服务](../storage-service.md) | 外部 Bucket／Policy／凭据与部署编排 |
 
 ## 日志默认路线
 
-Go和Python日志包只帮助项目安全地产生结构化日志，不发送HTTP、不持有service token、不创建后台线程，也不规定Kafka Topic、ClickHouse表或审计模型。
+标准库 Logger 输出结构化单行 JSON，由业务项目选择 Collector、缓冲策略及数据库投影。日志包不发送 HTTP，不持有 service token，不规定 Topic 或审计模型。完整边界见[架构说明](../sdk-content.md#轻量日志组件)，组合步骤见[日志接入](../sdk-integration.md#日志接入)。
 
-```text
-Go log/slog 或 Python logging
-  -> 单行结构化 JSON stdout/stderr
-  -> 项目选择的 Vector 等 Collector
-  -> 项目自己的字段映射和数据库表
-```
-
-项目负责配置标准库的输出目标和最低级别。Collector负责批量、持久buffer、恢复重放和数据库不可用时的有界积压；数据库Schema、保留策略、DML凭据和migration继续归项目所有。普通运行日志采用at-least-once语义，必须接受重复和有限buffer最终写满的边界。
-
-`contracts/logging/v1`、`contracts/logging/v2` 与旧Logging `0.2.0`只为现有项目迁移冻结保留，不是新项目的协议依赖。事务性审计应写入业务数据库或transactional outbox，不能依赖普通stdout链路。
+旧 Logging v1/v2 与旧运行时仅为迁移冻结保留；新项目不要依赖它们。事务性审计应写入业务数据库或 outbox。
 
 ## 对象存储路线
 
-持有项目对象存储凭据的Go进程可以直接使用`objectstorage` Module。Python或其他客户端通过项目级storage-service取得预签名请求，对象字节直接与S3/MinIO传输。Storage v1公开契约位于`contracts/storage/v1`，Bucket、Policy、CORS、Lifecycle、Secret和生产资源编排不属于SDK。
-
-正式环境必须固定经过验证的Module版本、Python包版本和镜像digest。完整发布边界见[发布与版本引用](../release.md)。
+持有凭据的 Go 进程可直接用 Object Storage Module。其他客户端通过项目级 Storage 服务签发请求，再直接与 S3／MinIO 传输字节。协议以 [Storage v1](../../contracts/storage/v1/README.md) 为准；安装、组合、部署分别由组件指南、[跨组件接入](../sdk-integration.md#对象存储接入)和[服务指南](../storage-service.md)说明。

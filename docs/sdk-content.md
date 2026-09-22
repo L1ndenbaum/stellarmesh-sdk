@@ -6,24 +6,9 @@
 
 仓库不拥有Docker Compose、生产地址、Secret、Bucket、Policy、Kafka Topic、ClickHouse database、日志表、保留策略或生产迁移编排。这些资源由业务项目和`server-infrastructure`管理。
 
-## 目录与制品
+## 组件导航
 
-| 路径 | 内容 | 发布形式 |
-| --- | --- | --- |
-| `sdk/frontend/` | Axios HTTP、信封处理、鉴权刷新、重试与对象传输 | `@stellarmesh/sdk`（MIT），ESM，npm `0.1.0` 已发布 |
-| `sdk/go/` | 环境配置、JSON请求解码与HTTP server基础能力 | Go Module |
-| `sdk/go/objectstorage/` | namespace绑定的对象模型与S3适配器 | 独立Go Module |
-| `sdk/go/gateway/` | 声明式Gateway、JWT、Redis Session（主干新增）、Redis限流与通用`slog`访问日志 | 独立Go Module |
-| `sdk/go/logging/` | `slog.Handler`安全装饰器 | 独立Go Module |
-| `sdk/go/mq/kafka/` | Kafka连接、Publisher、Topic检查和TLS/SASL | 独立Go Module |
-| `sdk/python/logging/` | Python 标准库安全 JSON／Pretty Formatter | `stellarmesh-logging` |
-| `sdk/python/storage/` | Storage v1同步与异步客户端 | `stellarmesh-storage` |
-| `contracts/logging/sanitization.md` | 轻量字段清洗约定与跨语言样例 | 随仓库版本 |
-| `contracts/storage/v1/` | Storage控制面OpenAPI、Schema与共享限制 | 随仓库版本 |
-| `services/storage/` | 项目级预签名控制面 | GHCR镜像 |
-| `contracts/logging/v1/`、`contracts/logging/v2/` | 冻结的旧远程日志契约 | 只读历史 |
-
-已经退役的公共logging-service、ClickHouse sink、迁移镜像和Gateway Logging Adapter只存在于`0.2.0`历史tag及其不可变制品中，不再位于主干或未来发布矩阵。
+按需求选组件见 [SDK 接入目录](sdk/README.md)，可安装版本见[发布矩阵](release.md#当前制品矩阵)。本页只维护组件关系与责任边界。已退役运行时仅保留在不可变历史制品中。
 
 ## 前端 HTTP
 
@@ -76,7 +61,7 @@ Python或其他客户端
 - Go父SDK、Gateway、Logging、Kafka和Object Storage分别发布；
 - Python Logging与Storage分别发布；
 - `stellarmesh-logging 0.3.0`与Go Logging `v0.3.0`是破坏性轻量版本，不兼容旧远程API；
-- Go Logging `0.4.0` 与 Python Logging `0.5.0` 已发布；Python 新增共用安全字段处理的 PrettyFormatter，格式与环境配置由应用决定；
+- 当前版本由[发布矩阵](release.md#当前制品矩阵)维护；日志格式与环境配置由应用决定；
 - 冻结的Logging v1/v2契约只供仍运行`0.2.0`的项目迁移；
 - Storage v1的OpenAPI、Schema、服务和Python客户端仍须保持契约测试一致；
 - 已经推送的tag、PyPI包和GHCR镜像永不覆盖或移动。

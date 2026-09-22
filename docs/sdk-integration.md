@@ -2,15 +2,15 @@
 
 ## 前端 HTTP 接入
 
-[前端 HTTP SDK](sdk/frontend/README.md)的包名为 `@stellarmesh/sdk`（MIT），源码位于 `sdk/frontend/`，npm 初版 `0.1.0` 已发布。项目分别装配鉴权 API、公共 API 和对象存储实例，注入配置与会话回调。对象存储实例只发送签发结果所要求的 URL、方法和 headers；业务 DTO、分片调度、会话确认和页面状态继续由项目负责。
+[前端 HTTP SDK](sdk/frontend/README.md)的包名为 `@stellarmesh/sdk`（MIT），安装版本见[发布矩阵](release.md#当前制品矩阵)。项目分别装配鉴权 API、公共 API 和对象存储实例，注入配置与会话回调。对象存储实例只发送签发结果所要求的 URL、方法和 headers；业务 DTO、分片调度、会话确认和页面状态继续由项目负责。
 
 ## 日志接入
 
-当前公开 Go Logging 为 `0.4.0`，Python Logging 为 `0.5.0`，支持两种输出格式。应用在本地选择 pretty、采集时选择 JSON；SDK 不读取环境配置。清洗行为见[共享约定](../contracts/logging/sanitization.md)；原生等级差异（如 Go `WARN` 与 Python `WARNING`）需要项目 Collector 显式映射。
+语言组件和固定版本见 [SDK 目录](sdk/README.md)，Python 支持两种输出格式。应用在本地选择 pretty、采集时选择 JSON；SDK 不读取环境配置。清洗行为见[共享约定](../contracts/logging/sanitization.md)；原生等级差异（如 Go `WARN` 与 Python `WARNING`）需要项目 Collector 显式映射。
 
 新项目不部署Stellarmesh公共logging-service。应用使用Go `log/slog`或Python `logging`输出结构化单行JSON，项目再选择Vector等Collector持久化到自己的数据库或文件。
 
-Go示例：
+Go 装配片段（完整示例见 [Go Logging 指南](sdk/go/logging.md)）：
 
 ```go
 base := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})
@@ -23,7 +23,7 @@ if err != nil {
 slog.SetDefault(slog.New(safe).With("service", "project-api"))
 ```
 
-Python示例：
+Python 装配片段（完整示例见 [Python Logging 指南](sdk/python/README.md)）：
 
 ```python
 handler = logging.StreamHandler(sys.stdout)
