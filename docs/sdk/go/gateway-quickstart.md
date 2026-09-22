@@ -7,18 +7,18 @@
 只使用网关能力的项目直接安装独立 Module：
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.1
 go mod tidy
 ```
 
-`v0.3.0` 同时包含基础 Gateway、`gateway/jwtauth` 和 `gateway/redislimit`，只直接依赖 JWT 和 Redis，不引入父 SDK、Logging、AWS SDK、对象存储、Chi 或 Kafka。
+本文安装示例适用于 `v0.3.1`，当前发布状态见[发布矩阵](../../release.md#当前制品矩阵)。该版本同时包含基础 Gateway、`gateway/jwtauth` 和 `gateway/redislimit`，只直接依赖 JWT 和 Redis，不引入父 SDK、Logging、AWS SDK、对象存储、Chi 或 Kafka。
 
 如果项目还使用父 SDK，建议固定当前已经移除所有嵌套能力的 `v0.5.0`：
 
 ```sh
 go get \
   github.com/L1ndenbaum/stellarmesh-sdk/sdk/go@v0.5.0 \
-  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.0
+  github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.1
 go mod tidy
 ```
 

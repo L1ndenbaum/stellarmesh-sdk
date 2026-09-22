@@ -9,6 +9,7 @@
 ```sh
 make bootstrap
 make format
+make docs-check
 make verify
 make race
 make images
@@ -19,7 +20,7 @@ make integration
 
 前端单独开发使用 `make frontend-format` 与 `make frontend-verify`，接入方式见[前端 HTTP SDK](docs/sdk/frontend/README.md)，npm 制品准备见[发布说明](docs/release.md#前端-http-sdk-首次-npm-发布)。浏览器验证使用临时本地服务，消费验证需要 npm 依赖访问；运行验证前先完成 `make bootstrap`。
 
-本地与 Python 发布流程的 mypy 只检查各包的 `src/`、`tests/`，构建后可以直接重新验证，无需删除 `build/` 或已有制品。
+本地与 Python 发布流程的 mypy 检查各包的 `src/`、`tests/` 以及文档校验工具，构建后可以直接重新验证，无需删除 `build/` 或已有制品。
 
 
 ## 改动与发布
@@ -31,3 +32,11 @@ make integration
 发布是单独操作，按[发布流程](docs/release.md)验证唯一制品、CI 和远端权限；本地构建、准备 tarball 或提交代码都不等同于发布。
 
 前端源码布局、导入排版和 tsdown 制品职责见[前端维护指南](docs/contributing/frontend.md)。
+
+## 文档与制品验证
+
+`make docs-check` 仅使用 Python 标准库，离线检查受 Git 管理的 Markdown 链接、标题／显式锚点和关联源码片段，包含检查器自身的回归。`make go-doc-check` 确认关键配置可通过 go doc 查阅。前端消费测试检查安装后类型声明中的 JSDoc、编译文档示例并在本地 HTTP／SSE 服务上运行。
+
+`make python-logging-artifact-check python-storage-artifact-check` 在临时目录构建 wheel／sdist、执行 twine 检查，并从 wheel 导入公开对象核对 help 信息与 README；结束后清理临时目录。验证已有制品可运行 `uv run --project sdk/python/storage --frozen python tests/docs/python_artifact.py sdk/python/storage /制品目录`，该形式不构建、不替换文件。这些检查均接入 `make verify` 与对应 CI 任务。
+
+示例的验证入口见[示例验证索引](docs/examples/README.md)。所有网络行为测试使用受控服务或显式集成入口，不将静态验证表述为生产验收。

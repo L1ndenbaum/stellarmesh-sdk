@@ -101,6 +101,7 @@ jobs:
         run: |
           uv build --project "$PACKAGE_PATH" --out-dir dist
           uv run --project "$PACKAGE_PATH" --frozen twine check dist/*
+          uv run --project "$PACKAGE_PATH" --frozen python tests/docs/python_artifact.py "$PACKAGE_PATH" dist
 
       - name: 上传发布制品
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a

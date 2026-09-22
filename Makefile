@@ -4,6 +4,7 @@ ROOT := $(CURDIR)
 PYTHON_LOGGING_DIR := sdk/python/logging
 PYTHON_STORAGE_DIR := sdk/python/storage
 UV ?= uv
+PYTHON ?= python3
 NPM ?= npm
 FRONTEND_DIR := sdk/frontend
 GO_PACKAGES := ./sdk/go/... ./sdk/go/gateway/... ./sdk/go/logging/... ./sdk/go/mq/kafka/... ./sdk/go/objectstorage/... ./services/storage/...
@@ -22,7 +23,8 @@ export GOMODCACHE ?= $(ROOT)/.cache/go-mod
 	python-storage-check python-storage-test shell-check go-module-consumer \
 	image-storage images integration-storage integration integration-aws \
 	frontend-bootstrap frontend-browser-bootstrap frontend-format frontend-check \
-	frontend-build frontend-test frontend-browser-test frontend-consumer frontend-verify integration-session
+	frontend-build frontend-test frontend-browser-test frontend-consumer frontend-verify integration-session \
+	docs-check go-doc-check python-logging-artifact-check python-storage-artifact-check
 
 bootstrap: python-logging-bootstrap python-storage-bootstrap frontend-bootstrap frontend-browser-bootstrap
 
@@ -86,6 +88,9 @@ python-storage-check: python-storage-bootstrap
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff check tests/integration/storage-pipeline.py
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff format --check tests/integration/storage-pipeline.py
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen mypy --strict tests/integration/storage-pipeline.py
+	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff check tests/docs
+	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff format --check tests/docs
+	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen mypy --strict tests/docs
 	$(UV) pip check --python $(PYTHON_STORAGE_DIR)/.venv/bin/python
 
 shell-check:
@@ -94,7 +99,20 @@ shell-check:
 	sh -n tests/go-module-consumer.sh
 	git diff --check
 
-check: go-check python-logging-check python-storage-check shell-check frontend-check
+docs-check:
+	$(PYTHON) -m unittest discover -s tests/docs -v
+	$(PYTHON) tests/docs/check.py
+
+go-doc-check:
+	$(PYTHON) tests/docs/go_doc.py
+
+python-logging-artifact-check: python-logging-bootstrap
+	$(UV) run --project $(PYTHON_LOGGING_DIR) --frozen python tests/docs/python_artifact.py --build $(PYTHON_LOGGING_DIR)
+
+python-storage-artifact-check: python-storage-bootstrap
+	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen python tests/docs/python_artifact.py --build $(PYTHON_STORAGE_DIR)
+
+check: docs-check go-doc-check go-check python-logging-check python-storage-check shell-check frontend-check
 
 go-test:
 	go test $(GO_PACKAGES)
@@ -105,7 +123,7 @@ python-logging-test: python-logging-bootstrap
 python-storage-test: python-storage-bootstrap
 	cd $(PYTHON_STORAGE_DIR) && $(UV) run --frozen pytest
 
-test: go-test python-logging-test python-storage-test go-module-consumer frontend-test frontend-browser-test frontend-consumer
+test: python-logging-artifact-check python-storage-artifact-check go-test python-logging-test python-storage-test go-module-consumer frontend-test frontend-browser-test frontend-consumer
 
 go-module-consumer:
 	./tests/go-module-consumer.sh

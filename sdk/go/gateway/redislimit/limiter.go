@@ -57,7 +57,7 @@ type ScriptRunner interface {
 type Config struct {
 	// Client 由业务创建和关闭，Redis 故障向网关返回组件错误。
 	Client ScriptRunner
-	// Scope 必须为网关支持的 client IP、用户或路由作用域。
+	// Scope 必须为网关支持的 client IP、用户或上游作用域。
 	Scope gateway.RateLimitScope
 	// KeyPrefix 为项目级前缀，裁剪后非空、不含空白且最多 128 字节。
 	KeyPrefix string

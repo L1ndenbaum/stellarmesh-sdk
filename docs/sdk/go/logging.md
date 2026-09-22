@@ -6,7 +6,7 @@
 github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging
 ```
 
-本教程对应已发布的 `v0.4.0`。它要求Go 1.24及以上，只依赖标准库。它装饰项目已有的`slog.Handler`，提供脱敏和有界化；它不创建Logger、不选择stdout/stderr、不实现远程Client，也不定义项目字段或数据库Schema。
+本文安装示例适用于 `v0.4.0`。它要求Go 1.24及以上，只依赖标准库。它装饰项目已有的`slog.Handler`，提供脱敏和有界化；它不创建Logger、不选择stdout/stderr、不实现远程Client，也不定义项目字段或数据库Schema。
 
 ## 安装
 
@@ -113,3 +113,5 @@ SDK 不修改调用方数据；`WithAttrs` 复制顶层列表，调用方不能�
 ## 原生可验证示例
 
 [完整示例](../../../sdk/go/logging/example_test.go)通过公开 import 使用组件。本例执行实际 JSON 输出与脱敏断言。应用拥有输出流、级别和持久化策略；消息正文不会自动扫描秘密。
+
+当前发布状态统一查阅[发布矩阵](../../release.md#当前制品矩阵)。

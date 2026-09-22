@@ -30,7 +30,7 @@ jobs:
             services/storage/go.sum
 
       - name: 运行格式、静态、单元、竞态与隔离消费检查
-        run: make go-check go-test go-race go-module-consumer
+        run: make go-check go-doc-check go-test go-race go-module-consumer
 
       - name: 验证真实 Redis Session 会话与并发
         run: make integration-session
@@ -81,7 +81,7 @@ jobs:
           cache-dependency-glob: sdk/python/logging/uv.lock
 
       - name: 验证 Logging 包
-        run: make python-logging-check python-logging-test
+        run: make python-logging-check python-logging-test python-logging-artifact-check
 
   python-storage:
     name: Python Storage
@@ -104,18 +104,18 @@ jobs:
           cache-dependency-glob: sdk/python/storage/uv.lock
 
       - name: 验证 Storage 包
-        run: make python-storage-check python-storage-test
+        run: make python-storage-check python-storage-test python-storage-artifact-check
 
   shell:
-    name: Shell 与差异检查
+    name: 文档、Shell 与差异检查
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: 检出代码
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - name: 验证脚本与差异格式
-        run: make shell-check
+      - name: 验证文档链接、示例、脚本与差异格式
+        run: make docs-check shell-check
 
   integration-storage:
     name: Storage 集成

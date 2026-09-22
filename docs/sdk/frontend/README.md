@@ -85,3 +85,8 @@ npm install @stellarmesh/sdk@0.3.0
 ## 构建与验证
 
 见[前端维护指南](../../contributing/frontend.md)。
+
+<a id="声明默认配置与调用配置"></a>
+<a id="执行与生命周期"></a>
+
+原配置与生命周期章节见[基础请求](http.md#声明默认配置与调用配置)。

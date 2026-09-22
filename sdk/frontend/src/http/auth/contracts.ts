@@ -58,7 +58,7 @@ export type AuthSessionOptions = AuthSessionBaseOptions &
 
 /** 认证目标边界；不自动发现可信域名或提供 Node Cookie 容器。 */
 export interface AuthBindingOptions {
-  /** 省略时只信任 baseURL 的 origin；显式列表替换该默认范围。 */
+  /** 省略时信任 baseURL 的 origin，无 baseURL 时使用浏览器 origin；显式列表替换默认范围。 */
   trustedOrigins?: readonly string[];
   /** 仅对可信目标启用浏览器跨源 Cookie；默认关闭，不控制同源 Cookie。 */
   withCredentials?: boolean;

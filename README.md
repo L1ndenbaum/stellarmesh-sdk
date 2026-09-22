@@ -18,3 +18,8 @@
 ## 生产责任边界
 
 本仓库拥有 SDK 与 Storage v1 协议。日志默认使用语言标准库输出，再由项目选择 Collector 和数据库投影；旧 Logging v1/v2 仅为迁移冻结保留。生产资源、数据库迁移、Bucket、Policy、CORS、Secret 和发布顺序由业务部署或基础设施仓库管理。本仓库不提供 Compose 或生产环境文件，服务不持有管理员／迁移凭据，不自动创建 Bucket 或执行迁移。
+
+<a id="仓库内容"></a>
+<a id="本地验证"></a>
+
+旧内容与验证入口分别迁至 [SDK 目录](docs/sdk/README.md)和[贡献指南](CONTRIBUTING.md#环境与验证)。

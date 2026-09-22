@@ -1,4 +1,4 @@
-# Repository Rules
+# 仓库规则
 
 ## Git 与提交
 

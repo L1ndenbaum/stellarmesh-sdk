@@ -24,3 +24,5 @@
 ## 对象存储路线
 
 持有凭据的 Go 进程可直接用 Object Storage Module。其他客户端通过项目级 Storage 服务签发请求，再直接与 S3／MinIO 传输字节。协议以 [Storage v1](../../contracts/storage/v1/README.md) 为准；安装、组合、部署分别由组件指南、[跨组件接入](../sdk-integration.md#对象存储接入)和[服务指南](../storage-service.md)说明。
+
+各组件完整源码与验证入口见[示例索引](../examples/README.md)，维护规范见[文档与注释约定](../documentation.md)。

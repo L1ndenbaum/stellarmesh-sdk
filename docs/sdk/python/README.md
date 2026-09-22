@@ -1,6 +1,6 @@
 # Python Logging SDK 接入教程
 
-本教程对应已发布的 `stellarmesh-logging==0.5.0`。它要求 Python 3.11 及以上，没有运行时第三方依赖。它提供安全的 `JSONFormatter` 与 `PrettyFormatter`，不拥有 Handler、stream、环境变量、后台线程、远程服务或数据库。
+本文安装示例适用于 `stellarmesh-logging==0.5.0`。它要求 Python 3.11 及以上，没有运行时第三方依赖。它提供安全的 `JSONFormatter` 与 `PrettyFormatter`，不拥有 Handler、stream、环境变量、后台线程、远程服务或数据库。
 
 ## 安装
 
@@ -77,3 +77,5 @@ handler.setFormatter(PrettyFormatter(static_fields={"service": "orders-api"}))
 ## 可执行完整示例
 
 [示例源码](../../../sdk/python/logging/tests/example_logging.py)由本包 pytest、Ruff 和 mypy 验证。使用 StringIO 检查真实日志输出。
+
+当前发布状态统一查阅[发布矩阵](../../release.md#当前制品矩阵)。
