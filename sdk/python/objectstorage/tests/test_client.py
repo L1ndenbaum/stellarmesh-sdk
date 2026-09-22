@@ -15,9 +15,11 @@ from stellarmesh_objectstorage import (
     ClientClosedError,
     ClientConfig,
     CompletedPart,
+    ConflictError,
     ForbiddenError,
     InvalidRequestError,
     NotFoundError,
+    PreconditionFailedError,
     UnavailableError,
 )
 
@@ -127,6 +129,9 @@ def test_early_stream_exit_and_closed_client(
         (404, "NoSuchKey", NotFoundError),
         (403, "AccessDenied", ForbiddenError),
         (503, "SlowDown", UnavailableError),
+        (400, "BadDigest", InvalidRequestError),
+        (409, "ConditionalRequestConflict", ConflictError),
+        (412, "PreconditionFailed", PreconditionFailedError),
     ],
 )
 def test_error_mapping_keeps_cause_without_diagnostic_leak(

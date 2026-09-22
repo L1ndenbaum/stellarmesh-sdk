@@ -146,6 +146,26 @@ jobs:
       - name: 构建镜像并验证 Storage 链路
         run: make integration-storage
 
+  python-objectstorage:
+    name: Python Object Storage 与 MinIO 集成
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: 安装 Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.11"
+      - name: 安装 uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9
+        with:
+          version: "0.12.5"
+          enable-cache: true
+          cache-dependency-glob: sdk/python/objectstorage/uv.lock
+      - name: 验证接口、制品与真实 MinIO
+        run: make python-objectstorage-check python-objectstorage-test python-objectstorage-artifact-check python-objectstorage-consumer integration-objectstorage
+
   verify:
     name: 持续验证
     if: always()
@@ -154,6 +174,7 @@ jobs:
       - frontend
       - python-logging
       - python-storage
+      - python-objectstorage
       - shell
       - integration-storage
     runs-on: ubuntu-24.04
@@ -165,6 +186,7 @@ jobs:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           PYTHON_LOGGING_RESULT: ${{ needs['python-logging'].result }}
           PYTHON_STORAGE_RESULT: ${{ needs['python-storage'].result }}
+          PYTHON_OBJECTSTORAGE_RESULT: ${{ needs['python-objectstorage'].result }}
           SHELL_RESULT: ${{ needs.shell.result }}
           STORAGE_INTEGRATION_RESULT: ${{ needs['integration-storage'].result }}
         run: |
@@ -172,6 +194,7 @@ jobs:
              [ "$FRONTEND_RESULT" != "success" ] || \
              [ "$PYTHON_LOGGING_RESULT" != "success" ] || \
              [ "$PYTHON_STORAGE_RESULT" != "success" ] || \
+             [ "$PYTHON_OBJECTSTORAGE_RESULT" != "success" ] || \
              [ "$SHELL_RESULT" != "success" ] || \
              [ "$STORAGE_INTEGRATION_RESULT" != "success" ]; then
             echo "至少一项持续验证未成功" >&2

@@ -15,6 +15,7 @@
 | Go Object Storage | [Example](../../sdk/go/objectstorage/s3store/example_test.go) | 编译；本地 MinIO 链路用 `make integration-storage`，真实 AWS 另有显式入口 |
 | Python Logging | [example_logging.py](../../sdk/python/logging/tests/example_logging.py) | Ruff／mypy、实际 JSON 输出；`make python-logging-check python-logging-test` |
 | Python Storage | [example_storage.py](../../sdk/python/storage/tests/example_storage.py) | Ruff／mypy、HTTPX 替身验证同步上传／异步下载及连接关闭；`make python-storage-check python-storage-test` |
+| Python Object Storage | [example_objectstorage.py](../../sdk/python/objectstorage/tests/example_objectstorage.py) | Ruff／mypy；真实 MinIO 执行读写与清理，`make integration-objectstorage` |
 | Storage 访问配置 | [storage-access.json](storage-access.json) | 现有契约测试验证 Schema；同 Python Storage 测试，不执行部署 |
 
 Go 无 `Output` 的 Example 只编译验证，不连接外部依赖。有输出的本地示例、语言单元测试、容器集成和生产验收是不同层次，交付时分别列明。

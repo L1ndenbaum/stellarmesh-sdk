@@ -59,7 +59,9 @@ Logging Go/Python `0.2.0`、Gateway Adapter `0.2.0`以及三个Logging `0.2.0`�
 
 ## 对象存储接入
 
-Go服务如果可以持有项目IAM Role或MinIO项目凭据，直接使用[Go Object Storage SDK](sdk/go/object-storage.md)。Python或其他客户端使用[Python Storage SDK](sdk/python/storage.md)连接项目级storage-service。
+可以持有项目 IAM Role 或 MinIO 项目凭据的后端，优先使用 [Go Object Storage SDK](sdk/go/object-storage.md) 或 [Python Object Storage SDK](sdk/python/objectstorage.md)。业务装配 Bucket／Prefix，管理用户权限和对象记录；浏览器向业务后端申请预签名，再直接传输文件。
+
+需要兼容远程控制面的调用方继续使用 [Python Storage SDK](sdk/python/storage.md) 连接项目级 storage-service；两种 Python 包独立发布，不通过修改服务 URL 自动切换。
 
 storage-service部署前需要：
 

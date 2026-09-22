@@ -12,6 +12,7 @@
 | Kafka 连接、发布与 Topic 检查 | [Go Kafka](go/kafka.md) | 外部 Kafka，项目管理 Topic／ACL |
 | Go 进程内对象存储 | [Go Object Storage](go/object-storage.md) | S3／MinIO 项目凭据 |
 | Python 安全日志格式化 | [Python Logging](python/README.md) | Python 3.11，标准库 `logging` |
+| Python 进程内对象存储 | [Python Object Storage](python/objectstorage.md) | Python 3.11，S3／MinIO 项目凭据 |
 | Python 对象上传下载 | [Python Storage](python/storage.md) | Python 3.11，Storage 控制面和 S3／MinIO |
 | 项目对象存储控制面 | [Storage 服务](../storage-service.md) | 外部 Bucket／Policy／凭据与部署编排 |
 
@@ -23,6 +24,6 @@
 
 ## 对象存储路线
 
-持有凭据的 Go 进程可直接用 Object Storage Module。其他客户端通过项目级 Storage 服务签发请求，再直接与 S3／MinIO 传输字节。协议以 [Storage v1](../../contracts/storage/v1/README.md) 为准；安装、组合、部署分别由组件指南、[跨组件接入](../sdk-integration.md#对象存储接入)和[服务指南](../storage-service.md)说明。
+持有项目凭据的 Go 和 Python 进程优先使用 Object Storage SDK 直连。需要隔离底层凭据的旧调用方仍可使用项目级 Storage 服务，其协议以 [Storage v1](../../contracts/storage/v1/README.md) 为准。浏览器可向业务后端申请预签名后直接传输字节；业务后端负责用户权限，不向浏览器发放项目长期凭据。
 
 各组件完整源码与验证入口见[示例索引](../examples/README.md)，维护规范见[文档与注释约定](../documentation.md)。

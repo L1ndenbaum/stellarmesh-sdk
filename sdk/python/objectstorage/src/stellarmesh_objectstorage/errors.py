@@ -62,12 +62,9 @@ def provider_error(error: BotoCoreError | ClientError) -> StorageError:
             "ExpiredToken",
         } or status in {401, 403}:
             kind = ForbiddenError
-        elif (
-            code in {"PreconditionFailed", "ConditionalRequestConflict"}
-            or status == 412
-        ):
+        elif code == "PreconditionFailed" or status == 412:
             kind = PreconditionFailedError
-        elif status == 409:
+        elif code == "ConditionalRequestConflict" or status == 409:
             kind = ConflictError
         elif status == 400:
             kind = InvalidRequestError

@@ -31,7 +31,7 @@ class Client:
     def __init__(
         self, config: ClientConfig, *, session: boto3.Session | None = None
     ) -> None:
-        self.config = config
+        self._config = config
         self._stack = ExitStack()
         self._closed = False
         session = session or boto3.Session()
@@ -48,6 +48,11 @@ class Client:
         except BaseException:
             self._stack.close()
             raise
+
+    @property
+    def config(self) -> ClientConfig:
+        """客户端固定绑定的只读配置。"""
+        return self._config
 
     def __enter__(self) -> "Client":
         self._ensure_open()
@@ -104,12 +109,13 @@ class Client:
         *,
         content_type: str | None = None,
         metadata: Mapping[str, str] | None = None,
+        checksum_sha256: str | None = None,
     ) -> WriteResult:
         """单次上传最多 5 GiB，直接返回写入 ETag，不额外 Stat。"""
         if not isinstance(data, bytes):
             raise InvalidRequestError("data 必须是 bytes")
         params = requests.upload_request(
-            self.config, key, len(data), content_type, metadata
+            self.config, key, len(data), content_type, metadata, checksum_sha256
         )
         return write_result(self._call("put_object", {**params, "Body": data}))
 
@@ -120,12 +126,18 @@ class Client:
         *,
         content_type: str | None = None,
         metadata: Mapping[str, str] | None = None,
+        checksum_sha256: str | None = None,
     ) -> WriteResult:
         """单次文件上传，不自动分片；上传及重试期间调用方不得修改源文件。"""
         self._ensure_open()
         with Path(source).open("rb") as body:
             params = requests.upload_request(
-                self.config, key, Path(source).stat().st_size, content_type, metadata
+                self.config,
+                key,
+                Path(source).stat().st_size,
+                content_type,
+                metadata,
+                checksum_sha256,
             )
             return write_result(self._call("put_object", {**params, "Body": body}))
 
@@ -196,13 +208,16 @@ class Client:
         size: int,
         content_type: str | None = None,
         metadata: Mapping[str, str] | None = None,
+        checksum_sha256: str | None = None,
         expires_in: int | None = None,
     ) -> PresignedRequest:
         """签发单次上传；执行时须保留声明的大小、媒体类型及元数据头。"""
         return self._presign(
             "put_object",
             "PUT",
-            requests.upload_request(self.config, key, size, content_type, metadata),
+            requests.upload_request(
+                self.config, key, size, content_type, metadata, checksum_sha256
+            ),
             expires_in,
         )
 

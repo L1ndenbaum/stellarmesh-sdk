@@ -1,5 +1,7 @@
 """同步与异步客户端共享纯参数准备；不持有网络或刷新状态。"""
 
+import base64
+import binascii
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -80,8 +82,21 @@ def upload_request(
     size: int,
     content_type: str | None,
     metadata: Mapping[str, str] | None,
+    checksum_sha256: str | None = None,
 ) -> dict[str, Any]:
+    checksum = {}
+    if checksum_sha256 is not None:
+        try:
+            digest = base64.b64decode(checksum_sha256, validate=True)
+        except (ValueError, TypeError, binascii.Error) as error:
+            raise InvalidRequestError(
+                "checksum_sha256 必须是 base64 SHA-256"
+            ) from error
+        if len(digest) != 32:
+            raise InvalidRequestError("checksum_sha256 必须是 32 字节摘要")
+        checksum["ChecksumSHA256"] = checksum_sha256
     return {
+        **checksum,
         **object_request(config, key),
         "ContentLength": size_value(size),
         **upload_fields(content_type, metadata),
@@ -121,6 +136,8 @@ def signed_headers(params: dict[str, Any]) -> dict[str, str]:
         if "ContentLength" in params
         else {}
     )
+    if "ChecksumSHA256" in params:
+        headers["x-amz-checksum-sha256"] = params["ChecksumSHA256"]
     if "ContentType" in params:
         headers["Content-Type"] = params["ContentType"]
     for key, value in params.get("Metadata", {}).items():

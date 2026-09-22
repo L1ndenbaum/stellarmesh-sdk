@@ -40,17 +40,17 @@ Gateway默认把通用访问记录写入当前`slog.Default()`。项目可以调
 
 ## 对象存储
 
-`sdk/go/objectstorage`适合持有项目凭据的Go进程直接访问S3或MinIO。Storage v1控制面由项目级storage-service持有凭据，Python等客户端只取得预签名请求，对象字节不经过Go服务。
+Go Object Storage 与 Python `stellarmesh-objectstorage` 适合持有项目凭据的进程直接访问 S3／MinIO。业务层拥有权限、对象记录和 namespace 选择；SDK 只管理已绑定 Bucket／Prefix 的传输。仍需隔离存储凭据的调用方可以使用旧 Storage v1 控制面。
 
 ```text
-Go服务 -> objectstorage -> S3/MinIO
+Go/Python服务 -> 进程内Object Storage SDK -> S3/MinIO
 
-Python或其他客户端
+旧远程客户端
   -> storage-service认证、授权、readiness和预签名
   -> S3/MinIO直传对象字节
 ```
 
-业务请求只使用逻辑namespace和key，不直接传Bucket。真正权限由IAM/MinIO Policy限制。storage-service不创建Bucket，不持有管理员凭据，不在启动时运行迁移。
+直连客户端固定绑定 Bucket／Prefix，业务请求使用逻辑 key；旧控制面请求使用 namespace 和 key。真正权限由 IAM／MinIO Policy 限制，两种方式均不自动创建 Bucket 或在启动时执行资源迁移。
 
 ## Kafka
 
@@ -59,7 +59,7 @@ Python或其他客户端
 ## 版本兼容
 
 - Go父SDK、Gateway、Logging、Kafka和Object Storage分别发布；
-- Python Logging与Storage分别发布；
+- Python Logging、Storage 远程客户端与 Object Storage 直连库分别发布；
 - `stellarmesh-logging 0.3.0`与Go Logging `v0.3.0`是破坏性轻量版本，不兼容旧远程API；
 - 当前版本由[发布矩阵](release.md#当前制品矩阵)维护；日志格式与环境配置由应用决定；
 - 冻结的Logging v1/v2契约只供仍运行`0.2.0`的项目迁移；
