@@ -41,6 +41,7 @@ type Error struct {
 	Err       error
 }
 
+// Error 返回诊断文本，可能包含逻辑 key；记录前由业务检查敏感性。
 func (e *Error) Error() string {
 	if e == nil {
 		return "object storage: <nil>"
@@ -228,25 +229,30 @@ type AbortMultipartRequest struct {
 	UploadID string
 }
 
+// Checker 检查已配置 namespace 是否可访问，不创建 Bucket。
 type Checker interface {
 	Check(context.Context) error
 }
 
+// Reader 读取元数据与对象；Get 成功后调用方必须关闭 Object.Body。
 type Reader interface {
 	Stat(context.Context, ObjectRef) (ObjectInfo, error)
 	Get(context.Context, GetRequest) (*Object, error)
 }
 
+// Writer 写入与删除对象；条件请求失败可用 errors.Is 区分公共错误类别。
 type Writer interface {
 	Put(context.Context, PutRequest) (ObjectInfo, error)
 	Delete(context.Context, DeleteRequest) error
 }
 
+// Presigner 签发数据面请求；调用方必须保留 URL、方法与所有签名头。
 type Presigner interface {
 	PresignGet(context.Context, PresignGetRequest) (PresignedRequest, error)
 	PresignPut(context.Context, PresignPutRequest) (PresignedRequest, error)
 }
 
+// MultipartStore 提供显式分片生命周期；失败或放弃时调用方负责 AbortMultipart。
 type MultipartStore interface {
 	CreateMultipart(context.Context, CreateMultipartRequest) (MultipartUpload, error)
 	PresignPart(context.Context, PresignPartRequest) (PresignedRequest, error)
@@ -279,6 +285,7 @@ type Observer interface {
 // ObserverFunc 允许用函数实现 Observer。
 type ObserverFunc func(context.Context, Observation)
 
+// Observe 调用观测函数。
 func (f ObserverFunc) Observe(ctx context.Context, observation Observation) {
 	f(ctx, observation)
 }

@@ -24,9 +24,13 @@ type RedisClient interface {
 
 // StoreConfig 由业务方提供连接和项目隔离配置；Client 不由 Store 关闭。
 type StoreConfig struct {
-	Client             RedisClient
-	ProjectScope       string
-	KeySeparator       string
+	// Client 由业务创建与关闭；要求单实例或 Sentinel，不支持 Cluster。
+	Client RedisClient
+	// ProjectScope 为项目隔离标识，不能为空，不自动裁剪；由 KeyBuilder 转义。
+	ProjectScope string
+	// KeySeparator 留空使用冒号；只允许不含百分号和大括号的 ASCII 标点。
+	KeySeparator string
+	// MaxSessionsPerUser 为 0 时使用 10；有效范围为 1 至 2^53-1。满额创建撤销最早会话。
 	MaxSessionsPerUser int
 }
 

@@ -55,12 +55,18 @@ type ScriptRunner interface {
 
 // Config 配置一个固定作用域和速率的 Redis 令牌桶。
 type Config struct {
-	Client        ScriptRunner
-	Scope         gateway.RateLimitScope
-	KeyPrefix     string
+	// Client 由业务创建和关闭，Redis 故障向网关返回组件错误。
+	Client ScriptRunner
+	// Scope 必须为网关支持的 client IP、用户或路由作用域。
+	Scope gateway.RateLimitScope
+	// KeyPrefix 为项目级前缀，裁剪后非空、不含空白且最多 128 字节。
+	KeyPrefix string
+	// RatePerSecond 为每秒补充令牌数，必须有限且大于 0。
 	RatePerSecond float64
-	Burst         int64
-	Now           func() time.Time
+	// Burst 为桶容量，必须大于 0；不提供隐式关闭值。
+	Burst int64
+	// Now 为 nil 时使用 time.Now；多实例需业务保证时钟合理同步。
+	Now func() time.Time
 }
 
 // Limiter 使用单条 Lua 脚本原子补充并消费令牌。

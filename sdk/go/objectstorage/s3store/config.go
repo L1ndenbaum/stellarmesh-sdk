@@ -19,13 +19,20 @@ const defaultPresignTTL = 15 * time.Minute
 
 // Config 描述 namespace 绑定和 S3 endpoint 行为。
 type Config struct {
-	Region            string
-	Namespace         objectstorage.Namespace
-	Endpoint          string
-	PresignEndpoint   string
-	UsePathStyle      bool
+	// Region 必填且无首尾空白，覆盖注入 AWS 配置的 region。
+	Region string
+	// Namespace 绑定 Bucket 与可选 Prefix，构造后不接收请求级 Bucket。
+	Namespace objectstorage.Namespace
+	// Endpoint 为空时使用 AWS endpoint；显式值须为无路径、query 或 fragment 的 HTTP(S) 地址。
+	Endpoint string
+	// PresignEndpoint 为空时沿用 Endpoint；显式配置时也必须设置 Endpoint。
+	PresignEndpoint string
+	// UsePathStyle 为 true 时使用路径式寻址，常用于 MinIO；默认 false。
+	UsePathStyle bool
+	// DefaultPresignTTL 为零时使用 15 分钟；范围为 1 分钟至 MaxPresignTTL。
 	DefaultPresignTTL time.Duration
-	MaxPresignTTL     time.Duration
+	// MaxPresignTTL 为零时使用 1 小时；显式值范围为 1 分钟至 1 小时。
+	MaxPresignTTL time.Duration
 }
 
 // Option 调整 AWS 凭据、Transport 或观测实现。

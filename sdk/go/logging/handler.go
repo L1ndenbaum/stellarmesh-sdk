@@ -35,12 +35,18 @@ type ContextAttrs func(context.Context) []slog.Attr
 
 // HandlerOptions 配置结构化字段的安全边界。
 type HandlerOptions struct {
+	// ExtraSensitiveKeys 追加规范化后精确匹配的字段名，不删除内置敏感字段。
 	ExtraSensitiveKeys []string
-	MaxMessageBytes    int
-	MaxStringBytes     int
-	MaxAttributes      int
-	MaxDepth           int
-	ContextAttrs       ContextAttrs
+	// MaxMessageBytes 限制 UTF-8 消息字节；0 为 16384，显式值至少容纳 [TRUNCATED]。
+	MaxMessageBytes int
+	// MaxStringBytes 限制单个字符串字节；0 为 16384，显式值至少容纳 [TRUNCATED]。
+	MaxStringBytes int
+	// MaxAttributes 为单条日志共享节点预算，包含嵌套容器；0 为 64，负数拒绝。
+	MaxAttributes int
+	// MaxDepth 限制嵌套深度；0 为 8，负数拒绝。
+	MaxDepth int
+	// ContextAttrs 可选地提取上下文字段；项目负责并发安全，panic 不被吞掉。
+	ContextAttrs ContextAttrs
 }
 
 type scopedAttr struct {

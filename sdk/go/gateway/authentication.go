@@ -39,7 +39,8 @@ func (authenticate AuthenticatorFunc) Authenticate(ctx context.Context, token st
 	return authenticate(ctx, token)
 }
 
-// WithAuthenticator 启用受保护路由认证。
+// WithAuthenticator 启用受保护路由认证，省略提取器时使用 Bearer。
+// 显式传入时只接受一个非 nil 提取器；非法配置在 New 时拒绝。
 func WithAuthenticator(authenticator Authenticator, extractors ...CredentialExtractor) Option {
 	extractor := BearerCredential()
 	if len(extractors) == 1 {

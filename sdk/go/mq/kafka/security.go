@@ -36,16 +36,26 @@ const (
 
 // ConnectionConfig 包含可复用的 Kafka 客户端安全设置。
 type ConnectionConfig struct {
-	ClientID         string
+	// ClientID 为项目提供的客户端标识，首尾空白会移除。
+	ClientID string
+	// SecurityProtocol 为空时为 PLAINTEXT，不根据凭据猜测认证模式。
 	SecurityProtocol SecurityProtocol
-	SASLMechanism    SASLMechanism
-	Username         string
-	Password         string
-	TLSCAFile        string
-	TLSCertFile      string
-	TLSKeyFile       string
-	TLSServerName    string
-	DialTimeout      time.Duration
+	// SASLMechanism 启用 SASL 时需显式选择 PLAIN 或 SCRAM。
+	SASLMechanism SASLMechanism
+	// Username 与 Password 仅在 SASL 模式使用，不写入日志。
+	Username string
+	// Password 由业务安全注入，不能写入源码或文档。
+	Password string
+	// TLSCAFile 为空时使用系统根证书；自定义 CA 仅在 TLS 模式加载。
+	TLSCAFile string
+	// TLSCertFile 与 TLSKeyFile 成对配置，用于客户端证书认证。
+	TLSCertFile string
+	// TLSKeyFile 为客户端私钥路径，生命周期和权限由业务管理。
+	TLSKeyFile string
+	// TLSServerName 可覆盖 TLS 校验的服务器名，不关闭证书校验。
+	TLSServerName string
+	// DialTimeout 为建连超时；0 为 10 秒，负数拒绝。
+	DialTimeout time.Duration
 }
 
 // Connection 持有 Kafka 客户端不可变的 TLS 和 SASL 设置。

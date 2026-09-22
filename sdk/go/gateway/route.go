@@ -21,17 +21,22 @@ const (
 
 // RouteMatch 描述一个静态路由的匹配条件。
 type RouteMatch struct {
-	Methods    []string
-	ExactPath  string
+	// Methods 留空匹配任意方法；显式方法会规范化为大写。
+	Methods []string
+	// ExactPath 与 PathPrefix 必须且只能设置一个。
+	ExactPath string
+	// PathPrefix 按字符串前缀匹配，优先选择最长前缀；需要路径段边界时请显式包含斜杠。
 	PathPrefix string
 }
 
 // Route 描述请求的稳定路由结果。
 type Route struct {
-	Name         string
-	Match        RouteMatch
-	Upstream     string
-	Access       AccessMode
+	Name     string
+	Match    RouteMatch
+	Upstream string
+	// Access 零值为 AccessProtected；公开路由必须显式使用 AccessPublic。
+	Access AccessMode
+	// MaxBodyBytes 为请求体字节上限；0 不设限制，负数拒绝。
 	MaxBodyBytes int64
 }
 

@@ -238,3 +238,7 @@ make verify
 `make integration-session` 启动固定为 Redis `8.2.7-alpine` 及不可变 digest 的临时容器，只向本机随机端口暴露，不启用持久化；运行真实 Lua、TTL、并发和 Cookie 认证测试，包含 race 检查，退出时清理容器及匿名卷。镜像来自 Docker Hub 官方 Redis 仓库；运行需要 Docker 和镜像仓库访问能力，不需要安装生产 Redis。
 
 普通 `go test` 未设置 `STELLARMESH_SESSION_REDIS_ADDR` 时跳过真实 Redis 用例。CI 的 Go 检查任务明确执行 `make integration-session`，不会用跳过的测试代替 Redis 验证。`make verify` 保持全仓静态、单元、浏览器与消费检查；`make integration` 同时覆盖 Storage 和 Session 的容器集成。
+
+## 原生可验证示例
+
+[完整 KeyBuilder 与会话生命周期示例](../../../sdk/go/gateway/sessionauth/example_test.go)通过公开入口导入。KeyBuilder 带稳定输出，`go test` 会执行；Store 示例仅编译，运行需外部 Redis。真实 Lua、TTL、并发与淘汰行为由 `make integration-session` 验证，该命令使用隔离测试容器，不是生产安装工具。

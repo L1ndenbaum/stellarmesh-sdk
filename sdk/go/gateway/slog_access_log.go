@@ -13,7 +13,8 @@ const accessLogMessage = "gateway request completed"
 // SlogAccessLoggerConfig 配置使用标准库 slog 输出的访问日志。
 type SlogAccessLoggerConfig struct {
 	// Logger 为空时在每次输出时读取 slog.Default。
-	Logger          *slog.Logger
+	Logger *slog.Logger
+	// IncludeIdentity 默认 false；开启后输出 user_id 与 roles，业务负责隐私策略。
 	IncludeIdentity bool
 }
 

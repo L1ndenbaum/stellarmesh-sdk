@@ -16,7 +16,9 @@ var ErrMultipleValues = errors.New("request body must contain exactly one JSON v
 
 // Options 控制有界 JSON 解码。
 type Options struct {
-	MaxBytes              int64
+	// MaxBytes 是字节上限；小于等于 0 时使用 1 MiB。
+	MaxBytes int64
+	// DisallowUnknownFields 为 true 时拒绝目标结构未声明的字段；默认 false。
 	DisallowUnknownFields bool
 }
 

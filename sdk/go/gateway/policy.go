@@ -21,6 +21,7 @@ type RequestContext struct {
 }
 
 // Authorizer 在认证和用户限流后执行项目授权。
+// Allowed=false 是正常拒绝（403），error 是组件故障（503），二者均不放行。
 type Authorizer interface {
 	Authorize(context.Context, *http.Request, RequestContext) (PolicyDecision, error)
 }
@@ -29,6 +30,7 @@ type Authorizer interface {
 type AuthorizerFunc func(context.Context, *http.Request, RequestContext) (PolicyDecision, error)
 
 // BeforeProxyPolicy 在安全阶段完成后执行最后的项目转发决策。
+// 正常拒绝返回 Allowed=false；组件故障返回 error，不应降级为放行。
 type BeforeProxyPolicy interface {
 	Evaluate(context.Context, *http.Request, RequestContext) (PolicyDecision, error)
 }

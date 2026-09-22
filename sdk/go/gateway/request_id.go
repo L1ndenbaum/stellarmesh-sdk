@@ -13,9 +13,12 @@ const headerXRequestID = "X-Request-ID"
 
 // RequestIDConfig 控制传入请求 ID 的信任范围和生成方式。
 type RequestIDConfig struct {
-	Header    string
+	// Header 留空使用 X-Request-ID；需合法 HTTP 字段名。
+	Header string
+	// MaxLength 为最大字节数，0 使用 128；显式值范围 16 至 1024。
 	MaxLength int
-	Generate  func() (string, error)
+	// Generate 为 nil 时生成 16 字节随机值的十六进制文本；返回值仍须通过长度校验。
+	Generate func() (string, error)
 }
 
 const defaultRequestIDMaxLength = 128

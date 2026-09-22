@@ -182,3 +182,7 @@ if stellarkafka.IsMessageTooLarge(err) {
 5. Consumer 只在业务处理达到约定持久点后提交 offset；
 6. Publisher 超时、消息过大和关闭路径均有明确指标或日志；
 7. 如果项目还依赖父 SDK或 Logging，`go.mod` 同时固定父 `v0.5.0`、Logging `v0.2.0` 和 Kafka `v0.1.0`，且没有 `ambiguous import`。
+
+## 原生可验证示例
+
+[完整示例](../../../sdk/go/mq/kafka/example_test.go)通过公开 import 使用组件。本例只编译验证，不自动连接 Kafka。执行前需本地 broker 和 example-events Topic；应用复用 Publisher 并负责 Close，写失败不代表消息未投递。

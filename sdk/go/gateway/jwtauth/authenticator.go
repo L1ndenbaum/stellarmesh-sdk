@@ -28,12 +28,19 @@ type IdentityMapper func(jwt.Claims) (gateway.Identity, error)
 
 // Config 配置固定算法、签发方、受众和身份映射。
 type Config struct {
-	Secret         []byte
-	Issuer         string
-	Audience       string
-	Leeway         time.Duration
-	Now            func() time.Time
-	ClaimsFactory  ClaimsFactory
+	// Secret 至少 32 字节，构造时复制；仅允许 HS256。
+	Secret []byte
+	// Issuer 必填，验证 iss；首尾空白移除。
+	Issuer string
+	// Audience 必填，验证 aud；首尾空白移除。
+	Audience string
+	// Leeway 为 0 时使用 30 秒；负数拒绝。
+	Leeway time.Duration
+	// Now 为 nil 时使用 time.Now，用于验证时间。
+	Now func() time.Time
+	// ClaimsFactory 为 nil 时使用 Claims；每次必须创建独立非 nil 对象。
+	ClaimsFactory ClaimsFactory
+	// IdentityMapper 为 nil 时从 subject 和 roles 映射身份；业务映射不得共享可变状态。
 	IdentityMapper IdentityMapper
 }
 

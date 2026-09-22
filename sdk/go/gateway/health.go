@@ -18,13 +18,20 @@ type ReadinessCheckerFunc func(context.Context) error
 
 // HealthConfig 配置网关本地存活和就绪端点。
 type HealthConfig struct {
-	Service       string
-	LivePath      string
-	ReadyPath     string
-	CheckTimeout  time.Duration
-	Readiness     ReadinessChecker
+	// Service 留空使用 gateway，只用于响应标识。
+	Service string
+	// LivePath 留空使用 /health/live；必须与 ReadyPath 不同且以 / 开头。
+	LivePath string
+	// ReadyPath 留空使用 /health/ready。
+	ReadyPath string
+	// CheckTimeout 为 0 时使用 2 秒；负数拒绝，检查器应响应 context 取消。
+	CheckTimeout time.Duration
+	// Readiness 可省略；配置后失败返回 503，不自动探测未声明的依赖。
+	Readiness ReadinessChecker
+	// LogSuccessful 默认 false；健康检查失败仍产生访问日志。
 	LogSuccessful bool
-	Responder     HealthResponder
+	// Responder 省略时使用默认文本响应；自定义只负责成功响应。
+	Responder HealthResponder
 }
 
 // HealthKind 标识通过检查的健康端点类型。

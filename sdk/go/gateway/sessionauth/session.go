@@ -25,5 +25,6 @@ type Session struct {
 // CreateOptions 创建带明确有效期的会话，不接受调用方指定的 Session ID。
 type CreateOptions struct {
 	Identity gateway.Identity
-	TTL      time.Duration
+	// TTL 至少 1ms，不提供永久会话；过期时刻以 Redis 服务端时间计算。
+	TTL time.Duration
 }

@@ -156,3 +156,7 @@ Part Number 范围是 `1..10000`。`CompleteMultipart` 要求非空、无重复�
 ## 9. 明确不提供的能力
 
 SDK 不提供 Bucket 创建、List、Copy、ACL、CORS、Policy、Lifecycle、Versioning 或本地失败 spool。Bucket 与治理配置属于业务部署或 `server-infrastructure`；List 和 Copy 若成为稳定跨项目需求，应先形成明确的分页、权限、成本和幂等契约，再扩展公共接口。
+
+## 原生可验证示例
+
+[完整示例](../../../sdk/go/objectstorage/s3store/example_test.go)通过公开 import 使用组件。本例只编译验证，执行前需 AWS 凭据链、example-documents Bucket 和 example.txt。SDK 不创建 Bucket；对象响应体由调用方关闭。

@@ -15,11 +15,16 @@ import (
 
 // Config 控制 Kafka 发布器。
 type Config struct {
-	Brokers      []string
-	Topic        string
+	// Brokers 列出 broker 地址；连通性与 Topic 存在性需显式 Check。
+	Brokers []string
+	// Topic 指定已有 Topic；本包不创建 Topic 或管理 ACL。
+	Topic string
+	// BatchTimeout 小于等于 0 时使用 100ms；不表示整个 Publish 的超时。
 	BatchTimeout time.Duration
-	BatchBytes   int64
-	Connection   ConnectionConfig
+	// BatchBytes 为批次字节上限，0 沿用 kafka-go 默认值，负数拒绝。
+	BatchBytes int64
+	// Connection 为空时使用明文连接；生产环境由项目显式选择 TLS／SASL。
+	Connection ConnectionConfig
 }
 
 // Message 是 Publisher 接受的序列化消息。
@@ -29,7 +34,8 @@ type Message struct {
 	Time  time.Time
 }
 
-// Publisher 持有 kafka-go writer。
+// Publisher 持有 kafka-go writer；应用应复用实例并在退出时 Close。
+// 写失败不能据此推断 broker 未接收消息，业务负责重试与幂等。
 type Publisher struct {
 	brokers   []string
 	topic     string

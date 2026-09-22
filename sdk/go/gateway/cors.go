@@ -12,11 +12,16 @@ import (
 
 // CORSConfig 控制网关拥有的浏览器跨域策略。
 type CORSConfig struct {
-	AllowedOrigins   []string
-	AllowedMethods   []string
-	AllowedHeaders   []string
+	// AllowedOrigins 启用 CORS 时必填；通配符不能和凭证或其他 origin 混用。
+	AllowedOrigins []string
+	// AllowedMethods 留空允许 DELETE、GET、HEAD、OPTIONS、PATCH、POST、PUT。
+	AllowedMethods []string
+	// AllowedHeaders 留空允许 Authorization、Content-Type、X-Request-ID。
+	AllowedHeaders []string
+	// AllowCredentials 默认 false；为 true 时必须使用明确的来源列表。
 	AllowCredentials bool
-	MaxAge           time.Duration
+	// MaxAge 为预检缓存时长；0 不输出缓存时间，负数拒绝。
+	MaxAge time.Duration
 }
 
 var defaultCORSMethods = []string{"DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"}
