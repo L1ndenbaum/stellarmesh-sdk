@@ -1,6 +1,12 @@
 name: 发布 Python SDK
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已存在的不可变组件 tag
+        required: true
+        type: string
   push:
     tags:
       - "sdk/python/logging/v*.*.*"
@@ -20,36 +26,42 @@ jobs:
     steps:
       - name: 检出代码
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
       - name: 选择待发布组件
         id: component
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         shell: bash
         run: |
-          case "$GITHUB_REF_NAME" in
+          case "$RELEASE_TAG" in
             sdk/python/logging/v*.*.*)
               package_path="sdk/python/logging"
               distribution="stellarmesh-logging"
-              tag_version="${GITHUB_REF_NAME#sdk/python/logging/v}"
+              tag_version="${RELEASE_TAG#sdk/python/logging/v}"
               ;;
             sdk/python/storage/v*.*.*)
               package_path="sdk/python/storage"
               distribution="stellarmesh-storage"
-              tag_version="${GITHUB_REF_NAME#sdk/python/storage/v}"
+              tag_version="${RELEASE_TAG#sdk/python/storage/v}"
               ;;
             sdk/python/objectstorage/v*.*.*)
               package_path="sdk/python/objectstorage"
               distribution="stellarmesh-objectstorage"
-              tag_version="${GITHUB_REF_NAME#sdk/python/objectstorage/v}"
+              tag_version="${RELEASE_TAG#sdk/python/objectstorage/v}"
               ;;
             *)
-              echo "不支持的 Python 组件 tag：$GITHUB_REF_NAME" >&2
+              echo "不支持的 Python 组件 tag：$RELEASE_TAG" >&2
               exit 1
               ;;
           esac
-          echo "package_path=$package_path" >> "$GITHUB_OUTPUT"
-          echo "distribution=$distribution" >> "$GITHUB_OUTPUT"
-          echo "tag_version=$tag_version" >> "$GITHUB_OUTPUT"
-          echo "artifact=${distribution}-distributions" >> "$GITHUB_OUTPUT"
+          {
+            echo "package_path=$package_path"
+            echo "distribution=$distribution"
+            echo "tag_version=$tag_version"
+            echo "artifact=${distribution}-distributions"
+          } >> "$GITHUB_OUTPUT"
 
       - name: 安装 Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97

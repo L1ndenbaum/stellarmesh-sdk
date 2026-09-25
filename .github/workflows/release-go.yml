@@ -1,6 +1,12 @@
 name: 验证已发布 Go Module
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已存在的不可变组件 tag
+        required: true
+        type: string
   push:
     tags:
       - "sdk/go/v*.*.*"
@@ -19,6 +25,8 @@ jobs:
     steps:
       - name: 检出消费测试
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
       - name: 安装 Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
@@ -27,4 +35,6 @@ jobs:
           cache: false
 
       - name: 从公共代理验证 Module
-        run: ./tests/go-module-consumer.sh public "$GITHUB_REF_NAME"
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: ./tests/go-module-consumer.sh public "$RELEASE_TAG"

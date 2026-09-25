@@ -106,6 +106,8 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 - `sdk/python/logging/vX.Y.Z`、`sdk/python/storage/vX.Y.Z` 与 `sdk/python/objectstorage/vX.Y.Z` 分别发布对应 Python distribution；
 - Go 与 Python组件 tag 不触发镜像构建，根 tag 也不触发 Python 发布。
 
+组件 tag 应逐个推送；GitHub 单次推送超过三个 tag 时不产生相应工作流事件。若不可变 tag 已存在但未触发，可在 `release-go.yml` 或 `release-python.yml` 使用手动入口并填写完整组件 tag。工作流只检出 `refs/tags/` 下的对应源码，沿用组件和版本校验，不移动 tag、不改用当前分支源码；已有发布运行应优先重跑，不能覆盖 registry 中已经存在的版本。
+
 发布工作流必须从公共 Go Proxy 或实际构建出的 wheel/sdist验证制品，不能依赖仓库 `go.work`、本地 `replace` 或可变源码目录。公开 GHCR 镜像可以匿名拉取；生产环境仍应固定已验证的 manifest digest。
 
 ## 旧日志制品边界
