@@ -138,7 +138,7 @@ S3 权限错误统一对外返回无内部细节的 `503`，避免向客户端�
 
 ## 6. 验证
 
-仓库默认集成入口会创建临时 Docker network，从 `quay.io/minio/minio` 与 `quay.io/minio/mc` 匿名拉取固定 digest 的镜像，建立测试 Bucket、项目用户和最小 Policy。镜像源从 Docker Hub 切换到 Quay，保留 MinIO `RELEASE.2025-04-22T22-12-26Z` 与 mc `RELEASE.2025-04-16T18-13-26Z` 及原有多架构 digest；具体引用集中在 `tests/integration/storage-minio.sh`，不使用可变 `latest` 标签：
+仓库默认集成入口创建临时 Docker network，使用 RustFS `1.0.0` 官方多架构镜像并固定 SHA-256 digest。测试初始化使用 RustFS CLI `v0.1.36`，下载后校验固定摘要，在临时目录保存凭据配置；建立测试 Bucket、版本控制、项目用户和限定前缀的 Policy，并验证项目账号不能建桶。具体镜像引用位于 `tests/integration/storage-rustfs.sh`，CLI 初始化位于 `tests/integration/rustfs-setup.sh`，不依赖 MinIO／mc 镜像或可变 `latest` 标签。入口要求 Linux amd64／arm64、Docker、curl、tar 和 sha256sum；不提供生产部署配置，也不升级其他仓库已部署的 Storage 服务：
 
 ```sh
 make integration
@@ -147,7 +147,7 @@ make integration
 只运行对象存储流水线：
 
 ```sh
-./tests/integration/storage-minio.sh
+./tests/integration/storage-rustfs.sh
 ```
 
 真实 AWS 手动入口要求调用方预先提供测试 Bucket、Prefix 和 Role，不创建 Bucket，也不在默认 CI 执行：

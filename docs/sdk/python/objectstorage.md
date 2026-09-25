@@ -1,6 +1,6 @@
 # Python 进程内对象存储
 
-`stellarmesh-objectstorage` 直接连接 S3／MinIO，不依赖 Storage 服务。同步 `Client` 用于线程或同步 Worker，异步 `AsyncClient` 使用 aioboto3，适合异步业务入口。当前发布状态以[发布矩阵](../../release.md#当前制品矩阵)为准；首次发布前可从源码构建 wheel 验证。
+`stellarmesh-objectstorage` 直接连接 S3 兼容对象存储（含 RustFS），不依赖 Storage 服务。同步 `Client` 用于线程或同步 Worker，异步 `AsyncClient` 使用 aioboto3，适合异步业务入口。当前发布状态以[发布矩阵](../../release.md#当前制品矩阵)为准；首次发布前可从源码构建 wheel 验证。
 
 ## 安装与装配
 
@@ -33,7 +33,7 @@ async def roundtrip(config: ClientConfig, key: str) -> bytes:
 ```
 <!-- /example -->
 
-业务创建 `ClientConfig(bucket="example-documents", region="us-east-1")` 并传入上面的完整示例。MinIO 再配置 `endpoint` 和 `use_path_style=True`。同步用法将 `async with`／`await` 对应替换为 `with Client(...)`／同步调用。
+业务创建 `ClientConfig(bucket="example-documents", region="us-east-1")` 并传入上面的完整示例。RustFS 再配置 `endpoint` 和 `use_path_style=True`。同步用法将 `async with`／`await` 对应替换为 `with Client(...)`／同步调用。
 
 默认使用标准 AWS 凭据链；业务也可以注入 `boto3.Session` 或 `aioboto3.Session`。SDK 不读取业务 dotenv，静态凭据由业务配置加载后交给 Session，工作负载身份由标准凭据链解析。客户端只关闭自己创建的底层连接。
 
@@ -63,7 +63,7 @@ Multipart 顺序为 `create_multipart` → `presign_part` → 调用方上传各
 
 ## 验证与迁移边界
 
-单元检查执行 `make python-objectstorage-check python-objectstorage-test`；真实 MinIO 执行 `make integration-objectstorage`，不启动 Storage 服务。测试覆盖同步／异步传输、签名头、内外端点、版本、权限、Multipart、过期签名、关闭和重试次数。真实 AWS、业务模型和生产部署须单独验收。
+单元检查执行 `make python-objectstorage-check python-objectstorage-test`；真实 RustFS 执行 `make integration-objectstorage`，不启动 Storage 服务。测试覆盖同步／异步传输、签名头、内外端点、版本、权限、Multipart、过期签名、关闭和重试次数。真实 AWS、业务模型和生产部署须单独验收。
 
 旧 `stellarmesh-storage` 仍是远程 Storage v1 客户端，不能只替换服务地址来切换。业务应替换 Infrastructure 适配器并保留逻辑 namespace 和已有物理对象位置；迁移完成及线上验收后再退役服务，不必迁移对象字节。旧包和服务本轮保持兼容。
 

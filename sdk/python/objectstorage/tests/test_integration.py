@@ -1,4 +1,4 @@
-"""仅由隔离 MinIO 入口启用，不读取业务 dotenv 或生产凭据。"""
+"""仅由隔离 RustFS 入口启用，不读取业务 dotenv 或生产凭据。"""
 
 import asyncio
 import base64
@@ -32,7 +32,7 @@ from stellarmesh_objectstorage import (
 )
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("OBJECTSTORAGE_TEST_ENDPOINT"), reason="需要隔离 MinIO 入口"
+    not os.environ.get("OBJECTSTORAGE_TEST_ENDPOINT"), reason="需要隔离 RustFS 入口"
 )
 
 

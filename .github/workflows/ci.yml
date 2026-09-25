@@ -147,7 +147,7 @@ jobs:
         run: make integration-storage
 
   python-objectstorage:
-    name: Python Object Storage 与 MinIO 集成
+    name: Python Object Storage 与 RustFS 集成
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -163,7 +163,7 @@ jobs:
           version: "0.12.5"
           enable-cache: true
           cache-dependency-glob: sdk/python/objectstorage/uv.lock
-      - name: 验证接口、制品与真实 MinIO
+      - name: 验证接口、制品与真实 RustFS
         run: make python-objectstorage-check python-objectstorage-test python-objectstorage-artifact-check python-objectstorage-consumer integration-objectstorage
 
   verify:

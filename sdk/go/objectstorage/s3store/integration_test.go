@@ -14,13 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 )
 
-func TestMinIOIntegrationRange(t *testing.T) {
-	if os.Getenv("STELLARMESH_STORAGE_MINIO_INTEGRATION") != "1" {
-		t.Skip("仅由 MinIO 集成脚本启用")
+func TestS3IntegrationRange(t *testing.T) {
+	if os.Getenv("STELLARMESH_STORAGE_S3_INTEGRATION") != "1" {
+		t.Skip("仅由 S3 集成脚本启用")
 	}
-	endpoint := requiredEnvironment(t, "STELLARMESH_STORAGE_MINIO_ENDPOINT")
-	bucket := requiredEnvironment(t, "STELLARMESH_STORAGE_MINIO_BUCKET")
-	prefix := requiredEnvironment(t, "STELLARMESH_STORAGE_MINIO_PREFIX")
+	endpoint := requiredEnvironment(t, "STELLARMESH_STORAGE_S3_ENDPOINT")
+	bucket := requiredEnvironment(t, "STELLARMESH_STORAGE_S3_BUCKET")
+	prefix := requiredEnvironment(t, "STELLARMESH_STORAGE_S3_PREFIX")
 	region := requiredEnvironment(t, "AWS_REGION")
 	accessKey := requiredEnvironment(t, "AWS_ACCESS_KEY_ID")
 	secretKey := requiredEnvironment(t, "AWS_SECRET_ACCESS_KEY")

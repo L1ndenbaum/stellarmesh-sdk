@@ -27,7 +27,7 @@
 
 本轮目标为前端 `0.3.1`、Go Gateway `0.4.0`、父 Go SDK `0.5.1`、Go Object Storage `0.1.1`、Go Logging `0.4.1`、Go Kafka `0.1.1`、Python Logging `0.5.1` 与 Python Storage `0.1.2`。此处仅记录发布目标，上方已发布矩阵在官方制品验收后更新。
 
-Gateway 包含 Cookie／Bearer 凭证提取和 Redis Session 管理，注意认证错误码及变参装配的迁移。前端包含 tsdown 构建与声明注释；其他补丁同步公共注释和可验证示例。Python Object Storage 保持 `0.1.0`，不发布服务镜像及冻结组件。
+Gateway 包含 Cookie／Bearer 凭证提取和 Redis Session 管理，注意认证错误码及变参装配的迁移。前端包含 tsdown 构建与声明注释；其他补丁同步公共注释和可验证示例。Python Object Storage 保持 `0.1.0`，不发布服务镜像及冻结组件。本轮 S3 集成验证改用固定 digest 的 RustFS `1.0.0` 与校验摘要的 RustFS CLI `v0.1.36`，不再依赖 MinIO／mc 镜像。其他仓库及已部署服务不受此测试环境调整影响。
 
 ## 前端 npm 发布流程
 

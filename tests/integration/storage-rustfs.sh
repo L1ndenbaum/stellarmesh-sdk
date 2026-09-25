@@ -3,12 +3,11 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 PYTHON=${STELLARMESH_STORAGE_TEST_PYTHON:-python3}
-# Quay 保留现有多架构 digest，切换镜像源不升级 MinIO 或 mc。
-MINIO_IMAGE='quay.io/minio/minio@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e'
-MC_IMAGE='quay.io/minio/mc@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3'
+# RustFS 1.0.0：固定官方多架构镜像摘要，仅用于隔离测试。
+RUSTFS_IMAGE='rustfs/rustfs:1.0.0@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff'
 RUN_ID="$$"
 NETWORK="stellarmesh-storage-test-${RUN_ID}"
-MINIO_CONTAINER="stellarmesh-minio-${RUN_ID}"
+RUSTFS_CONTAINER="stellarmesh-rustfs-${RUN_ID}"
 SERVICE_CONTAINER="stellarmesh-storage-${RUN_ID}"
 TMP_DIR=$(mktemp -d)
 ADMIN_USER='storageadmin'
@@ -21,7 +20,7 @@ BUCKET='stellarmesh-storage-integration'
 
 cleanup() {
     docker rm -f "$SERVICE_CONTAINER" >/dev/null 2>&1 || true
-    docker rm -f "$MINIO_CONTAINER" >/dev/null 2>&1 || true
+    docker rm -f "$RUSTFS_CONTAINER" >/dev/null 2>&1 || true
     docker network rm "$NETWORK" >/dev/null 2>&1 || true
     rm -rf "$TMP_DIR"
 }
@@ -44,7 +43,7 @@ cat >"$TMP_DIR/project-policy.json" <<EOF
     },
     {
       "Effect": "Allow",
-      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
+      "Action": ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject", "s3:DeleteObject", "s3:DeleteObjectVersion", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"],
       "Resource": ["arn:aws:s3:::$BUCKET/integration/*"]
     }
   ]
@@ -70,22 +69,22 @@ EOF
 chmod 0444 "$TMP_DIR/access.json" "$TMP_DIR/project-policy.json"
 
 docker network create "$NETWORK" >/dev/null
-docker run -d --name "$MINIO_CONTAINER" --network "$NETWORK" --network-alias minio \
+docker run -d --name "$RUSTFS_CONTAINER" --network "$NETWORK" --network-alias rustfs \
     -p 127.0.0.1::9000 \
-    -e "MINIO_ROOT_USER=$ADMIN_USER" \
-    -e "MINIO_ROOT_PASSWORD=$ADMIN_PASSWORD" \
-    "$MINIO_IMAGE" server /data >/dev/null
-MINIO_PORT=$(docker port "$MINIO_CONTAINER" 9000/tcp | sed -n 's/.*://p' | head -n 1)
-MINIO_PUBLIC="http://127.0.0.1:$MINIO_PORT"
+    -e "RUSTFS_ACCESS_KEY=$ADMIN_USER" \
+    -e "RUSTFS_SECRET_KEY=$ADMIN_PASSWORD" \
+    "$RUSTFS_IMAGE" >/dev/null
+RUSTFS_PORT=$(docker port "$RUSTFS_CONTAINER" 9000/tcp | sed -n 's/.*://p' | head -n 1)
+RUSTFS_PUBLIC="http://127.0.0.1:$RUSTFS_PORT"
 
 attempt=0
-until "$PYTHON" - "$MINIO_PUBLIC" <<'PY'
+until "$PYTHON" - "$RUSTFS_PUBLIC" <<'PY'
 import sys
 import urllib.error
 import urllib.request
 
 try:
-    with urllib.request.urlopen(sys.argv[1] + "/minio/health/live", timeout=2) as response:
+    with urllib.request.urlopen(sys.argv[1] + "/health/ready", timeout=2) as response:
         raise SystemExit(0 if response.status == 200 else 1)
 except (OSError, urllib.error.URLError):
     raise SystemExit(1)
@@ -93,37 +92,22 @@ PY
 do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 60 ]; then
-        echo 'MinIO 未在预期时间内就绪' >&2
+        echo 'RustFS 未在预期时间内就绪' >&2
         exit 1
     fi
     sleep 1
 done
 
-docker run --rm --network "$NETWORK" --entrypoint /bin/sh \
-    -v "$TMP_DIR/project-policy.json:/tmp/project-policy.json:ro" \
-    "$MC_IMAGE" -ec "
-        mc alias set admin http://minio:9000 '$ADMIN_USER' '$ADMIN_PASSWORD' >/dev/null
-        mc mb admin/$BUCKET >/dev/null
-        mc version enable admin/$BUCKET >/dev/null
-        mc admin user add admin '$PROJECT_USER' '$PROJECT_PASSWORD' >/dev/null
-        mc admin policy create admin storage-project /tmp/project-policy.json >/dev/null
-        mc admin policy attach admin storage-project --user '$PROJECT_USER' >/dev/null
-    "
+"$ROOT/tests/integration/rustfs-setup.sh" "$TMP_DIR" "$RUSTFS_PUBLIC" "$BUCKET" \
+    "$ADMIN_USER" "$ADMIN_PASSWORD" "$PROJECT_USER" "$PROJECT_PASSWORD"
 
-if docker run --rm --network "$NETWORK" --entrypoint /bin/sh "$MC_IMAGE" -ec "
-    mc alias set project http://minio:9000 '$PROJECT_USER' '$PROJECT_PASSWORD' >/dev/null
-    mc mb project/forbidden-bucket
-" >/dev/null 2>&1; then
-    echo '项目凭据不应拥有 Bucket 创建权限' >&2
-    exit 1
-fi
 
 docker run -d --name "$SERVICE_CONTAINER" --network "$NETWORK" \
     -p 127.0.0.1::8090 \
     -v "$TMP_DIR/access.json:/run/secrets/storage-access.json:ro" \
     -e STELLARMESH_STORAGE_ACCESS_FILE=/run/secrets/storage-access.json \
-    -e STELLARMESH_STORAGE_ENDPOINT=http://minio:9000 \
-    -e "STELLARMESH_STORAGE_PRESIGN_ENDPOINT=$MINIO_PUBLIC" \
+    -e STELLARMESH_STORAGE_ENDPOINT=http://rustfs:9000 \
+    -e "STELLARMESH_STORAGE_PRESIGN_ENDPOINT=$RUSTFS_PUBLIC" \
     -e STELLARMESH_STORAGE_USE_PATH_STYLE=true \
     -e STELLARMESH_STORAGE_S3_CHECK_TIMEOUT=1s \
     -e STELLARMESH_STORAGE_S3_CHECK_INTERVAL=1s \
@@ -168,18 +152,18 @@ wait_ready 200
 "$PYTHON" "$ROOT/tests/integration/storage-pipeline.py" \
     --base-url "$SERVICE_URL" --token "$SERVICE_TOKEN" --reader-token "$READER_TOKEN"
 
-STELLARMESH_STORAGE_MINIO_INTEGRATION=1 \
-STELLARMESH_STORAGE_MINIO_ENDPOINT="$MINIO_PUBLIC" \
-STELLARMESH_STORAGE_MINIO_BUCKET="$BUCKET" \
-STELLARMESH_STORAGE_MINIO_PREFIX='integration/go-range/' \
+STELLARMESH_STORAGE_S3_INTEGRATION=1 \
+STELLARMESH_STORAGE_S3_ENDPOINT="$RUSTFS_PUBLIC" \
+STELLARMESH_STORAGE_S3_BUCKET="$BUCKET" \
+STELLARMESH_STORAGE_S3_PREFIX='integration/go-range/' \
 AWS_REGION=us-east-1 \
 AWS_ACCESS_KEY_ID="$PROJECT_USER" \
 AWS_SECRET_ACCESS_KEY="$PROJECT_PASSWORD" \
-go test ./sdk/go/objectstorage/s3store -run '^TestMinIOIntegrationRange$' -count=1
+go test ./sdk/go/objectstorage/s3store -run '^TestS3IntegrationRange$' -count=1
 
-docker stop "$MINIO_CONTAINER" >/dev/null
+docker stop "$RUSTFS_CONTAINER" >/dev/null
 wait_ready 503
-docker start "$MINIO_CONTAINER" >/dev/null
+docker start "$RUSTFS_CONTAINER" >/dev/null
 wait_ready 200
 
 docker stop --time 10 "$SERVICE_CONTAINER" >/dev/null
@@ -190,4 +174,4 @@ if [ "$SERVICE_EXIT_CODE" != "0" ]; then
     exit 1
 fi
 
-echo 'Storage MinIO 集成验证通过'
+echo 'Storage RustFS 集成验证通过'

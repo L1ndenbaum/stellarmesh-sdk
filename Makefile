@@ -51,7 +51,7 @@ python-objectstorage-consumer: python-objectstorage-bootstrap
 	$(UV) run --project $(PYTHON_OBJECTSTORAGE_DIR) --frozen python tests/package-consumer/python-objectstorage/consume.py --build
 
 integration-objectstorage: python-objectstorage-bootstrap
-	STELLARMESH_OBJECTSTORAGE_TEST_PYTHON=$(ROOT)/$(PYTHON_OBJECTSTORAGE_DIR)/.venv/bin/python ./tests/integration/objectstorage-minio.sh
+	STELLARMESH_OBJECTSTORAGE_TEST_PYTHON=$(ROOT)/$(PYTHON_OBJECTSTORAGE_DIR)/.venv/bin/python ./tests/integration/objectstorage-rustfs.sh
 
 python-logging-bootstrap:
 	$(UV) sync --project $(PYTHON_LOGGING_DIR) --frozen
@@ -121,8 +121,9 @@ python-storage-check: python-storage-bootstrap
 	$(UV) pip check --python $(PYTHON_STORAGE_DIR)/.venv/bin/python
 
 shell-check:
-	sh -n tests/integration/objectstorage-minio.sh
-	sh -n tests/integration/storage-minio.sh
+	sh -n tests/integration/rustfs-setup.sh
+	sh -n tests/integration/objectstorage-rustfs.sh
+	sh -n tests/integration/storage-rustfs.sh
 	sh -n tests/integration/gateway-session-redis.sh
 	sh -n tests/go-module-consumer.sh
 	git diff --check
@@ -169,7 +170,7 @@ image-storage:
 images: image-storage
 
 integration-storage: python-storage-bootstrap image-storage
-	STELLARMESH_STORAGE_TEST_PYTHON=$(ROOT)/$(PYTHON_STORAGE_DIR)/.venv/bin/python ./tests/integration/storage-minio.sh
+	STELLARMESH_STORAGE_TEST_PYTHON=$(ROOT)/$(PYTHON_STORAGE_DIR)/.venv/bin/python ./tests/integration/storage-rustfs.sh
 
 integration-session:
 	./tests/integration/gateway-session-redis.sh
