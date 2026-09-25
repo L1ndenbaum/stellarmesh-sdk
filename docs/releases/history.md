@@ -2,6 +2,44 @@
 
 > 本文件保存旧版本拆分、失败处理和迁移背景。文中的“当前”“未发布”和版本矩阵均表示记录写入时的状态，不是现行发布指令；实际操作以[当前发布文档](../release.md)为准。
 
+## 2026-09-25 SDK 统一发布
+
+本轮采用独立组件版本，已发布前端 `0.3.1`、父 Go SDK `v0.5.1`、Go Gateway `v0.4.0`、Go Logging `v0.4.1`、Go Kafka `v0.1.1`、Go Object Storage `v0.1.1`、Python Logging `0.5.1`、Python Storage `0.1.2`。Python Object Storage 保持 `0.1.0`；未发布服务镜像或冻结组件，未修改其他业务仓库及线上资源。
+
+各组件 annotated tag 均指向发布源码 `4551e2e147e9dc6e77b31d0a1576aa682dec0718`。版本准备提交为 `42eec3cf836f447938f2f52329cd0401b55c5e42`；前端唯一 tarball 在该提交生成，此后前端目录未变化。发布源码的[持续验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36108538872)全部通过，本地 `make verify`、Go race、Redis Session 和两套真实 RustFS 集成均通过。
+
+S3 测试后端已改为 RustFS `1.0.0`，固定镜像 `rustfs/rustfs:1.0.0@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff`；初始化使用校验摘要的 RustFS CLI `v0.1.36`。覆盖权限拒绝、版本、范围读取、预签名、Multipart、同步／异步直连和旧 Storage 服务链路。最初 MinIO 拉取失败的 CI 没有被豁免，也没有构建 MinIO 来绕过失败；替换测试后端后重新通过 CI。这不代表生产 RustFS 数据迁移或部署验收。
+
+最初一次推送七个组件 tag 未触发 GitHub Actions。保留所有不可变 tag，提交 `8c791cc` 为 Go／Python 工作流增加指定已有 tag 的手动入口，再对同一源码执行发布与验证；该提交的[持续验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36108944863)也全部通过。
+
+五个 Go Module 已通过本地公开代理消费及远端独立消费验证：
+
+| 组件 | tag | 验证工作流 |
+| --- | --- | --- |
+| 基础包 | `sdk/go/v0.5.1` | [验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36109165068) |
+| Gateway | `sdk/go/gateway/v0.4.0` | [验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36109168838) |
+| Logging | `sdk/go/logging/v0.4.1` | [验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36109172536) |
+| Kafka | `sdk/go/mq/kafka/v0.1.1` | [验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36109176659) |
+| Object Storage | `sdk/go/objectstorage/v0.1.1` | [验证](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36109180198) |
+
+前端通过 `release:prepare` 准备唯一 tarball，完成 npm 2FA 后上传同一制品；官方 `latest` 指向 `0.3.1`。匿名下载摘要一致，下载制品通过 Node ESM HTTP／SSE、NodeNext／Bundler 类型与文件边界验证，另完成空缓存按包名安装及运行时导出检查。随后创建并单独推送 `sdk/frontend/v0.3.1`。
+
+```text
+SHA-256: 58091051e68e8f3cae4e97e59c5339ed9af8a4fec25ef14921985cbfcfd15c0e
+integrity: sha512-hThjBl2rhAYvbizdE8YZtVAw9Uf+zwZBVDdNKiCTZUplVmjp+AQ6pD80gYJRy9Nbm1p4mkbIEDBC1iEwV4L7tg==
+```
+
+Python [Logging 发布](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36109183683)与 [Storage 发布](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36109187880)均按 TestPyPI → PyPI 提升同一 Actions artifact，没有重新构建。正式环境审批前已核对 TestPyPI 文件；发布后匿名下载 PyPI 文件，与 Actions／TestPyPI 逐字节及摘要一致：
+
+| 制品 | SHA-256 |
+| --- | --- |
+| `stellarmesh_logging-0.5.1-py3-none-any.whl` | `3b80b8c84703479aebbe99d1dc67f3e3f88597364fe39eb83cdfd97e8759c1ab` |
+| `stellarmesh_logging-0.5.1.tar.gz` | `ed62dc57fa2b01c8da95c7538873c19cd91327f9106bf4697e69efe11366dda6` |
+| `stellarmesh_storage-0.1.2-py3-none-any.whl` | `b940ca072786fb0d928210d03f6f0308403756b88111b4a2d62c764a259a1c74` |
+| `stellarmesh_storage-0.1.2.tar.gz` | `bcb833207db8c4f53c5809a53e536733d733b7ddb1307eead828690a2b5e0990` |
+
+全新 Python 3.11 虚拟环境使用空缓存、官方索引按包名安装成功；公开示例运行、严格类型消费以及 wheel／sdist 的 README／公共说明保留检查通过。Storage 刚上传时官方索引短暂返回旧状态，待版本可见后才完成安装验收，没有重复上传。
+
 ## Python Object Storage 0.1.0 已发布
 
 2026-09-22 已通过 Trusted Publishing 将 `stellarmesh-objectstorage==0.1.0` 发布到 [TestPyPI](https://test.pypi.org/project/stellarmesh-objectstorage/0.1.0/) 和 [PyPI](https://pypi.org/project/stellarmesh-objectstorage/0.1.0/)。同步使用 Boto3，异步使用 aioboto3，提供绑定 Bucket／Prefix 的对象传输、预签名和显式 Multipart；旧 `stellarmesh-storage`、Storage 服务及 Go SDK 版本保持不变。

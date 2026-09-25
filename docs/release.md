@@ -6,26 +6,26 @@
 
 | 制品 | 当前已发布版本 | 说明 |
 | --- | --- | --- |
-| 前端 HTTP／SSE SDK | `sdk/frontend/v0.3.0` | `@stellarmesh/sdk@0.3.0`，ESM，MIT |
-| 父 Go SDK | `sdk/go/v0.5.0` | 标准库 HTTP 与环境配置基础能力 |
-| Go Object Storage | `sdk/go/objectstorage/v0.1.0` | namespace 绑定的对象存储能力 |
-| Go Gateway Core | `sdk/go/gateway/v0.3.1` | 通用 `slog` 访问日志，保留限流结果 |
-| Go Kafka | `sdk/go/mq/kafka/v0.1.0` | 轻量 Kafka 连接与 Publisher |
-| Python Object Storage | `sdk/python/objectstorage/v0.1.0` | `stellarmesh-objectstorage==0.1.0`，直连 S3／MinIO |
-| Python Storage | `sdk/python/storage/v0.1.1` | `stellarmesh-storage==0.1.1` |
+| 前端 HTTP／SSE SDK | `sdk/frontend/v0.3.1` | `@stellarmesh/sdk@0.3.1`，ESM，MIT |
+| 父 Go SDK | `sdk/go/v0.5.1` | 标准库 HTTP 与环境配置基础能力 |
+| Go Object Storage | `sdk/go/objectstorage/v0.1.1` | namespace 绑定的对象存储能力 |
+| Go Gateway Core | `sdk/go/gateway/v0.4.0` | Cookie／Bearer 凭证提取、Redis Session 与通用访问日志 |
+| Go Kafka | `sdk/go/mq/kafka/v0.1.1` | 轻量 Kafka 连接与 Publisher |
+| Python Object Storage | `sdk/python/objectstorage/v0.1.0` | `stellarmesh-objectstorage==0.1.0`，直连 S3 兼容存储 |
+| Python Storage | `sdk/python/storage/v0.1.2` | `stellarmesh-storage==0.1.2` |
 | storage-service | 根镜像 tag `v0.3.0` | Storage v1，支持 pretty／JSON 与日志级别 |
-| Go Logging | `sdk/go/logging/v0.4.0` | `slog.Handler`安全装饰器 |
-| Python Logging | `sdk/python/logging/v0.5.0` | `stellarmesh-logging==0.5.0` Pretty／JSON Formatter |
+| Go Logging | `sdk/go/logging/v0.4.1` | `slog.Handler`安全装饰器 |
+| Python Logging | `sdk/python/logging/v0.5.1` | `stellarmesh-logging==0.5.1` Pretty／JSON Formatter |
 | 旧 Gateway Logging Adapter | `0.2.0` | 冻结的远程日志适配器，只供迁移 |
 | 旧 Logging 运行时镜像 | 根镜像 tag `v0.2.0` | 最后版本，不再构建新版本 |
 
-旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。2026-09-22 只读核对了官方 npm、PyPI、Go Proxy 元数据及远端组件 tag；镜像摘要沿用已记录的发布验收，本轮没有重新拉取镜像。Gateway `sessionauth`／凭证提取扩展仍为主干能力，未包含在当前 Gateway 制品中。
+旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。2026-09-25 已核对本轮官方 npm、PyPI、Go Proxy 制品及远端组件 tag；镜像版本沿用已有发布记录，本轮没有发布服务镜像。Gateway `sessionauth`／凭证提取扩展从 `v0.4.0` 起可用。
 
 历史拆分和兼容记录见[历史发布记录](releases/history.md)。
 
-## 2026-09-25 发布准备
+## 2026-09-25 统一发布
 
-本轮目标为前端 `0.3.1`、Go Gateway `0.4.0`、父 Go SDK `0.5.1`、Go Object Storage `0.1.1`、Go Logging `0.4.1`、Go Kafka `0.1.1`、Python Logging `0.5.1` 与 Python Storage `0.1.2`。此处仅记录发布目标，上方已发布矩阵在官方制品验收后更新。
+本轮已发布前端 `0.3.1`、Go Gateway `0.4.0`、父 Go SDK `0.5.1`、Go Object Storage `0.1.1`、Go Logging `0.4.1`、Go Kafka `0.1.1`、Python Logging `0.5.1` 与 Python Storage `0.1.2`。官方公开消费验证已通过，源码、工作流与制品摘要见[本轮发布记录](releases/history.md#2026-09-25-sdk-统一发布)。
 
 Gateway 包含 Cookie／Bearer 凭证提取和 Redis Session 管理，注意认证错误码及变参装配的迁移。前端包含 tsdown 构建与声明注释；其他补丁同步公共注释和可验证示例。Python Object Storage 保持 `0.1.0`，不发布服务镜像及冻结组件。本轮 S3 集成验证改用固定 digest 的 RustFS `1.0.0` 与校验摘要的 RustFS CLI `v0.1.36`，不再依赖 MinIO／mc 镜像。其他仓库及已部署服务不受此测试环境调整影响。
 
