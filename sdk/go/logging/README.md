@@ -4,10 +4,10 @@
 
 ## 安装
 
-示例适用于 `v0.4.0`；其他组件各自独立版本，参阅[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
+示例适用于 `v0.4.1`；其他组件各自独立版本，参阅[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.4.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/logging@v0.4.1
 ```
 
 ## 最小完整示例

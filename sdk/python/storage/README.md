@@ -4,10 +4,10 @@ Python 3.11 及以上；需要部署好的 Storage 控制面、项目 token，�
 
 ## 安装
 
-示例适用于 `0.1.1`，当前发布状态见[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
+示例适用于 `0.1.2`，当前发布状态见[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
 
 ```sh
-python -m pip install stellarmesh-storage==0.1.1
+python -m pip install stellarmesh-storage==0.1.2
 ```
 
 ## 最小完整示例

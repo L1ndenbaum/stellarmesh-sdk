@@ -1,6 +1,6 @@
 {
   "name": "@stellarmesh/sdk",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "可复用的声明式 HTTP 与 SSE 客户端",
   "license": "MIT",
   "repository": {

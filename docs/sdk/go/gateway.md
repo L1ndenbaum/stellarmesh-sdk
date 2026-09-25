@@ -1,6 +1,6 @@
 # Go Gateway 接入
 
-Gateway 将路由、认证、授权、限流与代理装配为固定安全流水线。当前可安装版本见[发布矩阵](../../release.md#当前制品矩阵)。Session 及可插拔凭证提取属于主干新增能力，安装现有稳定版本不可直接使用这些接口。
+Gateway 将路由、认证、授权、限流与代理装配为固定安全流水线。当前可安装版本见[发布矩阵](../../release.md#当前制品矩阵)。Session 及可插拔凭证提取要求 Gateway `v0.4.0` 或更新版本；旧版 `v0.3.1` 不包含这些接口。
 
 首次使用阅读[首次装配](gateway-quickstart.md)，用[本地完整示例](../../../sdk/go/gateway/example_test.go)验证最小代理。业务鉴权与 Redis 等扩展见[配置指南](gateway-configuration.md)，升级见[迁移指南](gateway-migration.md)。
 

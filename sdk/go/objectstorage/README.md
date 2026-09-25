@@ -4,10 +4,10 @@
 
 ## 安装
 
-示例适用于 `v0.1.0`；其他组件各自独立版本，参阅[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
+示例适用于 `v0.1.1`；其他组件各自独立版本，参阅[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage@v0.1.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/objectstorage@v0.1.1
 ```
 
 ## 最小完整示例

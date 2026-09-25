@@ -4,15 +4,15 @@
 
 ## 安装
 
-示例适用于 `v0.3.1`；其他组件各自独立版本，参阅[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
+示例适用于 `v0.4.0`；其他组件各自独立版本，参阅[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.3.1
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.4.0
 ```
 
 ## 最小完整示例
 
-本例启动并关闭两个本地测试服务器。真实部署需自行配置安全策略；Session 与凭证提取扩展属于尚未发布的主干能力。 将源码作为外部包的 `example_test.go`，使用 `go test` 编译；只有带 `Output` 的示例会被执行。
+本例启动并关闭两个本地测试服务器。真实部署需自行配置安全策略；Session 与凭证提取扩展要求 Gateway `v0.4.0` 或更新版本。 将源码作为外部包的 `example_test.go`，使用 `go test` 编译；只有带 `Output` 的示例会被执行。
 
 <!-- example: sdk/go/gateway/example_test.go -->
 ```go

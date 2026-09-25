@@ -1,6 +1,6 @@
 # Redis Session 认证与会话管理
 
-`gateway/sessionauth` 是网关 Module 中与 `jwtauth` 并列的包。本文描述主干新增、尚未发布的接口，不应将现有发布版本当作已经包含这些能力。
+`gateway/sessionauth` 是网关 Module 中与 `jwtauth` 并列的包。本文接口要求 Gateway `v0.4.0` 或更新版本，实际发布状态见[发布矩阵](../../release.md#当前制品矩阵)。
 
 ## 依赖与职责
 

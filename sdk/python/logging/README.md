@@ -4,10 +4,10 @@ Python 3.11 及以上，无第三方运行依赖；使用标准库 logging，格
 
 ## 安装
 
-示例适用于 `0.5.0`，当前发布状态见[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
+示例适用于 `0.5.1`，当前发布状态见[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
 
 ```sh
-python -m pip install stellarmesh-logging==0.5.0
+python -m pip install stellarmesh-logging==0.5.1
 ```
 
 ## 最小完整示例

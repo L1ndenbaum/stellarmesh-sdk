@@ -23,6 +23,12 @@
 
 历史拆分和兼容记录见[历史发布记录](releases/history.md)。
 
+## 2026-09-25 发布准备
+
+本轮目标为前端 `0.3.1`、Go Gateway `0.4.0`、父 Go SDK `0.5.1`、Go Object Storage `0.1.1`、Go Logging `0.4.1`、Go Kafka `0.1.1`、Python Logging `0.5.1` 与 Python Storage `0.1.2`。此处仅记录发布目标，上方已发布矩阵在官方制品验收后更新。
+
+Gateway 包含 Cookie／Bearer 凭证提取和 Redis Session 管理，注意认证错误码及变参装配的迁移。前端包含 tsdown 构建与声明注释；其他补丁同步公共注释和可验证示例。Python Object Storage 保持 `0.1.0`，不发布服务镜像及冻结组件。
+
 ## 前端 npm 发布流程
 
 包归属 `stellarmesh`，采用 MIT，仅公开 ESM 包根入口。主干目前采用 tsdown 构建；已发布版本的制品内容以对应 tag 和历史记录为准，不能用同版本重新上传。

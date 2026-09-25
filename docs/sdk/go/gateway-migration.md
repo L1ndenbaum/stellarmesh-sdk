@@ -31,7 +31,7 @@
 
 ## Redis Session 初版
 
-主干新增 `gateway/sessionauth`（尚未发布），与 `jwtauth` 并列。`NewStore(StoreConfig)` 接收 Redis Client、项目 `ProjectScope`、可选 `KeySeparator` 和 `MaxSessionsPerUser`；提供 `Create`、`Lookup`、`Renew`、`Revoke`、`ListByUser`、`RevokeByUser`。`NewAuthenticator(store)` 接入 `WithAuthenticator`，Cookie 来源通过 `CookieCredential(name)` 显式装配。
+`v0.4.0` 新增 `gateway/sessionauth`，与 `jwtauth` 并列。`NewStore(StoreConfig)` 接收 Redis Client、项目 `ProjectScope`、可选 `KeySeparator` 和 `MaxSessionsPerUser`；提供 `Create`、`Lookup`、`Renew`、`Revoke`、`ListByUser`、`RevokeByUser`。`NewAuthenticator(store)` 接入 `WithAuthenticator`，Cookie 来源通过 `CookieCredential(name)` 显式装配。
 
 会话默认按项目使用 `project:session:sessionID` 和 `project:user_sessions:userID`；`KeyBuilder.SessionKey`、`KeyBuilder.UserSessionsKey` 统一拼接和转义。默认每用户最多 10 个有效会话，创建第 11 个时淘汰最早创建的会话；续期不改变创建顺序。TTL 必须至少 1 毫秒，精度为毫秒；Redis 服务端时间决定过期，认证不自动续期。按用户全部撤销后允许重新登录，也不强制中断已在执行的请求或长连接。
 

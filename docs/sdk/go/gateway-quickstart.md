@@ -219,4 +219,4 @@ func NewHandler(
 
 ## 原生可验证示例
 
-[完整示例](../../../sdk/go/gateway/example_test.go)通过公开 import 使用组件。本例启动并关闭两个本地测试服务器。真实部署需自行配置安全策略；Session 与凭证提取扩展属于尚未发布的主干能力。
+[完整示例](../../../sdk/go/gateway/example_test.go)通过公开 import 使用组件。本例启动并关闭两个本地测试服务器。真实部署需自行配置安全策略；Session 与凭证提取扩展要求 Gateway `v0.4.0` 或更新版本。

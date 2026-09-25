@@ -4,10 +4,10 @@
 
 ## 安装
 
-以下示例适用于 `0.3.0`，当前已发布状态见[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
+以下示例适用于 `0.3.1`，当前已发布状态见[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
 
 ```sh
-npm install @stellarmesh/sdk@0.3.0
+npm install @stellarmesh/sdk@0.3.1
 ```
 
 ## 最小完整示例
