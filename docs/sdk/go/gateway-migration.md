@@ -2,6 +2,16 @@
 
 [返回接入入口](gateway.md)。场景代码为装配片段；[完整可执行示例](../../../sdk/go/gateway/example_test.go)演示本地代理与资源关闭。
 
+## 从 `v0.4.0` 升级到 `v0.5.0`
+
+`v0.5.0` 改变请求 ID 的默认信任策略：即使客户端提供格式合法的值，网关也会移除它并重新生成。依赖旧行为关联日志的项目，需要改为使用响应中的网关请求 ID；入口已经受控且前置代理会覆盖外部输入的内部网关，可以显式配置：
+
+```go
+gateway.WithRequestID(gateway.RequestIDConfig{TrustIncoming: true})
+```
+
+`WithRequestID(RequestIDConfig)` 的函数签名不变，新增普通布尔字段的零值为 `false`。采用具名字段的现有装配继续编译；使用不具名结构体字面量的调用方应改为具名字段。信任开启后仍校验长度和字符，并拒绝采纳重复头。`WithTrustedProxies` 不会隐式开启此项；生成失败仍返回 `503`，不使用客户端 ID 兜底。详细边界见[请求 ID 配置](gateway-configuration.md#请求-id)。
+
 ## 从 `v0.1.0` 升级到 `v0.2.0`
 
 `v0.1.0` 默认返回带 `code`、`message`、`data`、`timestamp` 和 `error_reason` 的 Stellarmesh JSON envelope；`v0.2.0` 改为协议中立的纯文本。升级前应检查调用方、探针和前端是否解析默认错误正文或健康响应。需要保留原结构时，先在项目仓库实现[首次装配](gateway-quickstart.md#响应协议归项目所有)中的两个响应器并完成契约测试，再升级 Module。已经显式配置 `WithErrorResponder` 的项目继续保留自己的错误正文，并会在响应器执行前获得 SDK 设置的 `Retry-After`。

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -48,6 +49,7 @@ func main() {
 		gateway.WithRoutes(gateway.Route{Name: "session", Match: gateway.RouteMatch{ExactPath: "/"}, Upstream: "backend"}),
 		gateway.WithUpstreams(gateway.Upstream{Name: "backend", URL: "http://127.0.0.1:8080"}),
 		gateway.WithAuthenticator(sessionAuthenticator, cookie),
+		gateway.WithRequestID(gateway.RequestIDConfig{TrustIncoming: true}),
 	)
 	if err != nil {
 		panic(err)
@@ -146,4 +148,17 @@ func main() {
 	var _ http.Handler = handler
 	var _ http.Handler = withoutAccessLog
 	var _ http.Handler = customAccessLog
+	verifyRequestID(defaultHandler, false)
+	verifyRequestID(sessionHandler, true)
+}
+
+func verifyRequestID(handler http.Handler, trust bool) {
+	request := httptest.NewRequest(http.MethodGet, "http://gateway/missing", nil)
+	request.Header.Set("X-Request-ID", "consumer-request")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	values := response.Header().Values("X-Request-ID")
+	if response.Code != http.StatusNotFound || len(values) != 1 || values[0] == "" || (values[0] == "consumer-request") != trust {
+		panic("request ID trust contract")
+	}
 }

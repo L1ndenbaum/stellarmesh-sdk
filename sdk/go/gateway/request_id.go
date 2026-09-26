@@ -17,13 +17,17 @@ type RequestIDConfig struct {
 	Header string
 	// MaxLength 为最大字节数，0 使用 128；显式值范围 16 至 1024。
 	MaxLength int
-	// Generate 为 nil 时生成 16 字节随机值的十六进制文本；返回值仍须通过长度校验。
+	// Generate 为 nil 时生成 16 字节随机值的十六进制文本；返回值仍须通过长度和字符校验。
 	Generate func() (string, error)
+	// TrustIncoming 允许沿用传入请求中的单个合法 ID；默认 false，始终重新生成。
+	// 开启不会验证来源，调用方须保证入口和前置代理的头部处理可信。
+	// 缺失、非法或重复的传入值仍由 Generate 替换，与 WithTrustedProxies 无关。
+	TrustIncoming bool
 }
 
 const defaultRequestIDMaxLength = 128
 
-// WithRequestID 配置请求 ID；空字段使用 SDK 安全默认值。
+// WithRequestID 配置请求 ID；默认重新生成，只有 TrustIncoming 为 true 才沿用合法传入值。
 func WithRequestID(requestID RequestIDConfig) Option {
 	return componentOption("request_id", func(config *config) error {
 		config.requestID = requestID
@@ -52,9 +56,14 @@ func normalizeRequestIDConfig(config RequestIDConfig) (RequestIDConfig, error) {
 }
 
 func (gateway *Gateway) resolveRequestID(r *http.Request) (string, error) {
-	value := strings.TrimSpace(r.Header.Get(gateway.requestID.Header))
-	if isSafeRequestID(value, gateway.requestID.MaxLength) {
-		return value, nil
+	values := r.Header.Values(gateway.requestID.Header)
+	// 先移除传入值，即使生成失败，也不向后续错误响应器暴露未经采纳的请求 ID。
+	r.Header.Del(gateway.requestID.Header)
+	if gateway.requestID.TrustIncoming && len(values) == 1 {
+		value := strings.TrimSpace(values[0])
+		if isSafeRequestID(value, gateway.requestID.MaxLength) {
+			return value, nil
+		}
 	}
 	value, err := gateway.requestID.Generate()
 	if err != nil {

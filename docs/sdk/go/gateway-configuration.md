@@ -12,6 +12,24 @@
 
 项目如果使用动态路由或自定义代理，可以分别传入 `WithRouteResolver` 和 `WithUpstreamResolver`。它们与对应的静态组件互斥；动态解析出的路由仍会在请求期校验名称、upstream、访问模式和请求体限制，错误返回 `503`。
 
+## 请求 ID
+
+从 `v0.5.0` 起，网关默认忽略并移除传入的 `X-Request-ID`，为每个请求重新生成 ID；省略 `WithRequestID` 与 `TrustIncoming: false` 相同。网关选定的值写入转发请求头、请求上下文和访问日志，并设置响应头，便于客户端关联排障。
+
+仅在入口受控、前置代理会覆盖客户端原始 ID 时显式允许沿用：
+
+```go
+gateway.WithRequestID(gateway.RequestIDConfig{
+    TrustIncoming: true,
+})
+```
+
+`TrustIncoming` 不验证请求来源，也不与 `WithTrustedProxies` 联动。后者只控制客户端 IP 转发头的信任；若前置代理原样透传客户端 ID，开启此项仍会采纳客户端提供的值。
+
+启用后只接受单个合法值：沿用现有首尾空白去除规则，内容须为可见 ASCII，默认最多 128 字节。缺失、空值、非法字符、超长以及重复请求头（即使内容相同）均重新生成，不因此拒绝整个请求。`Header` 可指定其他 HTTP 头，所有读取、替换及长度检查均针对该配置头；`MaxLength` 为 0 使用 128，显式范围为 16～1024。
+
+`Generate` 可注入项目生成器；默认使用 16 字节密码学随机值的十六进制文本。自定义生成结果仍需通过相同长度和字符校验。生成失败或结果非法时返回 `503 request_id_unavailable`，不转发请求，也不会退回传入值。Request-ID 用于关联单次请求，不充当身份凭据或幂等键。
+
 ## 身份和策略扩展
 
 `jwtauth` 首版只提供 HS256：Secret 至少 `32` 字节，算法固定为 HS256，必须配置 issuer 和 audience，token 必须包含有效 expiration 与非空 subject，默认允许 `30s` 时钟偏差。默认 Claims 使用 `sub` 作为 `UserID` 并读取字符串数组 `roles`；特殊 Claims 可以通过 `ClaimsFactory` 和 `IdentityMapper` 映射。其他算法或 JWKS 应由项目实现 `gateway.Authenticator` 后通过 `WithAuthenticator` 注入。

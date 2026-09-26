@@ -4,10 +4,10 @@
 
 ## 安装
 
-示例适用于 `v0.4.0`；其他组件各自独立版本，参阅[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
+示例适用于 `v0.5.0`；其他组件各自独立版本，参阅[发布矩阵](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/release.md#当前制品矩阵)。
 
 ```sh
-go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.4.0
+go get github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway@v0.5.0
 ```
 
 ## 最小完整示例
@@ -57,5 +57,7 @@ func ExampleNew() {
 <!-- /example -->
 
 ## 关键限制与深入指南
+
+`v0.5.0` 默认重新生成请求 ID；只有显式配置 `RequestIDConfig.TrustIncoming: true` 才沿用单个合法传入值，来源可信性由项目保证。升级前参阅[请求 ID 迁移](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/sdk/go/gateway-migration.md#从-v040-升级到-v050)。
 
 详细配置、错误与迁移见[接入指南](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/docs/sdk/go/gateway.md)。同时引入父 Module 与嵌套 Module 时，父 Module 需采用拆分完成后的版本，不能用长期本地 replace 掩盖 ambiguous import。源码布局与验证见[贡献指南](https://github.com/L1ndenbaum/stellarmesh-sdk/blob/dev/CONTRIBUTING.md)。
