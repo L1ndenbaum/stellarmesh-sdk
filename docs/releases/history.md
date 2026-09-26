@@ -2,6 +2,25 @@
 
 > 本文件保存旧版本拆分、失败处理和迁移背景。文中的“当前”“未发布”和版本矩阵均表示记录写入时的状态，不是现行发布指令；实际操作以[当前发布文档](../release.md)为准。
 
+## Gateway v0.5.0 请求 ID 信任调整
+
+2026-09-26 已推送 annotated tag `sdk/go/gateway/v0.5.0`，指向发布源码 `5b5c449c790d7e8ee18890ffbaef89ecb0cad329`。本轮仅发布 Gateway Module，其他 SDK、服务镜像和业务仓库未变更。
+
+新增 `RequestIDConfig.TrustIncoming bool`，保留 `WithRequestID(RequestIDConfig)` 签名。默认移除入站 ID 并重新生成；显式开启时，只沿用经过既有长度和字符校验的单个值。重复头（即使内容相同）不被采纳。生成失败或返回非法值仍返回 `503 request_id_unavailable`，不回退到传入值，也不转发请求。该配置不会验证来源，不与 `WithTrustedProxies` 联动；受控入口和前置代理覆盖责任由项目承担。
+
+发布前完成 `gofmt` 及只读格式检查、Gateway `go vet ./...`、普通与 race 测试、全仓 `make verify`、文档和 `git diff --check`。回归覆盖零配置、自定义头、显式信任、重复与非法值、生成器失败，以及转发头／上下文／访问日志中的选定值。[发布源码 CI](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36224090880)全部通过，包含真实 Redis Session、RustFS 与 Storage 服务集成。
+
+tag 推送后，从 `proxy.golang.org` 和 `sum.golang.org` 验证公开 Module。独立消费者不使用本地 `replace`，编译新增字段并实际验证默认重生成及显式信任行为；本地与远端公开消费检查均通过，见[发布消费工作流](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36224218808)。下载元数据中的 Git 源码 Hash 与上述提交一致：
+
+```text
+Module: github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway
+Version: v0.5.0
+Sum: h1:8ep3rPzawJ3osJ9LhCDbvTRNSvYf9NUR6+686qJQm6E=
+GoModSum: h1:HidEcugfLmojMAoDWeO9/a3QiUyDbJ94Rlrf9RnhI5A=
+```
+
+升级方式和行为变化见[Gateway 迁移](../sdk/go/gateway-migration.md#从-v040-升级到-v050)。
+
 ## 2026-09-25 SDK 统一发布
 
 本轮采用独立组件版本，已发布前端 `0.3.1`、父 Go SDK `v0.5.1`、Go Gateway `v0.4.0`、Go Logging `v0.4.1`、Go Kafka `v0.1.1`、Go Object Storage `v0.1.1`、Python Logging `0.5.1`、Python Storage `0.1.2`。Python Object Storage 保持 `0.1.0`；未发布服务镜像或冻结组件，未修改其他业务仓库及线上资源。
