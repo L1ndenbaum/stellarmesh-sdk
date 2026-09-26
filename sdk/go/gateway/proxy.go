@@ -65,7 +65,7 @@ func WithTransport(transport http.RoundTripper) Option {
 	})
 }
 
-func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, responder ErrorResponder) (*reverseProxyResolver, error) {
+func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, responder ErrorResponder, requestIDHeader string) (*reverseProxyResolver, error) {
 	if len(upstreams) == 0 {
 		return nil, errors.New("gateway upstreams are required")
 	}
@@ -85,7 +85,7 @@ func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, 
 		if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
 			return nil, errors.New("invalid gateway upstream URL: " + name)
 		}
-		resolver.proxies[name] = newReverseProxy(target, transport, responder)
+		resolver.proxies[name] = newReverseProxy(target, transport, responder, requestIDHeader)
 	}
 	return resolver, nil
 }
@@ -98,7 +98,7 @@ func (resolver *reverseProxyResolver) ResolveUpstream(route Route) (http.Handler
 	return proxy, nil
 }
 
-func newReverseProxy(target *url.URL, transport http.RoundTripper, responder ErrorResponder) *httputil.ReverseProxy {
+func newReverseProxy(target *url.URL, transport http.RoundTripper, responder ErrorResponder, requestIDHeader string) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.SetURL(target)
@@ -107,6 +107,15 @@ func newReverseProxy(target *url.URL, transport http.RoundTripper, responder Err
 			if clientIP, ok := ClientIPFromContext(request.In.Context()); ok {
 				request.Out.Header.Set("X-Forwarded-For", clientIP)
 			}
+			// Rewrite 在逐跳头清理后执行，避免 Connection 指名删除入口已选定的 ID。
+			if requestID, ok := RequestIDFromContext(request.In.Context()); ok {
+				request.Out.Header.Set(requestIDHeader, requestID)
+			}
+		},
+		ModifyResponse: func(response *http.Response) error {
+			// 入口响应头已有选定 ID；代理会追加后端响应头，必须删除而不是再次 Set。
+			response.Header.Del(requestIDHeader)
+			return nil
 		},
 		Transport: transport,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {

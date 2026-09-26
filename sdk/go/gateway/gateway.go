@@ -59,8 +59,12 @@ func New(options ...Option) (*Gateway, error) {
 		config.errorResponder = defaultErrorResponder{}
 	}
 	config.errorResponder = protocolErrorResponder{next: config.errorResponder}
+	requestID, err := normalizeRequestIDConfig(config.requestID)
+	if err != nil {
+		return nil, err
+	}
 	if len(config.upstreamSpecs) > 0 {
-		resolver, err := newReverseProxyResolver(config.upstreamSpecs, config.transport, config.errorResponder)
+		resolver, err := newReverseProxyResolver(config.upstreamSpecs, config.transport, config.errorResponder, requestID.Header)
 		if err != nil {
 			return nil, err
 		}
@@ -76,10 +80,6 @@ func New(options ...Option) (*Gateway, error) {
 	}
 	if config.clientIPResolver == nil {
 		config.clientIPResolver = ClientIPResolverFunc(resolveRemoteAddr)
-	}
-	requestID, err := normalizeRequestIDConfig(config.requestID)
-	if err != nil {
-		return nil, err
 	}
 	cors, err := newCORSPolicy(config.cors)
 	if err != nil {

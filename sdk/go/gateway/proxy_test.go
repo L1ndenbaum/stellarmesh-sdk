@@ -1,12 +1,111 @@
 package gateway
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestReverseProxyPreservesSelectedRequestID(t *testing.T) {
+	for _, config := range []struct {
+		name          string
+		header        string
+		connection    bool
+		trustIncoming bool
+	}{
+		{name: "default"},
+		{name: "default_connection", connection: true},
+		{name: "custom", header: "X-Correlation-ID"},
+		{name: "custom_connection", header: "X-Correlation-ID", connection: true},
+		{name: "trusted_connection", connection: true, trustIncoming: true},
+		{name: "trusted_custom_connection", header: "X-Correlation-ID", connection: true, trustIncoming: true},
+	} {
+		for _, upstreamResponse := range []string{"absent", "echo", "different", "multiple"} {
+			t.Run(config.name+"/"+upstreamResponse, func(t *testing.T) {
+				header := config.header
+				if header == "" {
+					header = "X-Request-ID"
+				}
+				want, wantGenerated := "gateway-id", 1
+				if config.trustIncoming {
+					want, wantGenerated = "incoming-id", 0
+				}
+				forwarded := make(chan []string, 1)
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					forwarded <- slices.Clone(r.Header.Values(header))
+					switch upstreamResponse {
+					case "echo":
+						w.Header().Set(header, r.Header.Get(header))
+					case "different":
+						w.Header().Set(header, "backend-id")
+					case "multiple":
+						w.Header().Add(header, "backend-id-1")
+						w.Header().Add(header, "backend-id-2")
+					}
+					w.Header().Set("X-Upstream-Result", "retained")
+					w.WriteHeader(http.StatusNoContent)
+				}))
+				defer upstream.Close()
+				transport := http.DefaultTransport.(*http.Transport).Clone()
+				defer transport.CloseIdleConnections()
+				var contextID, policyID, loggedID string
+				generated := 0
+				handler, err := New(
+					WithRoutes(publicRoute()),
+					WithUpstreams(Upstream{Name: "backend", URL: upstream.URL}),
+					WithTransport(transport),
+					WithRequestID(RequestIDConfig{
+						Header: config.header, TrustIncoming: config.trustIncoming,
+						Generate: func() (string, error) { generated++; return "gateway-id", nil },
+					}),
+					WithBeforeProxyPolicy(BeforeProxyPolicyFunc(func(ctx context.Context, _ *http.Request, request RequestContext) (PolicyDecision, error) {
+						contextID, _ = RequestIDFromContext(ctx)
+						policyID = request.RequestID
+						return PolicyDecision{Allowed: true}, nil
+					})),
+					WithAccessLogger(AccessLoggerFunc(func(_ context.Context, entry AccessLog) error {
+						loggedID = entry.RequestID
+						return nil
+					})),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				request := httptest.NewRequest(http.MethodGet, "http://gateway/public", nil)
+				request.Header.Set(header, "incoming-id")
+				if config.connection {
+					request.Header.Set("Connection", "keep-alive, "+strings.ToLower(header))
+				}
+				response := httptest.NewRecorder()
+				handler.ServeHTTP(response, request)
+				if response.Code != http.StatusNoContent {
+					t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+				}
+				if got := <-forwarded; len(got) != 1 || got[0] != want {
+					t.Errorf("forwarded request ID = %v, want [%s]", got, want)
+				}
+				result := response.Result()
+				defer result.Body.Close()
+				if got := result.Header.Values(header); len(got) != 1 || got[0] != want {
+					t.Errorf("response request ID = %v, want [%s]", got, want)
+				}
+				if contextID != want || policyID != want || loggedID != want {
+					t.Errorf("context = %q, policy = %q, log = %q, want %q", contextID, policyID, loggedID, want)
+				}
+				if generated != wantGenerated {
+					t.Errorf("generator calls = %d, want %d", generated, wantGenerated)
+				}
+				if got := result.Header.Get("X-Upstream-Result"); got != "retained" {
+					t.Errorf("unrelated upstream header = %q", got)
+				}
+			})
+		}
+	}
+}
 
 func TestReverseProxyRebuildsForwardingHeaders(t *testing.T) {
 	upstreamRequests := make(chan *http.Request, 2)
