@@ -2,6 +2,25 @@
 
 > 本文件保存旧版本拆分、失败处理和迁移背景。文中的“当前”“未发布”和版本矩阵均表示记录写入时的状态，不是现行发布指令；实际操作以[当前发布文档](../release.md)为准。
 
+## Gateway v0.5.1 代理请求 ID 一致性修复
+
+2026-09-26 已推送 annotated tag `sdk/go/gateway/v0.5.1`，指向发布源码 `973f1d16fbc321ded25f6a511677195486a04e6c`；核心修复提交为 `36bf71c`。本轮仅发布 Gateway Module，未发布其他 SDK 或服务镜像，也未修改业务仓库。
+
+内置 `ReverseProxy.Rewrite` 在逐跳头清理后，从请求上下文恢复入口已选定的 ID；`ModifyResponse` 在响应头复制前移除后端同名字段，保留网关已经设置的唯一响应值。配置使用归一化后的 `RequestIDConfig.Header`，代理不重新调用生成器；公开 API 及 `TrustIncoming` 默认行为与 `v0.5.0` 相同。
+
+修复前已复现请求头丢失与响应重复，修复后 24 组真实 `httptest` 上游回归通过。场景覆盖默认／自定义头、入站信任、`Connection` 指名清理和后端不返回／回显／返回不同值／返回多个值；明确断言转发和响应头各只有一个值，并与上下文、策略及访问日志一致。
+
+本地 Gateway `go vet`、普通与 race 测试、发布前全仓 `make verify`、文档检查及 `git diff --check` 通过。[发布源码 CI](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36226365069)全部通过，包含 Redis Session、RustFS 与 Storage 服务集成。
+
+发布后使用全新 Module 缓存、`proxy.golang.org` 和 `sum.golang.org` 安装真实版本，独立消费者不使用本地 `replace`。本地与远端公开消费检查均通过；直接从下载的 Module 执行 24 组 Request ID 代理回归也通过，下载元数据的源码 Hash 与 tag 一致。远端消费结果见[组件发布检查](https://github.com/L1ndenbaum/stellarmesh-sdk/actions/runs/36226507928)。
+
+```text
+Module: github.com/L1ndenbaum/stellarmesh-sdk/sdk/go/gateway
+Version: v0.5.1
+Sum: h1:ro//Mu9iyxqj/BLDnjx3vSKJi05JjbvIryDARM6iKMI=
+GoModSum: h1:HidEcugfLmojMAoDWeO9/a3QiUyDbJ94Rlrf9RnhI5A=
+```
+
 ## Gateway v0.5.0 请求 ID 信任调整
 
 2026-09-26 已推送 annotated tag `sdk/go/gateway/v0.5.0`，指向发布源码 `5b5c449c790d7e8ee18890ffbaef89ecb0cad329`。本轮仅发布 Gateway Module，其他 SDK、服务镜像和业务仓库未变更。

@@ -9,7 +9,7 @@
 | 前端 HTTP／SSE SDK | `sdk/frontend/v0.3.1` | `@stellarmesh/sdk@0.3.1`，ESM，MIT |
 | 父 Go SDK | `sdk/go/v0.5.1` | 标准库 HTTP 与环境配置基础能力 |
 | Go Object Storage | `sdk/go/objectstorage/v0.1.1` | namespace 绑定的对象存储能力 |
-| Go Gateway Core | `sdk/go/gateway/v0.5.0` | 默认重生成请求 ID，显式 `TrustIncoming` 控制入站信任；保留 Session 能力 |
+| Go Gateway Core | `sdk/go/gateway/v0.5.1` | 修复内置代理的请求 ID 传递与响应去重；保留显式入站信任与 Session 能力 |
 | Go Kafka | `sdk/go/mq/kafka/v0.1.1` | 轻量 Kafka 连接与 Publisher |
 | Python Object Storage | `sdk/python/objectstorage/v0.1.0` | `stellarmesh-objectstorage==0.1.0`，直连 S3 兼容存储 |
 | Python Storage | `sdk/python/storage/v0.1.2` | `stellarmesh-storage==0.1.2` |
@@ -22,6 +22,10 @@
 旧 tag 和已经发布的 PyPI/GHCR 制品永久保持不可变。版本内容需要修改时必须提升版本，不能移动、删除、覆盖或强推已经发布的 tag。2026-09-25 已核对本轮官方 npm、PyPI、Go Proxy 制品及远端组件 tag；镜像版本沿用已有发布记录，本轮没有发布服务镜像。Gateway `sessionauth`／凭证提取扩展从 `v0.4.0` 起可用。
 
 历史拆分和兼容记录见[历史发布记录](releases/history.md)。
+
+## 2026-09-26 Gateway 代理请求 ID 修复
+
+已发布 `sdk/go/gateway/v0.5.1`，修复内置代理在 `Connection` 指名请求 ID 时丢失转发头，以及追加后端同名响应头导致重复值的问题。默认和自定义头均复用入口已选定的 ID，公开 API 与 `TrustIncoming` 默认值保持不变。使用 `WithUpstreams` 的项目升级即可生效，详见[迁移说明](sdk/go/gateway-migration.md#从-v050-升级到-v051)及[发布记录](releases/history.md#gateway-v051-代理请求-id-一致性修复)。其他组件版本不变。
 
 ## 2026-09-26 Gateway 请求 ID 信任调整
 
