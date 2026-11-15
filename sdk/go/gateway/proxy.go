@@ -103,11 +103,23 @@ func newReverseProxy(target *url.URL, transport http.RoundTripper, responder Err
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.SetURL(target)
 			request.Out.Host = target.Host
+			// 标准库只删除部分转发头；额外的 X-Forwarded-* 也不能继承客户端值。
+			for key := range request.Out.Header {
+				if isForwardingHeader(key) {
+					delete(request.Out.Header, key)
+				}
+			}
 			request.SetXForwarded()
 			if clientIP, ok := ClientIPFromContext(request.In.Context()); ok {
 				request.Out.Header.Set("X-Forwarded-For", clientIP)
+				request.Out.Header.Set("X-Real-IP", clientIP)
 			}
-			// Rewrite 在逐跳头清理后执行，避免 Connection 指名删除入口已选定的 ID。
+			// 入站副本中的身份已经过流水线清洗。逐跳头清理后恢复，避免 Connection 指名删除。
+			for _, key := range []string{headerXUserID, headerXUserRoles} {
+				if value := request.In.Header.Get(key); value != "" {
+					request.Out.Header.Set(key, value)
+				}
+			}
 			if requestID, ok := RequestIDFromContext(request.In.Context()); ok {
 				request.Out.Header.Set(requestIDHeader, requestID)
 			}
@@ -139,6 +151,11 @@ func newReverseProxy(target *url.URL, transport http.RoundTripper, responder Err
 			responder.Respond(w, r, gatewayError)
 		},
 	}
+}
+
+func isForwardingHeader(key string) bool {
+	key = strings.ToLower(key)
+	return key == "forwarded" || key == "x-real-ip" || strings.HasPrefix(key, "x-forwarded-")
 }
 
 func defaultProxyTransport() *http.Transport {

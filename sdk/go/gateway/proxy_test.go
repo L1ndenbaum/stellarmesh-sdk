@@ -204,6 +204,46 @@ func (roundTrip roundTripperFunc) RoundTrip(request *http.Request) (*http.Respon
 	return roundTrip(request)
 }
 
+func TestReverseProxyTrustedHeadersAfterHopRemoval(t *testing.T) {
+	for _, access := range []AccessMode{AccessProtected, AccessPublic} {
+		route := publicRoute()
+		route.Access = access
+		var got http.Header
+		handler, err := New(WithRoutes(route), WithUpstreams(Upstream{Name: "backend", URL: "http://backend"}),
+			WithAuthenticator(AuthenticatorFunc(func(context.Context, string) (AuthenticationDecision, error) {
+				return AuthenticationDecision{Authenticated: true, Identity: Identity{UserID: "alice", Roles: []string{"reader"}}}, nil
+			})), WithTransport(roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				got = r.Header.Clone()
+				return &http.Response{StatusCode: 204, Header: make(http.Header), Body: http.NoBody}, nil
+			})))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest("GET", "https://public.example/public", nil)
+		r.RemoteAddr = "192.0.2.1:1234"
+		for _, h := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Port", "X-Forwarded-Prefix", "X-Real-IP", "X-User-ID", "X-User-Roles"} {
+			r.Header.Set(h, "spoofed")
+		}
+		r.Header.Set("Connection", "X-User-ID, X-User-Roles")
+		r.Header.Set("Authorization", "Bearer token")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != 204 {
+			t.Fatal(w.Code)
+		}
+		want := map[string]string{"X-Forwarded-For": "192.0.2.1", "X-Real-IP": "192.0.2.1", "X-Forwarded-Host": "public.example", "X-Forwarded-Proto": "https", "Forwarded": "", "X-Forwarded-Port": "", "X-Forwarded-Prefix": "", "X-User-ID": "", "X-User-Roles": ""}
+		if access == AccessProtected {
+			want["X-User-ID"] = "alice"
+			want["X-User-Roles"] = "reader"
+		}
+		for k, v := range want {
+			if got.Get(k) != v {
+				t.Errorf("access=%v header=%s got=%q want=%q", access, k, got.Get(k), v)
+			}
+		}
+	}
+}
+
 type timeoutError struct{}
 
 func (timeoutError) Error() string { return "timeout" }

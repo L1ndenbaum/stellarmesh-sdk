@@ -6,7 +6,7 @@
 
 `WithRoutes` 支持 HTTP Method、精确路径和路径前缀。解析时先匹配精确路径，再匹配最长前缀；Method 为空表示接受所有方法。重复条件、非法路径、负数请求体上限或不存在的 upstream 会让构造失败。
 
-`WithUpstreams` 在启动阶段解析全部 URL，并为每个 upstream 构造一个可复用的 `httputil.ReverseProxy`。代理使用 `Rewrite` 重建转发头，不继承客户端伪造的 `Forwarded` 或 `X-Forwarded-*`。连接失败返回 `502`，超时返回 `504`，超过路由 `MaxBodyBytes` 返回 `413`。SDK 不自动重试请求，避免重复执行 `POST` 等非幂等操作。
+`WithUpstreams` 在启动阶段解析全部 URL，并为每个 upstream 构造一个可复用的 `httputil.ReverseProxy`。代理使用 `Rewrite` 重建转发头，不继承客户端伪造的 `Forwarded` 或 `X-Forwarded-*`。`X-Real-IP` 与 `X-Forwarded-For` 均使用网关解析的客户端 IP，其余扩展转发头（含端口）默认移除。内置代理在逐跳头清理后恢复认证身份和请求 ID；请求 ID 的名称不能占用身份或转发头。连接失败返回 `502`，超时返回 `504`，超过路由 `MaxBodyBytes` 返回 `413`。SDK 不自动重试请求，避免重复执行 `POST` 等非幂等操作。
 
 代理不缓冲正常请求体和响应体，并保留 Flush 与 Hijack 能力，可以用于 SSE、流式响应和 WebSocket。上游在响应开始后中断时，网关记录 `upstream_stream_aborted`，客户端读取响应体会收到传输错误。长连接项目不能照搬普通 API 服务的全局 `WriteTimeout`；应根据最长流式请求显式设置，必要时使用零值并依赖 upstream、连接和基础设施层超时控制。
 

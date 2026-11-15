@@ -40,7 +40,7 @@ func normalizeRequestIDConfig(config RequestIDConfig) (RequestIDConfig, error) {
 	if config.Header == "" {
 		config.Header = headerXRequestID
 	}
-	if !isHTTPToken(config.Header) {
+	if !isHTTPToken(config.Header) || isForwardingHeader(config.Header) || strings.EqualFold(config.Header, headerXUserID) || strings.EqualFold(config.Header, headerXUserRoles) {
 		return RequestIDConfig{}, errors.New("gateway request ID header is invalid")
 	}
 	if config.MaxLength == 0 {
