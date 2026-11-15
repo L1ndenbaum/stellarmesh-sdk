@@ -28,7 +28,7 @@ Gateway 将路由、认证、授权、限流与代理装配为固定安全流水
 
 ## 路由和 upstream
 
-见[路由和 upstream](gateway-configuration.md#路由和-upstream)。
+路径模板、受限正则、精确白名单及匹配优先级见[路由和 upstream](gateway-configuration.md#路由和-upstream)。
 
 ## 身份和策略扩展
 

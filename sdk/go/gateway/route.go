@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,10 +25,18 @@ const (
 type RouteMatch struct {
 	// Methods 留空匹配任意方法；显式方法会规范化为大写。
 	Methods []string
-	// ExactPath 与 PathPrefix 必须且只能设置一个。
+	// ExactPath、ExactPaths、PathPrefix、PathTemplate 和 PathRegexp 必须且只能设置一种。
 	ExactPath string
 	// PathPrefix 按字符串前缀匹配，优先选择最长前缀；需要路径段边界时请显式包含斜杠。
 	PathPrefix string
+	// ExactPaths 为同一策略声明多条精确路径。
+	ExactPaths []string
+	// PathTemplate 支持整段 {name}、* 及末尾 **；命名段通过 Request.PathValue 读取。
+	PathTemplate string
+	// PathRegexp 使用 Go 正则对整个解码路径进行匹配。
+	PathRegexp string
+	// Priority 仅用于模板和正则，值较大者优先；同优先级的重叠匹配拒绝转发。
+	Priority int
 }
 
 // Route 描述请求的稳定路由结果。
@@ -49,13 +59,15 @@ type RouteResolver interface {
 type RouteResolverFunc func(*http.Request) (Route, bool, error)
 
 type staticRouteResolver struct {
-	exact    []compiledRoute
+	exact    map[string][]compiledRoute
+	patterns []compiledRoute
 	prefixes []compiledRoute
 }
 
 type compiledRoute struct {
 	route   Route
 	methods map[string]struct{}
+	pattern *regexp.Regexp
 }
 
 // Resolve 调用路由解析函数。
@@ -86,24 +98,43 @@ func newStaticRouteResolver(routes []Route) (*staticRouteResolver, error) {
 	if len(routes) == 0 {
 		return nil, errors.New("gateway routes are required")
 	}
-	resolver := &staticRouteResolver{}
+	resolver := &staticRouteResolver{exact: make(map[string][]compiledRoute)}
 	seen := make(map[string]struct{}, len(routes))
 	for index, route := range routes {
 		compiled, err := compileRoute(route)
 		if err != nil {
 			return nil, errors.New("invalid gateway route at index " + strconv.Itoa(index) + ": " + err.Error())
 		}
-		key := routeMatchKey(compiled)
-		if _, exists := seen[key]; exists {
-			return nil, errors.New("duplicate gateway route match: " + route.Name)
+		match := compiled.route.Match
+		paths := match.ExactPaths
+		if match.ExactPath != "" {
+			paths = []string{match.ExactPath}
 		}
-		seen[key] = struct{}{}
-		if compiled.route.Match.ExactPath != "" {
-			resolver.exact = append(resolver.exact, compiled)
-		} else {
+		var keys []string
+		switch {
+		case len(paths) > 0:
+			for _, path := range paths {
+				keys = append(keys, "exact:"+path)
+				resolver.exact[path] = append(resolver.exact[path], compiled)
+			}
+		case compiled.pattern != nil:
+			keys = []string{"pattern:" + compiled.pattern.String()}
+			resolver.patterns = append(resolver.patterns, compiled)
+		default:
+			keys = []string{"prefix:" + match.PathPrefix}
 			resolver.prefixes = append(resolver.prefixes, compiled)
 		}
+		for _, key := range keys {
+			key += "\x00" + strings.Join(match.Methods, ",")
+			if _, ok := seen[key]; ok {
+				return nil, errors.New("duplicate gateway route match: " + route.Name)
+			}
+			seen[key] = struct{}{}
+		}
 	}
+	sort.SliceStable(resolver.patterns, func(i, j int) bool {
+		return resolver.patterns[i].route.Match.Priority > resolver.patterns[j].route.Match.Priority
+	})
 	sort.SliceStable(resolver.prefixes, func(left, right int) bool {
 		return len(resolver.prefixes[left].route.Match.PathPrefix) > len(resolver.prefixes[right].route.Match.PathPrefix)
 	})
@@ -121,15 +152,9 @@ func compileRoute(route Route) (compiledRoute, error) {
 	if route.Upstream == "" {
 		return compiledRoute{}, errors.New("route upstream is required")
 	}
-	if (route.Match.ExactPath == "") == (route.Match.PathPrefix == "") {
-		return compiledRoute{}, errors.New("exact path or path prefix must be set exclusively")
-	}
-	path := route.Match.ExactPath
-	if path == "" {
-		path = route.Match.PathPrefix
-	}
-	if !strings.HasPrefix(path, "/") {
-		return compiledRoute{}, errors.New("route path must start with slash")
+	pattern, err := compilePathMatch(&route.Match)
+	if err != nil {
+		return compiledRoute{}, err
 	}
 	if route.Access != AccessProtected && route.Access != AccessPublic {
 		return compiledRoute{}, errors.New("route access mode is invalid")
@@ -146,7 +171,7 @@ func compileRoute(route Route) (compiledRoute, error) {
 		methods[method] = struct{}{}
 	}
 	route.Match.Methods = sortedKeys(methods)
-	return compiledRoute{route: route, methods: methods}, nil
+	return compiledRoute{route: route, methods: methods, pattern: pattern}, nil
 }
 
 func normalizeResolvedRoute(route Route) (Route, error) {
@@ -166,10 +191,37 @@ func normalizeResolvedRoute(route Route) (Route, error) {
 }
 
 func (resolver *staticRouteResolver) Resolve(r *http.Request) (Route, bool, error) {
-	for _, route := range resolver.exact {
-		if route.route.Match.ExactPath == r.URL.Path && route.accepts(r.Method) {
+	if len(resolver.patterns) > 0 && ambiguousPath(r.URL) {
+		return Route{}, false, nil
+	}
+	for _, route := range resolver.exact[r.URL.Path] {
+		if route.accepts(r.Method) {
 			return cloneRoute(route.route), true, nil
 		}
+	}
+	var selected *compiledRoute
+	for i := range resolver.patterns {
+		candidate := &resolver.patterns[i]
+		if selected != nil && candidate.route.Match.Priority < selected.route.Match.Priority {
+			break
+		}
+		if candidate.accepts(r.Method) && candidate.pattern.MatchString(r.URL.Path) {
+			if selected != nil {
+				return Route{}, false, errors.New("ambiguous gateway path patterns")
+			}
+			selected = candidate
+		}
+	}
+	if selected != nil {
+		if selected.route.Match.PathTemplate != "" && selected.pattern.NumSubexp() > 0 {
+			values := selected.pattern.FindStringSubmatch(r.URL.Path)
+			for i, name := range selected.pattern.SubexpNames() {
+				if name != "" {
+					r.SetPathValue(name, values[i])
+				}
+			}
+		}
+		return cloneRoute(selected.route), true, nil
 	}
 	for _, route := range resolver.prefixes {
 		if strings.HasPrefix(r.URL.Path, route.route.Match.PathPrefix) && route.accepts(r.Method) {
@@ -187,10 +239,6 @@ func (route compiledRoute) accepts(method string) bool {
 	return ok
 }
 
-func routeMatchKey(route compiledRoute) string {
-	return route.route.Match.ExactPath + "\x00" + route.route.Match.PathPrefix + "\x00" + strings.Join(route.route.Match.Methods, ",")
-}
-
 func sortedKeys(values map[string]struct{}) []string {
 	keys := make([]string, 0, len(values))
 	for key := range values {
@@ -201,7 +249,8 @@ func sortedKeys(values map[string]struct{}) []string {
 }
 
 func cloneRoute(route Route) Route {
-	route.Match.Methods = append([]string(nil), route.Match.Methods...)
+	route.Match.Methods = slices.Clone(route.Match.Methods)
+	route.Match.ExactPaths = slices.Clone(route.Match.ExactPaths)
 	return route
 }
 
