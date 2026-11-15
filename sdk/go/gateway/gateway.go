@@ -23,6 +23,7 @@ type Gateway struct {
 	errorResponder      ErrorResponder
 	requestID           RequestIDConfig
 	cors                *corsPolicy
+	ingress             *ingressPolicy
 	accessLogger        AccessLogger
 	observer            Observer
 	health              *healthPolicy
@@ -109,6 +110,7 @@ func New(options ...Option) (*Gateway, error) {
 		errorResponder:      config.errorResponder,
 		requestID:           requestID,
 		cors:                cors,
+		ingress:             config.ingress,
 		accessLogger:        config.accessLogger,
 		observer:            config.observer,
 		health:              health,
@@ -132,6 +134,10 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	recorder.Header().Set(gateway.requestID.Header, requestID)
 	accessState.RequestID = requestID
 	r = r.WithContext(context.WithValue(r.Context(), requestIDContextKey, requestID))
+	if gateway.ingress != nil && !gateway.ingress.allows(r) {
+		gateway.fail(recorder, r, GatewayError{Status: http.StatusForbidden, Code: "ingress_rejected", Message: "forbidden"})
+		return
+	}
 	if gateway.cors != nil && gateway.cors.handle(recorder, r, gateway) {
 		return
 	}

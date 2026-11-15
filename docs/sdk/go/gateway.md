@@ -36,7 +36,7 @@ Gateway 将路由、认证、授权、限流与代理装配为固定安全流水
 
 ## 客户端地址和 CORS
 
-见[客户端地址和 CORS](gateway-configuration.md#客户端地址和-cors)。
+可信入口准入和代理链解析见[客户端地址和 CORS](gateway-configuration.md#客户端地址和-cors)。
 
 ## 错误、日志和观测
 

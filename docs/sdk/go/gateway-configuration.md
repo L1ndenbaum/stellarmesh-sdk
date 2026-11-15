@@ -61,6 +61,8 @@ gateway.WithRequestID(gateway.RequestIDConfig{
 
 ## 客户端地址和 CORS
 
+开发版支持 `WithIngress(IngressConfig{AllowedPeers: []string{"192.0.2.0/24"}, AllowedHosts: []string{"api.example.test"}, RequireForwardedHTTPS: true})`。已声明的条件须同时满足。直接对端 IP 来自连接，域名忽略大小写但保留端口。要求外部 HTTPS 时必须指定允许的直接对端，并由该代理覆盖客户端的协议头。条件不符返回 `403 ingress_rejected`，包括健康探针和预检请求。需要容器内探针时，为其安排符合准入条件的入口。
+
 默认客户端地址只来自 `RemoteAddr`。`WithTrustedProxies` 接受一个或多个 CIDR；只有直接对端位于这些 CIDR 时才读取 `X-Forwarded-For` 或 `X-Real-IP`，并从右向左跳过可信代理。可信代理发送非法转发链时返回 `503`，不会退回可伪造的地址。
 
 CORS 未声明时不处理跨域。启用后必须显式提供 origin；method 和 header 省略时使用 SDK 的有限默认集合。未知 origin、method 或预检 header 返回 `403`，不会把 `Access-Control-Request-Headers` 原样回显。`AllowCredentials` 默认关闭，通配 origin 不能与凭据同时使用。
