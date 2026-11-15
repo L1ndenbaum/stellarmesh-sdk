@@ -53,6 +53,29 @@ func TestDefaultSlogAccessLoggerUsesCurrentDefaultAndOmitsSensitiveData(t *testi
 	}
 }
 
+func TestSlogRoutePathOmitsIdentifiersAlsoOnUnmatchedRequests(t *testing.T) {
+	sink := &recordingSlogHandler{}
+	g, err := New(WithRoutes(publicRoute(), Route{Name: "order", Match: RouteMatch{PathTemplate: "/orders/{id}"}, Upstream: "backend", Access: AccessPublic}),
+		WithSlogAccessLogger(SlogAccessLoggerConfig{Logger: slog.New(sink), UseRoutePath: true}),
+		withTestUpstreams(map[string]http.Handler{"backend": http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) })}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/orders/private-id", "/public", "/unknown/private-id"} {
+		g.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", path, nil))
+	}
+	records := sink.snapshot()
+	if len(records) != 3 {
+		t.Fatal(len(records))
+	}
+	for i, want := range []string{"/orders/{id}", "public", "unmatched"} {
+		attrs := slogRecordAttributes(records[i])
+		if attrs["path"] != want || strings.Contains(fmt.Sprint(attrs), "private-id") {
+			t.Fatal(attrs)
+		}
+	}
+}
+
 func TestSlogAccessLoggerLevelsAndIdentity(t *testing.T) {
 	handler := &recordingSlogHandler{}
 	logger := NewSlogAccessLogger(SlogAccessLoggerConfig{

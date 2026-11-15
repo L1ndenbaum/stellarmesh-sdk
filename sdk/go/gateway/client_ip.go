@@ -64,9 +64,9 @@ func (resolver *trustedProxyResolver) Resolve(r *http.Request) (string, error) {
 	if !resolver.trusted(remote) {
 		return remote.String(), nil
 	}
-	forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+	forwarded := strings.TrimSpace(strings.Join(r.Header.Values("X-Forwarded-For"), ","))
 	if forwarded == "" {
-		realIP := strings.TrimSpace(r.Header.Get("X-Real-IP"))
+		realIP := strings.TrimSpace(strings.Join(r.Header.Values("X-Real-IP"), ","))
 		if realIP == "" {
 			return remote.String(), nil
 		}

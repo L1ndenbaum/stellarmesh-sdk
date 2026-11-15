@@ -2,12 +2,14 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestReverseProxyPreservesSelectedRequestID(t *testing.T) {
@@ -202,6 +204,46 @@ func (roundTrip roundTripperFunc) RoundTrip(request *http.Request) (*http.Respon
 	return roundTrip(request)
 }
 
+func TestReverseProxyTrustedHeadersAfterHopRemoval(t *testing.T) {
+	for _, access := range []AccessMode{AccessProtected, AccessPublic} {
+		route := publicRoute()
+		route.Access = access
+		var got http.Header
+		handler, err := New(WithRoutes(route), WithUpstreams(Upstream{Name: "backend", URL: "http://backend"}),
+			WithAuthenticator(AuthenticatorFunc(func(context.Context, string) (AuthenticationDecision, error) {
+				return AuthenticationDecision{Authenticated: true, Identity: Identity{UserID: "alice", Roles: []string{"reader"}}}, nil
+			})), WithTransport(roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				got = r.Header.Clone()
+				return &http.Response{StatusCode: 204, Header: make(http.Header), Body: http.NoBody}, nil
+			})))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest("GET", "https://public.example/public", nil)
+		r.RemoteAddr = "192.0.2.1:1234"
+		for _, h := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Port", "X-Forwarded-Prefix", "X-Real-IP", "X-User-ID", "X-User-Roles"} {
+			r.Header.Set(h, "spoofed")
+		}
+		r.Header.Set("Connection", "X-User-ID, X-User-Roles")
+		r.Header.Set("Authorization", "Bearer token")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, r)
+		if w.Code != 204 {
+			t.Fatal(w.Code)
+		}
+		want := map[string]string{"X-Forwarded-For": "192.0.2.1", "X-Real-IP": "192.0.2.1", "X-Forwarded-Host": "public.example", "X-Forwarded-Proto": "https", "Forwarded": "", "X-Forwarded-Port": "", "X-Forwarded-Prefix": "", "X-User-ID": "", "X-User-Roles": ""}
+		if access == AccessProtected {
+			want["X-User-ID"] = "alice"
+			want["X-User-Roles"] = "reader"
+		}
+		for k, v := range want {
+			if got.Get(k) != v {
+				t.Errorf("access=%v header=%s got=%q want=%q", access, k, got.Get(k), v)
+			}
+		}
+	}
+}
+
 type timeoutError struct{}
 
 func (timeoutError) Error() string { return "timeout" }
@@ -209,3 +251,41 @@ func (timeoutError) Error() string { return "timeout" }
 func (timeoutError) Timeout() bool { return true }
 
 func (timeoutError) Temporary() bool { return true }
+
+func TestTruncatedEventStreamAbortsClientAndRecordsFailure(t *testing.T) {
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: partial\n\n")
+		http.NewResponseController(w).Flush()
+		select {
+		case <-release:
+			panic(http.ErrAbortHandler)
+		case <-r.Context().Done():
+		}
+	}))
+	defer upstream.Close()
+	logged := make(chan AccessLog, 1)
+	handler, err := New(WithRoutes(publicRoute()), WithUpstreams(Upstream{Name: "backend", URL: upstream.URL}),
+		WithAccessLogger(AccessLoggerFunc(func(_ context.Context, entry AccessLog) error { logged <- entry; return nil })))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client := server.Client()
+	client.Timeout = 5 * time.Second
+	resp, err := client.Get(server.URL + "/public")
+	close(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 || string(body) != "data: partial\n\n" || !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("status=%d body=%q err=%v", resp.StatusCode, body, err)
+	}
+	if entry := <-logged; entry.ErrorCode != "upstream_stream_aborted" {
+		t.Fatal(entry)
+	}
+}

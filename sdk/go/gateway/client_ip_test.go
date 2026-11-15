@@ -41,7 +41,8 @@ func TestTrustedProxyResolverWalksForwardedChainFromRight(t *testing.T) {
 	}
 	request := httptest.NewRequest(http.MethodGet, "http://gateway", nil)
 	request.RemoteAddr = "10.0.0.3:8080"
-	request.Header.Set("X-Forwarded-For", "198.51.100.8, 10.0.0.2")
+	request.Header.Set("X-Forwarded-For", "192.0.2.99")
+	request.Header.Add("X-Forwarded-For", "198.51.100.8, 10.0.0.2")
 	clientIP, err := config.clientIPResolver.Resolve(request)
 	if err != nil || clientIP != "198.51.100.8" {
 		t.Fatalf("Resolve() = %q, %v", clientIP, err)

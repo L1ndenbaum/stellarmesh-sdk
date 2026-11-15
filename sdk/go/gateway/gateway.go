@@ -23,6 +23,7 @@ type Gateway struct {
 	errorResponder      ErrorResponder
 	requestID           RequestIDConfig
 	cors                *corsPolicy
+	ingress             *ingressPolicy
 	accessLogger        AccessLogger
 	observer            Observer
 	health              *healthPolicy
@@ -64,13 +65,13 @@ func New(options ...Option) (*Gateway, error) {
 		return nil, err
 	}
 	if len(config.upstreamSpecs) > 0 {
-		resolver, err := newReverseProxyResolver(config.upstreamSpecs, config.transport, config.errorResponder, requestID.Header)
+		resolver, err := newReverseProxyResolver(config.upstreamSpecs, config.transport, config.errorResponder, requestID.Header, config.timeoutProfiles)
 		if err != nil {
 			return nil, err
 		}
 		config.upstreamResolver = resolver
-	} else if config.transport != nil {
-		return nil, errors.New("gateway transport requires fixed upstreams")
+	} else if config.transport != nil || len(config.timeoutProfiles) > 0 {
+		return nil, errors.New("gateway transport and timeout profiles require fixed upstreams")
 	}
 	if config.upstreamResolver == nil {
 		return nil, errors.New("gateway upstream resolver is required")
@@ -109,6 +110,7 @@ func New(options ...Option) (*Gateway, error) {
 		errorResponder:      config.errorResponder,
 		requestID:           requestID,
 		cors:                cors,
+		ingress:             config.ingress,
 		accessLogger:        config.accessLogger,
 		observer:            config.observer,
 		health:              health,
@@ -132,6 +134,10 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	recorder.Header().Set(gateway.requestID.Header, requestID)
 	accessState.RequestID = requestID
 	r = r.WithContext(context.WithValue(r.Context(), requestIDContextKey, requestID))
+	if gateway.ingress != nil && !gateway.ingress.allows(r) {
+		gateway.fail(recorder, r, GatewayError{Status: http.StatusForbidden, Code: "ingress_rejected", Message: "forbidden"})
+		return
+	}
 	if gateway.cors != nil && gateway.cors.handle(recorder, r, gateway) {
 		return
 	}
@@ -154,6 +160,7 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accessState.Route = route.Name
+	accessState.PathTemplate = route.Match.PathTemplate
 	accessState.Upstream = route.Upstream
 	r = r.WithContext(context.WithValue(r.Context(), routeContextKey, route))
 	upstream, err := gateway.upstreams.ResolveUpstream(route)
@@ -223,7 +230,8 @@ func (gateway *Gateway) recoverPanic(w *responseRecorder, r *http.Request, state
 		if recovered == http.ErrAbortHandler {
 			state.ErrorCode = "upstream_stream_aborted"
 			state.FailureComponent = "upstream_stream_aborted"
-			return
+			// finishRequest 仍会记录结果；由 HTTP 服务终止流，客户端才能识别截断。
+			panic(http.ErrAbortHandler)
 		}
 		state.ErrorCode = "gateway_panic"
 		state.FailureComponent = "gateway_panic"

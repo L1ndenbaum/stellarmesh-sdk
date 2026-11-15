@@ -16,6 +16,13 @@ import (
 type Upstream struct {
 	Name string
 	URL  string
+	// Host 覆盖出站 HTTP Host；连接地址和 TLS 校验仍取自 URL。
+	Host string
+	// RequestHeaders 和 ResponseHeaders 仅作用于本上游，各自使用独立的头策略。
+	RequestHeaders  HeaderPolicy
+	ResponseHeaders HeaderPolicy
+	// ResponseHook 在固定头策略生效前处理上游最终响应。
+	ResponseHook ResponseHook
 }
 
 // UpstreamResolver 在写响应前为路由返回已经构造好的代理处理器。
@@ -27,7 +34,7 @@ type UpstreamResolver interface {
 type UpstreamResolverFunc func(Route) (http.Handler, error)
 
 type reverseProxyResolver struct {
-	proxies map[string]http.Handler
+	proxies map[string]map[string]http.Handler
 }
 
 // ResolveUpstream 调用上游解析函数。
@@ -65,14 +72,18 @@ func WithTransport(transport http.RoundTripper) Option {
 	})
 }
 
-func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, responder ErrorResponder, requestIDHeader string) (*reverseProxyResolver, error) {
+func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, responder ErrorResponder, requestIDHeader string, profiles []TimeoutProfile) (*reverseProxyResolver, error) {
 	if len(upstreams) == 0 {
 		return nil, errors.New("gateway upstreams are required")
 	}
 	if transport == nil {
 		transport = defaultProxyTransport()
 	}
-	resolver := &reverseProxyResolver{proxies: make(map[string]http.Handler, len(upstreams))}
+	transports, err := profileTransports(transport, profiles)
+	if err != nil {
+		return nil, err
+	}
+	resolver := &reverseProxyResolver{proxies: make(map[string]map[string]http.Handler, len(upstreams))}
 	for index, upstream := range upstreams {
 		name := strings.TrimSpace(upstream.Name)
 		if name == "" {
@@ -85,35 +96,72 @@ func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, 
 		if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
 			return nil, errors.New("invalid gateway upstream URL: " + name)
 		}
-		resolver.proxies[name] = newReverseProxy(target, transport, responder, requestIDHeader)
+		if upstream.Host != "" && !validAuthority(upstream.Host) {
+			return nil, errors.New("invalid gateway upstream Host: " + name)
+		}
+		requestHeaders, err := compileHeaderPolicy(upstream.RequestHeaders, requestIDHeader, true)
+		if err != nil {
+			return nil, err
+		}
+		responseHeaders, err := compileHeaderPolicy(upstream.ResponseHeaders, requestIDHeader, false)
+		if err != nil {
+			return nil, err
+		}
+		proxies := make(map[string]http.Handler, len(transports))
+		for profile, tr := range transports {
+			proxy := newReverseProxy(target, tr, responder, requestIDHeader, upstream.Host, requestHeaders, responseHeaders)
+			proxies[profile] = withResponseHook(proxy, upstream.ResponseHook, requestIDHeader)
+		}
+		resolver.proxies[name] = proxies
 	}
 	return resolver, nil
 }
 
 func (resolver *reverseProxyResolver) ResolveUpstream(route Route) (http.Handler, error) {
-	proxy, ok := resolver.proxies[route.Upstream]
+	proxies, ok := resolver.proxies[route.Upstream]
 	if !ok {
 		return nil, errors.New("gateway upstream is not configured: " + route.Upstream)
+	}
+	proxy, ok := proxies[route.TimeoutProfile]
+	if !ok {
+		return nil, errors.New("unknown gateway timeout profile: " + route.TimeoutProfile)
 	}
 	return proxy, nil
 }
 
-func newReverseProxy(target *url.URL, transport http.RoundTripper, responder ErrorResponder, requestIDHeader string) *httputil.ReverseProxy {
+func newReverseProxy(target *url.URL, transport http.RoundTripper, responder ErrorResponder, requestIDHeader, host string, requestHeaders, responseHeaders HeaderPolicy) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.SetURL(target)
 			request.Out.Host = target.Host
+			if host != "" {
+				request.Out.Host = host
+			}
+			// 标准库只删除部分转发头；额外的 X-Forwarded-* 也不能继承客户端值。
+			for key := range request.Out.Header {
+				if isForwardingHeader(key) {
+					delete(request.Out.Header, key)
+				}
+			}
 			request.SetXForwarded()
 			if clientIP, ok := ClientIPFromContext(request.In.Context()); ok {
 				request.Out.Header.Set("X-Forwarded-For", clientIP)
+				request.Out.Header.Set("X-Real-IP", clientIP)
 			}
-			// Rewrite 在逐跳头清理后执行，避免 Connection 指名删除入口已选定的 ID。
+			// 入站副本中的身份已经过流水线清洗。逐跳头清理后恢复，避免 Connection 指名删除。
+			for _, key := range []string{headerXUserID, headerXUserRoles} {
+				if value := request.In.Header.Get(key); value != "" {
+					request.Out.Header.Set(key, value)
+				}
+			}
 			if requestID, ok := RequestIDFromContext(request.In.Context()); ok {
 				request.Out.Header.Set(requestIDHeader, requestID)
 			}
+			requestHeaders.apply(request.Out.Header)
 		},
 		ModifyResponse: func(response *http.Response) error {
 			// 入口响应头已有选定 ID；代理会追加后端响应头，必须删除而不是再次 Set。
+			responseHeaders.apply(response.Header)
 			response.Header.Del(requestIDHeader)
 			return nil
 		},
@@ -125,6 +173,10 @@ func newReverseProxy(target *url.URL, transport http.RoundTripper, responder Err
 			var maxBytesError *http.MaxBytesError
 			var netError net.Error
 			switch {
+			case errors.Is(err, errResponseHook):
+				status = http.StatusServiceUnavailable
+				code = "upstream_response_hook_failed"
+				message = "service unavailable"
 			case errors.As(err, &maxBytesError):
 				status = http.StatusRequestEntityTooLarge
 				code = "request_body_too_large"
@@ -139,6 +191,11 @@ func newReverseProxy(target *url.URL, transport http.RoundTripper, responder Err
 			responder.Respond(w, r, gatewayError)
 		},
 	}
+}
+
+func isForwardingHeader(key string) bool {
+	key = strings.ToLower(key)
+	return key == "forwarded" || key == "x-real-ip" || strings.HasPrefix(key, "x-forwarded-")
 }
 
 func defaultProxyTransport() *http.Transport {

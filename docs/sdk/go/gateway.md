@@ -28,7 +28,7 @@ Gateway 将路由、认证、授权、限流与代理装配为固定安全流水
 
 ## 路由和 upstream
 
-见[路由和 upstream](gateway-configuration.md#路由和-upstream)。
+路径模板、受限正则、精确白名单及匹配优先级见[路由和 upstream](gateway-configuration.md#路由和-upstream)。登录或注销时修改响应头见[受信上游响应处理](gateway-configuration.md#受信上游响应处理)。流式转发的等待预算见[路由超时](gateway-configuration.md#路由超时)。
 
 ## 身份和策略扩展
 
@@ -36,7 +36,7 @@ Gateway 将路由、认证、授权、限流与代理装配为固定安全流水
 
 ## 客户端地址和 CORS
 
-见[客户端地址和 CORS](gateway-configuration.md#客户端地址和-cors)。
+可信入口准入和代理链解析见[客户端地址和 CORS](gateway-configuration.md#客户端地址和-cors)。
 
 ## 错误、日志和观测
 
@@ -71,4 +71,4 @@ Gateway 将路由、认证、授权、限流与代理装配为固定安全流水
 见[Gateway 维护约定](../../contributing/gateway.md)。
 
 <a id="默认标准库访问日志"></a>
-默认日志见[标准库访问日志](gateway-configuration.md#默认标准库访问日志)。
+日志路径脱敏和默认字段见[标准库访问日志](gateway-configuration.md#默认标准库访问日志)。

@@ -33,6 +33,8 @@ type config struct {
 	requestID            RequestIDConfig
 	upstreamSpecs        []Upstream
 	transport            http.RoundTripper
+	timeoutProfiles      []TimeoutProfile
+	ingress              *ingressPolicy
 	cors                 *CORSConfig
 	accessLogger         AccessLogger
 	accessLogDisabled    bool
