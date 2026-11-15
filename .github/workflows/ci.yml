@@ -11,7 +11,28 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: 识别受影响的检查
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      expected: ${{ steps.select.outputs.expected }}
+    steps:
+      - name: 检出完整提交历史
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      - name: 按变更路径选择作业
+        id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.after }}
+        run: python3 tests/ci/ci_jobs.py select
+
   go:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.expected)['go'] == 'success'
     name: Go 模块
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -36,6 +57,8 @@ jobs:
         run: make integration-session
 
   frontend:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.expected)['frontend'] == 'success'
     name: 前端 HTTP SDK
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -61,6 +84,8 @@ jobs:
         run: make frontend-verify
 
   python-logging:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.expected)['python-logging'] == 'success'
     name: Python Logging
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -84,6 +109,8 @@ jobs:
         run: make python-logging-check python-logging-test python-logging-artifact-check
 
   python-storage:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.expected)['python-storage'] == 'success'
     name: Python Storage
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -107,6 +134,8 @@ jobs:
         run: make python-storage-check python-storage-test python-storage-artifact-check
 
   shell:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.expected)['shell'] == 'success'
     name: 文档、Shell 与差异检查
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -115,9 +144,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: 验证文档链接、示例、脚本与差异格式
-        run: make docs-check shell-check
+        run: make ci-check docs-check shell-check
 
   integration-storage:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.expected)['integration-storage'] == 'success'
     name: Storage 集成
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -147,6 +178,8 @@ jobs:
         run: make integration-storage
 
   python-objectstorage:
+    needs: changes
+    if: fromJSON(needs.changes.outputs.expected)['python-objectstorage'] == 'success'
     name: Python Object Storage 与 RustFS 集成
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -170,6 +203,7 @@ jobs:
     name: 持续验证
     if: always()
     needs:
+      - changes
       - go
       - frontend
       - python-logging
@@ -180,24 +214,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: 汇总验证结果
+      - name: 检出验证规则
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: 核对计划与实际作业结果
         env:
-          GO_RESULT: ${{ needs.go.result }}
-          FRONTEND_RESULT: ${{ needs.frontend.result }}
-          PYTHON_LOGGING_RESULT: ${{ needs['python-logging'].result }}
-          PYTHON_STORAGE_RESULT: ${{ needs['python-storage'].result }}
-          PYTHON_OBJECTSTORAGE_RESULT: ${{ needs['python-objectstorage'].result }}
-          SHELL_RESULT: ${{ needs.shell.result }}
-          STORAGE_INTEGRATION_RESULT: ${{ needs['integration-storage'].result }}
-        run: |
-          if [ "$GO_RESULT" != "success" ] || \
-             [ "$FRONTEND_RESULT" != "success" ] || \
-             [ "$PYTHON_LOGGING_RESULT" != "success" ] || \
-             [ "$PYTHON_STORAGE_RESULT" != "success" ] || \
-             [ "$PYTHON_OBJECTSTORAGE_RESULT" != "success" ] || \
-             [ "$SHELL_RESULT" != "success" ] || \
-             [ "$STORAGE_INTEGRATION_RESULT" != "success" ]; then
-            echo "至少一项持续验证未成功" >&2
-            exit 1
-          fi
-          echo "全部持续验证成功"
+          CI_NEEDS: ${{ toJSON(needs) }}
+        run: python3 tests/ci/ci_jobs.py verify

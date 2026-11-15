@@ -23,6 +23,21 @@ make integration
 本地与 Python 发布流程的 mypy 检查各包的 `src/`、`tests/` 以及文档校验工具，构建后可以直接重新验证，无需删除 `build/` 或已有制品。
 
 
+## 持续验证的检查范围
+
+GitHub「持续验证」在 `dev`、`main` 推送和 PR 上按作业选择检查。推送比较前后两个提交，PR 比较合并基点到 PR 头提交。删除或跨目录改名会计入原路径。文档、Shell 与差异检查每次运行，以覆盖跨目录链接和源码示例。
+
+| 改动示例 | 额外运行的作业 |
+| --- | --- |
+| Gateway 源码或 Redis Session 测试脚本 | Go 模块，含 Redis 会话集成 |
+| 前端 HTTP SDK 源码或依赖锁文件 | 前端 HTTP SDK |
+| Logging 共享契约 | Go 模块、Python Logging、Storage 集成 |
+| Storage v1 共享契约 | Go 模块、Python Storage、Storage 集成 |
+| 两套集成共用的 RustFS 初始化脚本 | Storage 集成、Python Object Storage 与 RustFS 集成 |
+| `Makefile`、主 CI 或路径选择代码、尚未归类的配置 | 全部作业 |
+
+新增组件、共享输入或集成脚本时，同步更新[路径规则](tests/ci/ci_jobs.py)和[回归用例](tests/ci/test_ci_jobs.py)，用 `make ci-check` 验证。新建分支或无法取得完整差异时执行全量检查。最终的 `verify` 要求变更识别成功，每个选中作业成功，其余作业按计划跳过。失败、取消、意外跳过或结果缺失都会阻止通过。
+
 ## 改动与发布
 
 只运行与当前改动对应的检查；交付前执行 `make verify`。Go 注释与示例也经过 gofmt、go vet 和测试，Python docstring 与示例经过 Ruff、mypy 和 pytest。集成需要的 Redis、Kafka、S3 与浏览器验证应分别报告，不能用“编译通过”代替外部服务验收。

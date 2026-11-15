@@ -25,7 +25,7 @@ export GOMODCACHE ?= $(ROOT)/.cache/go-mod
 	image-storage images integration-storage integration integration-aws \
 	frontend-bootstrap frontend-browser-bootstrap frontend-format frontend-check \
 	frontend-build frontend-test frontend-browser-test frontend-consumer frontend-verify integration-session \
-	docs-check go-doc-check python-logging-artifact-check python-storage-artifact-check
+	ci-check docs-check go-doc-check python-logging-artifact-check python-storage-artifact-check
 
 bootstrap: python-logging-bootstrap python-storage-bootstrap python-objectstorage-bootstrap frontend-bootstrap frontend-browser-bootstrap
 
@@ -115,9 +115,9 @@ python-storage-check: python-storage-bootstrap
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff check tests/integration/storage-pipeline.py
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff format --check tests/integration/storage-pipeline.py
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen mypy --strict tests/integration/storage-pipeline.py
-	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff check tests/docs
-	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff format --check tests/docs
-	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen mypy --strict tests/docs
+	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff check tests/docs tests/ci
+	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen ruff format --check tests/docs tests/ci
+	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen mypy --strict tests/docs tests/ci
 	$(UV) pip check --python $(PYTHON_STORAGE_DIR)/.venv/bin/python
 
 shell-check:
@@ -127,6 +127,9 @@ shell-check:
 	sh -n tests/integration/gateway-session-redis.sh
 	sh -n tests/go-module-consumer.sh
 	git diff --check
+
+ci-check:
+	$(PYTHON) -m unittest discover -s tests/ci -v
 
 docs-check:
 	$(PYTHON) -m unittest discover -s tests/docs -v
@@ -141,7 +144,7 @@ python-logging-artifact-check: python-logging-bootstrap
 python-storage-artifact-check: python-storage-bootstrap
 	$(UV) run --project $(PYTHON_STORAGE_DIR) --frozen python tests/docs/python_artifact.py --build $(PYTHON_STORAGE_DIR)
 
-check: docs-check go-doc-check go-check python-logging-check python-storage-check python-objectstorage-check shell-check frontend-check
+check: ci-check docs-check go-doc-check go-check python-logging-check python-storage-check python-objectstorage-check shell-check frontend-check
 
 go-test:
 	go test $(GO_PACKAGES)
