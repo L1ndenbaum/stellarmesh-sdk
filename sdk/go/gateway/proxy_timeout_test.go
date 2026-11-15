@@ -39,7 +39,15 @@ func TestRouteTimeoutProfiles(t *testing.T) {
 	c := server.Client()
 	c.Timeout = 4 * time.Second
 	for _, path := range route.Match.ExactPaths {
-		resp, err := c.Get(server.URL + path)
+		req, err := http.NewRequest(http.MethodGet, server.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if path == "/idle" {
+			req.Header.Set("Connection", "Upgrade")
+			req.Header.Set("Upgrade", "websocket")
+		}
+		resp, err := c.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}

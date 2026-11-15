@@ -65,10 +65,6 @@ type idleTransport struct {
 }
 
 func (t idleTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	// 升级后的双向连接由代理隧道持有，必须保留其 ReadWriteCloser。
-	if r.Header.Get("Upgrade") != "" {
-		return t.base.RoundTrip(r)
-	}
 	ctx, cancel := context.WithCancel(r.Context())
 	resp, err := t.base.RoundTrip(r.WithContext(ctx))
 	if err != nil {
@@ -79,8 +75,25 @@ func (t idleTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		cancel()
 		return resp, nil
 	}
+	// 只有上游真正同意升级时才交出双向隧道；请求自带 Upgrade 不能跳过普通响应的超时。
+	if resp.StatusCode == http.StatusSwitchingProtocols {
+		if tunnel, ok := resp.Body.(io.ReadWriteCloser); ok {
+			resp.Body = &upgradeBody{ReadWriteCloser: tunnel, cancel: cancel}
+			return resp, nil
+		}
+	}
 	resp.Body = &idleResponseBody{ReadCloser: resp.Body, timeout: t.timeout, cancel: cancel}
 	return resp, nil
+}
+
+type upgradeBody struct {
+	io.ReadWriteCloser
+	cancel context.CancelFunc
+}
+
+func (b *upgradeBody) Close() error {
+	b.cancel()
+	return b.ReadWriteCloser.Close()
 }
 
 type idleResponseBody struct {
