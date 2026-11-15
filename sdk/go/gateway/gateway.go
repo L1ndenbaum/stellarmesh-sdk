@@ -65,11 +65,13 @@ func New(options ...Option) (*Gateway, error) {
 		return nil, err
 	}
 	if len(config.upstreamSpecs) > 0 {
-		resolver, err := newReverseProxyResolver(config.upstreamSpecs, config.transport, config.errorResponder, requestID.Header, config.timeoutProfiles)
+		resolver, err := newReverseProxyResolver(&config, requestID.Header)
 		if err != nil {
 			return nil, err
 		}
 		config.upstreamResolver = resolver
+	} else if config.proxyErrorLog != nil {
+		return nil, errors.New("gateway proxy error log requires fixed upstreams")
 	} else if config.transport != nil || len(config.timeoutProfiles) > 0 {
 		return nil, errors.New("gateway transport and timeout profiles require fixed upstreams")
 	}

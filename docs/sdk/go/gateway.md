@@ -40,7 +40,7 @@ Gateway 将路由、认证、授权、限流与代理装配为固定安全流水
 
 ## 错误、日志和观测
 
-见[错误、日志和观测](gateway-configuration.md#错误日志和观测)。
+见[错误、日志和观测](gateway-configuration.md#错误日志和观测)。重定向或静默流复制诊断见[内置代理的原始错误日志](gateway-configuration.md#内置代理的原始错误日志)。
 
 ## 健康检查和测试
 

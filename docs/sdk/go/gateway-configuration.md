@@ -123,6 +123,18 @@ gateway.WithoutAccessLog()
 
 `WithObserver` 接收请求完成、决策组件故障和访问日志失败三类低基数事件。Observer 和 AccessLogger 的错误或 panic 都不会改变业务响应。项目可以在 Observer 外部适配 Prometheus，标签只应使用路由名、upstream、状态和固定组件名，不应使用 path、用户 ID、请求 ID 或原始错误文本。
 
+### 内置代理的原始错误日志
+
+开发版的 `WithProxyErrorLog(*log.Logger)` 配置当前网关所有固定上游的 `httputil.ReverseProxy.ErrorLog`。省略时沿用标准库默认 logger，通常写入 stderr。原始诊断可能包含底层错误文本，访问日志的 `UseRoutePath` 只控制结构化 `path` 字段。
+
+项目只需结构化截断记录时，可在 `gateway.New` 的选项中加入以下配置（使用标准库 `log` 和 `io`）。
+
+```go
+gateway.WithProxyErrorLog(log.New(io.Discard, "", 0))
+```
+
+响应体中途截断时，客户端仍收到读取错误，访问日志和 Observer 仍按原配置记录 `upstream_stream_aborted`。需要保留诊断时可传入写向项目日志目标的 logger。显式传入 `nil` 或与 `WithUpstreamResolver` 组合会在构造时报错；自定义上游处理器自行配置其代理日志。
+
 ## 健康检查和测试
 
 `WithHealth` 默认提供 `GET /health/live` 和 `GET /health/ready`。存活检查只表示进程能够响应；就绪检查可以注入 `ReadinessChecker`，默认超时为 `2s`，错误或超时返回 `503`。健康路径由网关本地处理，不需要出现在业务路由表中。成功时默认返回 `ok`；项目响应器通过 `HealthKindLive` 和 `HealthKindReady` 区分端点，通过 `HealthResult.Service` 读取规范化后的服务名。失败仍统一交给 `ErrorResponder`。

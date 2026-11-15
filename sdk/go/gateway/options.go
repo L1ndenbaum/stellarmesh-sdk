@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"reflect"
 )
@@ -33,6 +34,7 @@ type config struct {
 	requestID            RequestIDConfig
 	upstreamSpecs        []Upstream
 	transport            http.RoundTripper
+	proxyErrorLog        *log.Logger
 	timeoutProfiles      []TimeoutProfile
 	ingress              *ingressPolicy
 	cors                 *CORSConfig

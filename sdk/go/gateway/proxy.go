@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -72,14 +73,28 @@ func WithTransport(transport http.RoundTripper) Option {
 	})
 }
 
-func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, responder ErrorResponder, requestIDHeader string, profiles []TimeoutProfile) (*reverseProxyResolver, error) {
+// WithProxyErrorLog 为该网关的所有内置反向代理指定原始诊断日志，省略时沿用标准库 log 的默认输出。
+// logger 必须非空。传入 log.New(io.Discard, "", 0) 可静默这些诊断，结构化访问日志和观测事件仍正常记录。
+func WithProxyErrorLog(logger *log.Logger) Option {
+	return componentOption("proxy_error_log", func(config *config) error {
+		if logger == nil {
+			return errors.New("gateway proxy error logger is nil")
+		}
+		config.proxyErrorLog = logger
+		return nil
+	})
+}
+
+func newReverseProxyResolver(cfg *config, requestIDHeader string) (*reverseProxyResolver, error) {
+	upstreams := cfg.upstreamSpecs
 	if len(upstreams) == 0 {
 		return nil, errors.New("gateway upstreams are required")
 	}
+	transport := cfg.transport
 	if transport == nil {
 		transport = defaultProxyTransport()
 	}
-	transports, err := profileTransports(transport, profiles)
+	transports, err := profileTransports(transport, cfg.timeoutProfiles)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +124,8 @@ func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, 
 		}
 		proxies := make(map[string]http.Handler, len(transports))
 		for profile, tr := range transports {
-			proxy := newReverseProxy(target, tr, responder, requestIDHeader, upstream.Host, requestHeaders, responseHeaders)
+			proxy := newReverseProxy(target, tr, cfg.errorResponder, requestIDHeader, upstream.Host, requestHeaders, responseHeaders)
+			proxy.ErrorLog = cfg.proxyErrorLog
 			proxies[profile] = withResponseHook(proxy, upstream.ResponseHook, requestIDHeader)
 		}
 		resolver.proxies[name] = proxies

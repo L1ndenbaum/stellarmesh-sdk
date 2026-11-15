@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
 	"testing"
@@ -45,6 +46,7 @@ func TestGatewayRejectsTypedNilComponentsAtConstruction(t *testing.T) {
 		"route resolver":      WithRouteResolver(RouteResolverFunc(nil)),
 		"upstream resolver":   WithUpstreamResolver(UpstreamResolverFunc(nil)),
 		"transport":           WithTransport(roundTripperFunc(nil)),
+		"proxy error log":     WithProxyErrorLog(nil),
 		"authenticator":       WithAuthenticator(AuthenticatorFunc(nil)),
 		"authorizer":          WithAuthorizer(AuthorizerFunc(nil)),
 		"before proxy policy": WithBeforeProxyPolicy(BeforeProxyPolicyFunc(nil)),
@@ -61,6 +63,13 @@ func TestGatewayRejectsTypedNilComponentsAtConstruction(t *testing.T) {
 				t.Fatalf("New() error = %v", err)
 			}
 		})
+	}
+}
+
+func TestProxyErrorLogRequiresBuiltInProxy(t *testing.T) {
+	_, err := New(WithRoutes(publicRoute()), withTestUpstreams(nil), WithProxyErrorLog(log.Default()))
+	if err == nil || !strings.Contains(err.Error(), "requires fixed upstreams") {
+		t.Fatalf("New() error = %v", err)
 	}
 }
 
