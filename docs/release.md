@@ -108,6 +108,19 @@ SDK 不再发布公共 `logging-service`、ClickHouse sink 或迁移镜像。新
 
 ## Tag 与制品边界
 
+### 从 main 选取发布提交
+
+日常开发和版本准备在 `dev` 完成，`main` 是默认分支和发布基线。Go、Python 与服务镜像按以下顺序发布。前端 npm 同样从已验证的 `main` 提交准备制品，手动发布及事后记录标签的顺序见[前端流程](#前端-npm-发布流程)。
+
+1. 将待发布的改动推送到 `dev`，以 `dev` 为源、`main` 为目标提交并合并发布 PR。
+2. 在 GitHub 确认合并后的 `main` 提交通过「持续验证」。运行 `git fetch origin main`，核对 `git rev-parse origin/main` 与通过验证的完整 SHA 一致。
+3. 从下列清单选取组件标签，确认远端尚无该版本。用 `git tag -a "$release_tag" "$release_commit" -m "$release_message"` 在刚核对的 SHA 上创建带注释的标签，再用 `git push origin "refs/tags/$release_tag"` 单独推送。命令中的三个变量分别为本次组件标签、已验证的提交 SHA 和发布说明。
+4. 按制品类型检查对应结果。Go 组件检查公共代理能否下载并构建该版本；Python 和镜像检查对应发布工作流及制品。
+
+Git 标签指向提交。现有工作流按标签名触发，默认分支设置和标签过滤器都不校验该提交是否已合入 `main`。维护者在第 2 步确认发布来源。旧标签和已发布制品继续保留原标识与内容。
+
+### 组件标签
+
 - 根 tag `vX.Y.Z` 只构建并发布 `ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service`；
 - `sdk/go/vX.Y.Z` 只验证父 Go Module；
 - `sdk/go/objectstorage/vX.Y.Z`、`sdk/go/gateway/vX.Y.Z`、`sdk/go/logging/vX.Y.Z` 和 `sdk/go/mq/kafka/vX.Y.Z` 分别发布对应嵌套 Module；
@@ -163,7 +176,7 @@ ghcr.io/l1ndenbaum/stellarmesh-sdk/storage-service
 2. Python 包从正式 PyPI 安装并验证公开 API；
 3. 使用空临时 `DOCKER_CONFIG` 匿名拉取 storage-service，记录不可变 manifest digest与架构；
 4. 使用已发布 storage-service 镜像完成 Storage v1 集成；
-5. 确认 `dev` 与远端同步、`git diff --check` 通过且工作区干净。
+5. 确认发布标签指向已通过持续验证的 `main` 提交，核对远端标签，并确认 `git diff --check` 通过且发布工作区干净。
 
 Actions runner、PyPI 审批或公共代理的临时问题可以在同一不可变 commit上重跑或等待。只要必须修改源码、workflow、锁文件或制品内容，对应组件就必须提升 patch，不能复用已经推送的 tag。
 
