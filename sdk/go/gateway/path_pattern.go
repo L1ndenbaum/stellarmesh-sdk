@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/url"
 	"regexp"
+	"regexp/syntax"
 	"slices"
 	"strings"
 )
@@ -22,7 +23,12 @@ func compilePathMatch(match *RouteMatch) (*regexp.Regexp, error) {
 	}
 	switch {
 	case match.PathRegexp != "":
-		return regexp.Compile(`\A(?:` + match.PathRegexp + `)\z`)
+		// 先解析完整表达式，避免配置中的括号提前结束外层分组、逃逸整路径锚点。
+		expr, err := syntax.Parse(match.PathRegexp, syntax.Perl)
+		if err != nil {
+			return nil, err
+		}
+		return regexp.Compile(`\A(?:` + expr.String() + `)\z`)
 	case match.PathTemplate != "":
 		return compileTemplate(match.PathTemplate)
 	}

@@ -49,7 +49,7 @@ func TestPatternRoutesThroughGateway(t *testing.T) {
 func TestInvalidPathMatchersFailConstruction(t *testing.T) {
 	for _, match := range []RouteMatch{
 		{PathTemplate: "/a/**/b"}, {PathTemplate: "/a/{x}/{x}"}, {PathTemplate: "/a/{a-b}"},
-		{PathRegexp: "("}, {PathTemplate: "/a/*", ExactPath: "/a"}, {ExactPaths: []string{"/a", "/a"}},
+		{PathRegexp: "("}, {PathRegexp: "/allowed)|(/other"}, {PathTemplate: "/a/*", ExactPath: "/a"}, {ExactPaths: []string{"/a", "/a"}},
 	} {
 		_, err := New(WithRoutes(Route{Name: "api", Upstream: "api", Match: match, Access: AccessPublic}), WithUpstreams(Upstream{Name: "api", URL: "http://api"}))
 		if err == nil {
