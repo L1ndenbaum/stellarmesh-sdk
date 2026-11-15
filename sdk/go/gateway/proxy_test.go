@@ -1,9 +1,11 @@
 package gateway
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -253,6 +255,33 @@ func (timeoutError) Timeout() bool { return true }
 func (timeoutError) Temporary() bool { return true }
 
 func TestTruncatedEventStreamAbortsClientAndRecordsFailure(t *testing.T) {
+	for _, mode := range []string{"default", "redirect", "discard"} {
+		t.Run(mode, func(t *testing.T) {
+			var standard, custom bytes.Buffer
+			previous := log.Writer()
+			log.SetOutput(&standard)
+			t.Cleanup(func() { log.SetOutput(previous) })
+
+			var logger *log.Logger
+			switch mode {
+			case "redirect":
+				logger = log.New(&custom, "", 0)
+			case "discard":
+				logger = log.New(io.Discard, "", 0)
+			}
+			assertTruncatedStream(t, logger)
+			if log.Writer() != &standard {
+				t.Fatal("proxy configuration changed the process-wide logger")
+			}
+			if (standard.Len() > 0) != (mode == "default") || (custom.Len() > 0) != (mode == "redirect") {
+				t.Errorf("unexpected proxy diagnostics: standard=%q custom=%q", standard.String(), custom.String())
+			}
+		})
+	}
+}
+
+func assertTruncatedStream(t *testing.T, logger *log.Logger) {
+	t.Helper()
 	release := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -266,8 +295,21 @@ func TestTruncatedEventStreamAbortsClientAndRecordsFailure(t *testing.T) {
 	}))
 	defer upstream.Close()
 	logged := make(chan AccessLog, 1)
-	handler, err := New(WithRoutes(publicRoute()), WithUpstreams(Upstream{Name: "backend", URL: upstream.URL}),
-		WithAccessLogger(AccessLoggerFunc(func(_ context.Context, entry AccessLog) error { logged <- entry; return nil })))
+	failures := make(chan Observation, 1)
+	options := []Option{
+		WithRoutes(publicRoute()),
+		WithUpstreams(Upstream{Name: "backend", URL: upstream.URL}),
+		WithAccessLogger(AccessLoggerFunc(func(_ context.Context, entry AccessLog) error { logged <- entry; return nil })),
+		WithObserver(ObserverFunc(func(_ context.Context, event Observation) {
+			if event.Kind == ObservationComponentFailure {
+				failures <- event
+			}
+		})),
+	}
+	if logger != nil {
+		options = append(options, WithProxyErrorLog(logger))
+	}
+	handler, err := New(options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,5 +329,13 @@ func TestTruncatedEventStreamAbortsClientAndRecordsFailure(t *testing.T) {
 	}
 	if entry := <-logged; entry.ErrorCode != "upstream_stream_aborted" {
 		t.Fatal(entry)
+	}
+	select {
+	case event := <-failures:
+		if event.Component != "upstream_stream_aborted" {
+			t.Fatal(event)
+		}
+	default:
+		t.Fatal("missing stream abort observation")
 	}
 }
