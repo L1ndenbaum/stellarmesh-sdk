@@ -16,11 +16,14 @@ type SlogAccessLoggerConfig struct {
 	Logger *slog.Logger
 	// IncludeIdentity 默认 false；开启后输出 user_id 与 roles，业务负责隐私策略。
 	IncludeIdentity bool
+	// UseRoutePath 以路径模板或稳定路由名记录 path；未匹配时使用 unmatched。
+	UseRoutePath bool
 }
 
 type slogAccessLogger struct {
 	logger          *slog.Logger
 	includeIdentity bool
+	useRoutePath    bool
 }
 
 // WithSlogAccessLogger 使用标准库 slog 输出访问日志。
@@ -36,6 +39,7 @@ func NewSlogAccessLogger(config SlogAccessLoggerConfig) AccessLogger {
 	return &slogAccessLogger{
 		logger:          config.Logger,
 		includeIdentity: config.IncludeIdentity,
+		useRoutePath:    config.UseRoutePath,
 	}
 }
 
@@ -49,11 +53,22 @@ func (logger *slogAccessLogger) Log(ctx context.Context, accessLog AccessLog) er
 		return nil
 	}
 
+	path := accessLog.Path
+	if logger.useRoutePath {
+		switch {
+		case accessLog.PathTemplate != "":
+			path = accessLog.PathTemplate
+		case accessLog.Route != "":
+			path = accessLog.Route
+		default:
+			path = "unmatched"
+		}
+	}
 	record := slog.NewRecord(time.Now(), level, accessLogMessage, 0)
 	record.AddAttrs(
 		slog.String("request_id", accessLog.RequestID),
 		slog.String("method", accessLog.Method),
-		slog.String("path", accessLog.Path),
+		slog.String("path", path),
 		slog.String("route", accessLog.Route),
 		slog.String("client_ip", accessLog.ClientIP),
 		slog.String("auth_result", accessLog.AuthResult),

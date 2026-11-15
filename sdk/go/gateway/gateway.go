@@ -160,6 +160,7 @@ func (gateway *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accessState.Route = route.Name
+	accessState.PathTemplate = route.Match.PathTemplate
 	accessState.Upstream = route.Upstream
 	r = r.WithContext(context.WithValue(r.Context(), routeContextKey, route))
 	upstream, err := gateway.upstreams.ResolveUpstream(route)

@@ -111,6 +111,8 @@ gateway.WithoutAccessLog()
 
 小于 `400` 的状态使用 `INFO`，`4xx` 使用 `WARN`，`5xx` 使用 `ERROR`。默认字段包括请求 ID、method、path、路由名、可信解析后的客户端 IP、鉴权结果、upstream、状态、耗时、错误代码和限流结果；默认不包含 QueryString、请求头、Cookie、请求体、响应体、用户 ID 或角色。只有显式设置 `IncludeIdentity` 才加入用户身份。成功的本地健康探针默认跳过，可通过 `HealthConfig.LogSuccessful` 开启。
 
+开发版中，可在 `SlogAccessLoggerConfig` 开启 `UseRoutePath`，将 `path` 记录为路径模板，缺少模板时使用路由名，未匹配时记录固定值 `unmatched`。动态路由的名称须由项目提供稳定值，以免路径参数进入日志。默认仍记录去掉查询串的请求路径。
+
 `WithAccessLogger` 继续允许项目注入自己的通用实现。三种配置入口占用同一组件槽位，不能同时声明，避免 Option 顺序决定日志行为。
 
 `WithObserver` 接收请求完成、决策组件故障和访问日志失败三类低基数事件。Observer 和 AccessLogger 的错误或 panic 都不会改变业务响应。项目可以在 Observer 外部适配 Prometheus，标签只应使用路由名、upstream、状态和固定组件名，不应使用 path、用户 ID、请求 ID 或原始错误文本。

@@ -10,10 +10,12 @@ import (
 
 // AccessLog 是不包含查询参数或凭据的网关访问记录。
 type AccessLog struct {
-	Timestamp       time.Time
-	RequestID       string
-	Method          string
-	Path            string
+	Timestamp time.Time
+	RequestID string
+	Method    string
+	Path      string
+	// PathTemplate 是声明的路径模板，未使用模板时为空。
+	PathTemplate    string
 	Route           string
 	ClientIP        string
 	AuthResult      string

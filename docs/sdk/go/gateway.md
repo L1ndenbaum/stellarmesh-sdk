@@ -71,4 +71,4 @@ Gateway 将路由、认证、授权、限流与代理装配为固定安全流水
 见[Gateway 维护约定](../../contributing/gateway.md)。
 
 <a id="默认标准库访问日志"></a>
-默认日志见[标准库访问日志](gateway-configuration.md#默认标准库访问日志)。
+日志路径脱敏和默认字段见[标准库访问日志](gateway-configuration.md#默认标准库访问日志)。
