@@ -25,6 +25,12 @@
 
 项目如果使用动态路由或自定义代理，可以分别传入 `WithRouteResolver` 和 `WithUpstreamResolver`。它们与对应的静态组件互斥；动态解析出的路由仍会在请求期校验名称、upstream、访问模式和请求体限制，错误返回 `503`。
 
+### 路由超时
+
+通过 `WithTimeoutProfiles(TimeoutProfile{Name: "stream", ResponseHeaderTimeout: 30*time.Second, ResponseBodyIdleTimeout: time.Minute})` 注册配置，在 `Route.TimeoutProfile` 填入名称。静态和动态路由共用启动时创建的有限连接池。未设置名称时使用原 Transport；静态引用不存在的配置会在启动时报错，动态引用在请求期返回 `503`。
+
+响应头预算从请求体发送完成算起，超时返回 `504`；正值要求底层为 `*http.Transport`，零值沿用原设置。响应体预算只限制每次等待上游数据的时间，零值关闭。开始回传后如果等待超时，客户端观察到流截断。持续有数据的 SSE 可以超过该预算运行。WebSocket 协议升级后的双向隧道由连接本身管理。
+
 ## 请求 ID
 
 从 `v0.5.0` 起，网关默认忽略并移除传入的 `X-Request-ID`，为每个请求重新生成 ID；省略 `WithRequestID` 与 `TrustIncoming: false` 相同。网关选定的值写入转发请求头、请求上下文和访问日志，并设置响应头，便于客户端关联排障。

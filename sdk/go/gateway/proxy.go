@@ -32,7 +32,7 @@ type UpstreamResolver interface {
 type UpstreamResolverFunc func(Route) (http.Handler, error)
 
 type reverseProxyResolver struct {
-	proxies map[string]http.Handler
+	proxies map[string]map[string]http.Handler
 }
 
 // ResolveUpstream 调用上游解析函数。
@@ -70,14 +70,18 @@ func WithTransport(transport http.RoundTripper) Option {
 	})
 }
 
-func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, responder ErrorResponder, requestIDHeader string) (*reverseProxyResolver, error) {
+func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, responder ErrorResponder, requestIDHeader string, profiles []TimeoutProfile) (*reverseProxyResolver, error) {
 	if len(upstreams) == 0 {
 		return nil, errors.New("gateway upstreams are required")
 	}
 	if transport == nil {
 		transport = defaultProxyTransport()
 	}
-	resolver := &reverseProxyResolver{proxies: make(map[string]http.Handler, len(upstreams))}
+	transports, err := profileTransports(transport, profiles)
+	if err != nil {
+		return nil, err
+	}
+	resolver := &reverseProxyResolver{proxies: make(map[string]map[string]http.Handler, len(upstreams))}
 	for index, upstream := range upstreams {
 		name := strings.TrimSpace(upstream.Name)
 		if name == "" {
@@ -101,15 +105,23 @@ func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, 
 		if err != nil {
 			return nil, err
 		}
-		resolver.proxies[name] = newReverseProxy(target, transport, responder, requestIDHeader, upstream.Host, requestHeaders, responseHeaders)
+		proxies := make(map[string]http.Handler, len(transports))
+		for profile, tr := range transports {
+			proxies[profile] = newReverseProxy(target, tr, responder, requestIDHeader, upstream.Host, requestHeaders, responseHeaders)
+		}
+		resolver.proxies[name] = proxies
 	}
 	return resolver, nil
 }
 
 func (resolver *reverseProxyResolver) ResolveUpstream(route Route) (http.Handler, error) {
-	proxy, ok := resolver.proxies[route.Upstream]
+	proxies, ok := resolver.proxies[route.Upstream]
 	if !ok {
 		return nil, errors.New("gateway upstream is not configured: " + route.Upstream)
+	}
+	proxy, ok := proxies[route.TimeoutProfile]
+	if !ok {
+		return nil, errors.New("unknown gateway timeout profile: " + route.TimeoutProfile)
 	}
 	return proxy, nil
 }

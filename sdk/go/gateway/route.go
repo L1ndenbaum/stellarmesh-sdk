@@ -48,6 +48,8 @@ type Route struct {
 	Access AccessMode
 	// MaxBodyBytes 为请求体字节上限；0 不设限制，负数拒绝。
 	MaxBodyBytes int64
+	// TimeoutProfile 引用固定上游的超时配置；空值沿用共享 Transport。
+	TimeoutProfile string
 }
 
 // RouteResolver 把请求解析为一个项目声明的路由。
