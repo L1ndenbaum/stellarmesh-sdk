@@ -21,6 +21,8 @@ type Upstream struct {
 	// RequestHeaders 和 ResponseHeaders 仅作用于本上游，各自使用独立的头策略。
 	RequestHeaders  HeaderPolicy
 	ResponseHeaders HeaderPolicy
+	// ResponseHook 在固定头策略生效前处理上游最终响应。
+	ResponseHook ResponseHook
 }
 
 // UpstreamResolver 在写响应前为路由返回已经构造好的代理处理器。
@@ -107,7 +109,8 @@ func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, 
 		}
 		proxies := make(map[string]http.Handler, len(transports))
 		for profile, tr := range transports {
-			proxies[profile] = newReverseProxy(target, tr, responder, requestIDHeader, upstream.Host, requestHeaders, responseHeaders)
+			proxy := newReverseProxy(target, tr, responder, requestIDHeader, upstream.Host, requestHeaders, responseHeaders)
+			proxies[profile] = withResponseHook(proxy, upstream.ResponseHook, requestIDHeader)
 		}
 		resolver.proxies[name] = proxies
 	}
@@ -170,6 +173,10 @@ func newReverseProxy(target *url.URL, transport http.RoundTripper, responder Err
 			var maxBytesError *http.MaxBytesError
 			var netError net.Error
 			switch {
+			case errors.Is(err, errResponseHook):
+				status = http.StatusServiceUnavailable
+				code = "upstream_response_hook_failed"
+				message = "service unavailable"
 			case errors.As(err, &maxBytesError):
 				status = http.StatusRequestEntityTooLarge
 				code = "request_body_too_large"

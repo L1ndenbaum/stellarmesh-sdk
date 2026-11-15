@@ -25,6 +25,12 @@
 
 项目如果使用动态路由或自定义代理，可以分别传入 `WithRouteResolver` 和 `WithUpstreamResolver`。它们与对应的静态组件互斥；动态解析出的路由仍会在请求期校验名称、upstream、访问模式和请求体限制，错误返回 `503`。
 
+### 受信上游响应处理
+
+固定上游可配置 `Upstream.ResponseHook`，单条路由的 `Route.ResponseHook` 优先。钩子收到入站请求、最终状态码和上游响应头副本，返回 `HeaderPolicy` 与错误。入站 Cookie、路径参数和认证上下文仍可读取，即使出站策略已经移除了 Cookie。响应体继续由代理流式传输。钩子的输出先经过头部校验，再执行上游固定响应头策略，最后移除上游同名请求 ID。
+
+会话接入时，可在登录路由的成功响应中读取后端身份头，调用项目配置的会话存储，返回追加 `Set-Cookie` 的策略。将内部身份头列入对应上游的 `ResponseHeaders.Remove`，覆盖所有状态和路由。存储失败、钩子异常或返回非法头策略时，网关关闭上游响应体并走 `503 upstream_response_hook_failed`；项目可通过 `ErrorResponder` 映射自身错误格式。
+
 ### 路由超时
 
 通过 `WithTimeoutProfiles(TimeoutProfile{Name: "stream", ResponseHeaderTimeout: 30*time.Second, ResponseBodyIdleTimeout: time.Minute})` 注册配置，在 `Route.TimeoutProfile` 填入名称。静态和动态路由共用启动时创建的有限连接池。未设置名称时使用原 Transport；静态引用不存在的配置会在启动时报错，动态引用在请求期返回 `503`。

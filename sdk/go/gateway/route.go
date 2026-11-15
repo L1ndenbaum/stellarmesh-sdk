@@ -50,6 +50,8 @@ type Route struct {
 	MaxBodyBytes int64
 	// TimeoutProfile 引用固定上游的超时配置；空值沿用共享 Transport。
 	TimeoutProfile string
+	// ResponseHook 覆盖固定上游的默认响应处理，仅作用于这条路由。
+	ResponseHook ResponseHook
 }
 
 // RouteResolver 把请求解析为一个项目声明的路由。
