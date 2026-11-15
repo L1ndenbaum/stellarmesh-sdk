@@ -16,6 +16,11 @@ import (
 type Upstream struct {
 	Name string
 	URL  string
+	// Host 覆盖出站 HTTP Host；连接地址和 TLS 校验仍取自 URL。
+	Host string
+	// RequestHeaders 和 ResponseHeaders 仅作用于本上游，各自使用独立的头策略。
+	RequestHeaders  HeaderPolicy
+	ResponseHeaders HeaderPolicy
 }
 
 // UpstreamResolver 在写响应前为路由返回已经构造好的代理处理器。
@@ -85,7 +90,18 @@ func newReverseProxyResolver(upstreams []Upstream, transport http.RoundTripper, 
 		if err != nil || (target.Scheme != "http" && target.Scheme != "https") || target.Host == "" {
 			return nil, errors.New("invalid gateway upstream URL: " + name)
 		}
-		resolver.proxies[name] = newReverseProxy(target, transport, responder, requestIDHeader)
+		if upstream.Host != "" && !validAuthority(upstream.Host) {
+			return nil, errors.New("invalid gateway upstream Host: " + name)
+		}
+		requestHeaders, err := compileHeaderPolicy(upstream.RequestHeaders, requestIDHeader, true)
+		if err != nil {
+			return nil, err
+		}
+		responseHeaders, err := compileHeaderPolicy(upstream.ResponseHeaders, requestIDHeader, false)
+		if err != nil {
+			return nil, err
+		}
+		resolver.proxies[name] = newReverseProxy(target, transport, responder, requestIDHeader, upstream.Host, requestHeaders, responseHeaders)
 	}
 	return resolver, nil
 }
@@ -98,11 +114,14 @@ func (resolver *reverseProxyResolver) ResolveUpstream(route Route) (http.Handler
 	return proxy, nil
 }
 
-func newReverseProxy(target *url.URL, transport http.RoundTripper, responder ErrorResponder, requestIDHeader string) *httputil.ReverseProxy {
+func newReverseProxy(target *url.URL, transport http.RoundTripper, responder ErrorResponder, requestIDHeader, host string, requestHeaders, responseHeaders HeaderPolicy) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(request *httputil.ProxyRequest) {
 			request.SetURL(target)
 			request.Out.Host = target.Host
+			if host != "" {
+				request.Out.Host = host
+			}
 			// 标准库只删除部分转发头；额外的 X-Forwarded-* 也不能继承客户端值。
 			for key := range request.Out.Header {
 				if isForwardingHeader(key) {
@@ -123,9 +142,11 @@ func newReverseProxy(target *url.URL, transport http.RoundTripper, responder Err
 			if requestID, ok := RequestIDFromContext(request.In.Context()); ok {
 				request.Out.Header.Set(requestIDHeader, requestID)
 			}
+			requestHeaders.apply(request.Out.Header)
 		},
 		ModifyResponse: func(response *http.Response) error {
 			// 入口响应头已有选定 ID；代理会追加后端响应头，必须删除而不是再次 Set。
+			responseHeaders.apply(response.Header)
 			response.Header.Del(requestIDHeader)
 			return nil
 		},

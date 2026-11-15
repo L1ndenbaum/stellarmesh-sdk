@@ -12,7 +12,7 @@
 |---|---|
 | `gateway.go` | 网关构造、固定安全顺序的请求流水线和流水线级 panic 恢复 |
 | `options.go` | 装配基础设施、内部配置、重复配置和空值检查 |
-| `route.go`、`path_pattern.go`、`proxy.go` | 路由声明与匹配、上游解析与反向代理 |
+| `route.go`、`path_pattern.go`、`proxy.go`、`proxy_headers.go` | 路由声明与匹配、上游解析与反向代理 |
 | `authentication.go`、`policy.go`、`rate_limit.go` | 身份认证与注入、授权及转发前策略、三类限流 |
 | `client_ip.go`、`request_id.go`、`cors.go` | 可信客户端地址、请求 ID 和跨域策略 |
 | `health.go`、`response.go` | 健康检查、健康成功响应和错误响应协议 |

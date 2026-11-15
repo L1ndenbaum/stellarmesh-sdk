@@ -21,6 +21,8 @@
 
 代理不缓冲正常请求体和响应体，并保留 Flush 与 Hijack 能力，可以用于 SSE、流式响应和 WebSocket。上游在响应开始后中断时，网关记录 `upstream_stream_aborted`，客户端读取响应体会收到传输错误。长连接项目不能照搬普通 API 服务的全局 `WriteTimeout`；应根据最长流式请求显式设置，必要时使用零值并依赖 upstream、连接和基础设施层超时控制。
 
+固定上游可通过 `Upstream.Host` 指定出站 HTTP Host，例如连接内部存储地址并发送 S3 签名使用的公网 Host。TLS 校验和拨号继续使用 `URL`。每个上游独立配置 `RequestHeaders` 和 `ResponseHeaders`，其中 `Set` 替换全部值，`Add` 保留已有值并追加，`Remove` 删除。请求策略只允许以固定值设置 `X-Forwarded-Host`、`X-Forwarded-Proto`、`X-Forwarded-Port`。网关身份、请求 ID、逐跳头和消息长度受保护。构造时校验并复制策略。
+
 项目如果使用动态路由或自定义代理，可以分别传入 `WithRouteResolver` 和 `WithUpstreamResolver`。它们与对应的静态组件互斥；动态解析出的路由仍会在请求期校验名称、upstream、访问模式和请求体限制，错误返回 `503`。
 
 ## 请求 ID
