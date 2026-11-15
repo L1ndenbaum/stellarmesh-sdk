@@ -2,12 +2,14 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestReverseProxyPreservesSelectedRequestID(t *testing.T) {
@@ -209,3 +211,41 @@ func (timeoutError) Error() string { return "timeout" }
 func (timeoutError) Timeout() bool { return true }
 
 func (timeoutError) Temporary() bool { return true }
+
+func TestTruncatedEventStreamAbortsClientAndRecordsFailure(t *testing.T) {
+	release := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		io.WriteString(w, "data: partial\n\n")
+		http.NewResponseController(w).Flush()
+		select {
+		case <-release:
+			panic(http.ErrAbortHandler)
+		case <-r.Context().Done():
+		}
+	}))
+	defer upstream.Close()
+	logged := make(chan AccessLog, 1)
+	handler, err := New(WithRoutes(publicRoute()), WithUpstreams(Upstream{Name: "backend", URL: upstream.URL}),
+		WithAccessLogger(AccessLoggerFunc(func(_ context.Context, entry AccessLog) error { logged <- entry; return nil })))
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	client := server.Client()
+	client.Timeout = 5 * time.Second
+	resp, err := client.Get(server.URL + "/public")
+	close(release)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 || string(body) != "data: partial\n\n" || !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("status=%d body=%q err=%v", resp.StatusCode, body, err)
+	}
+	if entry := <-logged; entry.ErrorCode != "upstream_stream_aborted" {
+		t.Fatal(entry)
+	}
+}

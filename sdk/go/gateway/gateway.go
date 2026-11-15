@@ -223,7 +223,8 @@ func (gateway *Gateway) recoverPanic(w *responseRecorder, r *http.Request, state
 		if recovered == http.ErrAbortHandler {
 			state.ErrorCode = "upstream_stream_aborted"
 			state.FailureComponent = "upstream_stream_aborted"
-			return
+			// finishRequest 仍会记录结果；由 HTTP 服务终止流，客户端才能识别截断。
+			panic(http.ErrAbortHandler)
 		}
 		state.ErrorCode = "gateway_panic"
 		state.FailureComponent = "gateway_panic"
