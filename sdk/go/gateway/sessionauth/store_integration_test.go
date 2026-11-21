@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -133,14 +132,15 @@ func TestRedisDefaultLimitEvictsOldestNotLeastRecentlyRenewed(t *testing.T) {
 	store, _, _ := integrationStore(t, 0)
 	ctx := context.Background()
 	oldest := createSession(t, store, "u", time.Minute)
-	time.Sleep(2 * time.Millisecond)
+	var survivors []sessionauth.Session
 	for i := 0; i < 9; i++ {
-		createSession(t, store, "u", time.Minute)
+		survivors = append(survivors, createSession(t, store, "u", time.Minute))
 	}
 	if _, _, err := store.Renew(ctx, oldest.ID, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 	newest := createSession(t, store, "u", time.Minute)
+	survivors = append(survivors, newest)
 	if _, found, err := store.Lookup(ctx, oldest.ID); err != nil || found {
 		t.Fatalf("oldest not evicted: %v %v", found, err)
 	}
@@ -151,13 +151,10 @@ func TestRedisDefaultLimitEvictsOldestNotLeastRecentlyRenewed(t *testing.T) {
 	if _, found, err := store.Lookup(ctx, newest.ID); err != nil || !found {
 		t.Fatal("new session evicted", err)
 	}
-	if !sort.SliceIsSorted(list, func(i, j int) bool {
-		if list[i].CreatedAt.Equal(list[j].CreatedAt) {
-			return list[i].ID < list[j].ID
+	for i, want := range survivors {
+		if list[i].ID != want.ID {
+			t.Fatalf("session at position %d is out of creation order", i)
 		}
-		return list[i].CreatedAt.Before(list[j].CreatedAt)
-	}) {
-		t.Fatal("unordered sessions")
 	}
 }
 func TestRedisScopeCustomKeysAndReducedLimit(t *testing.T) {

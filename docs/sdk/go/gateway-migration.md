@@ -53,5 +53,5 @@ gateway.WithRequestID(gateway.RequestIDConfig{TrustIncoming: true})
 
 该包依赖 Redis 和现有 `go-redis/v9`，只支持单实例或 Sentinel，不支持 Redis Cluster。Redis 安装、部署、Client 创建和关闭由业务方负责；SDK 不接管登录校验、Cookie 设置、CSRF 或管理端权限。会话与索引只能通过 Store 修改；同一项目应统一 scope、分隔符和会话上限。Session ID 是秘密凭证，不应输出到日志或未经授权的列表接口。身份 Attributes 必须可 JSON 编码，Go 读取后的数字为 `float64`，不保留自定义 Go 类型。
 
-完整的 Cookie 登录、续期、退出、用户反查与踢下线示例见 [Redis Session 接入教程](sessionauth.md)。
+完整的 Cookie 登录、续期、退出、用户反查与踢下线示例见 [Redis Session 接入教程](sessionauth.md)。已有会话的升级兼容规则见[会话列表与淘汰顺序](sessionauth.md#用户反查与踢下线)。
 

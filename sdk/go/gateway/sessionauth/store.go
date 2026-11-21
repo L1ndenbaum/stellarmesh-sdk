@@ -146,7 +146,8 @@ func (store *Store) Revoke(ctx context.Context, id string) error {
 	return err
 }
 
-// ListByUser 按创建时间返回用户当前有效会话；ID 是凭证，禁止直接暴露给无权调用方。
+// ListByUser 按创建顺序返回用户当前有效会话；同毫秒的旧版记录沿用 ID 顺序。
+// ID 是凭证，禁止直接暴露给无权调用方。
 func (store *Store) ListByUser(ctx context.Context, userID string) ([]Session, error) {
 	if strings.TrimSpace(userID) == "" {
 		return nil, errors.New("session user ID is required")
@@ -178,12 +179,16 @@ func (store *Store) RevokeByUser(ctx context.Context, userID string) error {
 	return err
 }
 
-func (store *Store) run(ctx context.Context, op, id, user string, ttl time.Duration, identity string) ([]interface{}, error) {
+func (store *Store) eval(ctx context.Context, op, id, user string, ttl time.Duration, identity string) *redis.Cmd {
 	key, _ := store.keys.SessionKey(store.scope, id)
 	if op == "list" || op == "revoke_user" {
 		key, _ = store.keys.UserSessionsKey(store.scope, user)
 	}
-	raw, err := store.client.Eval(ctx, sessionScript, []string{key}, op, id, user, ttl.Milliseconds(), identity, store.limit, store.keys.prefix(store.scope, "session"), store.keys.prefix(store.scope, "user_sessions"), store.keys.delimiter()).Result()
+	return store.client.Eval(ctx, sessionScript, []string{key}, op, id, user, ttl.Milliseconds(), identity, store.limit, store.keys.prefix(store.scope, "session"), store.keys.prefix(store.scope, "user_sessions"), store.keys.delimiter())
+}
+
+func (store *Store) run(ctx context.Context, op, id, user string, ttl time.Duration, identity string) ([]interface{}, error) {
+	raw, err := store.eval(ctx, op, id, user, ttl, identity).Result()
 	if err != nil {
 		if strings.Contains(err.Error(), "SESSION_CORRUPT") {
 			return nil, fmt.Errorf("%w: %w", ErrCorruptSession, err)
@@ -280,6 +285,8 @@ local ttl, identity, limit = tonumber(ARGV[4]), ARGV[5], tonumber(ARGV[6])
 local session_prefix, user_prefix, separator = ARGV[7], ARGV[8], ARGV[9]
 local clock = redis.call('TIME')
 local now = tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000)
+-- Redis 的 cjson 按 14 位有效数字编码，序号必须能精确往返。
+local max_creation_order = 99999999999999
 local function escape(value)
  return (string.gsub(value, '.', function(c)
   local b = string.byte(c)
@@ -303,6 +310,8 @@ local function load(sid)
   row.created_at <= 0 or row.created_at > now or row.expires_at <= row.created_at or
   row.created_at % 1 ~= 0 or row.expires_at % 1 ~= 0 or row.expires_at > 9007199254740991 or
   #sid ~= 43 or string.find(sid, '[^%w_-]') then error('SESSION_CORRUPT') end
+ if row.creation_order ~= nil and (type(row.creation_order) ~= 'number' or
+  row.creation_order < 1 or row.creation_order % 1 ~= 0 or row.creation_order > max_creation_order) then error('SESSION_CORRUPT') end
  local valid, ident = pcall(cjson.decode, row.identity)
  if not valid or type(ident) ~= 'table' or ident.UserID ~= row.user_id then error('SESSION_CORRUPT') end
  if ident.Roles ~= nil and ident.Roles ~= cjson.null then
@@ -334,19 +343,35 @@ if index_kind ~= 'none' and index_kind ~= 'zset' then error('SESSION_CORRUPT') e
 local members = redis.call('ZRANGE', index, 0, -1, 'WITHSCORES')
 local active, stale = {}, {}
 local target_found = false
+local tied_creation_times = false
 for i=1,#members,2 do
  local sid, score = members[i], tonumber(members[i+1])
  local item = load(sid)
  if item then
   if item.row.user_id ~= user or item.row.created_at ~= score then error('SESSION_CORRUPT') end
+  if #active > 0 and active[#active].row.created_at == score then tied_creation_times = true end
   table.insert(active,item)
   if sid == id then target_found = true end
  else table.insert(stale,sid) end
 end
 if target and not target_found then error('SESSION_CORRUPT') end
+-- 保留旧索引的毫秒分数。只有列表和淘汰需要区分同毫秒的顺序，认证查询不排序。
+if tied_creation_times and (op == 'create' or op == 'list') then
+ table.sort(active, function(a,b)
+  local x,y = a.row,b.row
+  if x.created_at ~= y.created_at then return x.created_at < y.created_at end
+  local x_order,y_order = x.creation_order or 0,y.creation_order or 0
+  if x_order ~= y_order then return x_order < y_order end
+  return x.id < y.id
+ end)
+end
 local encoded
 if op == 'create' then
- encoded = cjson.encode({version=1,id=id,user_id=user,identity=identity,identity_hash=redis.sha1hex(identity),created_at=now,expires_at=now+ttl})
+ local last = active[#active]
+ local order = 1
+ if last and last.row.created_at == now then order = (last.row.creation_order or 0) + 1 end
+ if order > max_creation_order then error('SESSION_CORRUPT') end
+ encoded = cjson.encode({version=1,id=id,user_id=user,identity=identity,identity_hash=redis.sha1hex(identity),created_at=now,creation_order=order,expires_at=now+ttl})
 elseif op == 'renew' then
  target.row.expires_at = now + ttl
  encoded = cjson.encode(target.row)
